@@ -37,6 +37,7 @@ packages = [
     "stages.s07_figure_analyze",
     "stages.s08_section_compose",
     "stages.s09_render",
+    "stages.s09_render.renderers",
     "llm",
 ]
 
