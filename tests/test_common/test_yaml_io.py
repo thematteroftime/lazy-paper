@@ -1,6 +1,22 @@
+from pathlib import Path
+
 import pytest
 
-from stages._common import safe_parse_yaml
+from stages._common import load_yaml, dump_yaml, safe_parse_yaml
+
+
+def test_dump_then_load_roundtrip(tmp_path: Path):
+    target = tmp_path / "x.yaml"
+    obj = {"name": "测试", "items": [1, 2, 3]}
+    dump_yaml(target, obj)
+    assert load_yaml(target) == obj
+
+
+def test_dump_yaml_preserves_unicode(tmp_path: Path):
+    target = tmp_path / "u.yaml"
+    dump_yaml(target, {"k": "中文"})
+    text = target.read_text(encoding="utf-8")
+    assert "中文" in text  # not escaped to \uXXXX
 
 
 def test_safe_parse_valid():
@@ -25,16 +41,17 @@ def test_safe_parse_unrecoverable():
 
 
 def test_safe_parse_scalar_with_inner_colon():
-    """The exact pattern that broke li2022 Fig.3: 'a sentence with colon: foo bar'."""
-    text = "visual_summary: Panels show a strong inverse correlation: Eb increases from 12 to 41 kV/mm\nfig_id: Fig. 3"
+    text = (
+        "visual_summary: Panels show a strong inverse correlation: "
+        "Eb increases from 12 to 41 kV/mm\nfig_id: Fig. 3"
+    )
     result = safe_parse_yaml(text)
-    assert result is not None, "safe_parse should have repaired this"
+    assert result is not None
     assert result["fig_id"] == "Fig. 3"
     assert "inverse correlation" in result["visual_summary"]
 
 
-def test_safe_parse_real_qwen_failure_excerpt(tmp_path):
-    """Reduced reproduction of the actual Qwen-VL output."""
+def test_safe_parse_real_qwen_failure_excerpt():
     text = (
         "fig_id: Fig. 3\n"
         "visual_summary: Panels (a-d) show micrographs, revealing a strong correlation: Eb increases\n"

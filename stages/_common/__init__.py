@@ -7,5 +7,9 @@ Modules:
 - bbox     : bbox_from_filename
 """
 from stages._common.paths import slugify, stage_dir
+from stages._common.yaml_io import load_yaml, dump_yaml, safe_parse_yaml
 
-__all__ = ["slugify", "stage_dir"]
+__all__ = [
+    "slugify", "stage_dir",
+    "load_yaml", "dump_yaml", "safe_parse_yaml",
+]
