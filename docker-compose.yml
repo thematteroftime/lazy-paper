@@ -1,0 +1,22 @@
+# Convenience wrapper for running paper2md without typing long volume flags.
+#
+#   docker compose run --rm paper2md run \
+#     --pdf "参考文献/your.pdf" --template "your.docx" \
+#     --paper-id myid --lang en
+
+services:
+  paper2md:
+    build: .
+    image: paper2md:latest
+    volumes:
+      # Working artifacts persist across runs
+      - ./runs:/app/runs
+      # Input PDFs and template (read-only is fine but rw allowed in case template gets edited)
+      - ./参考文献:/app/参考文献
+      - ./Table of Contents-Relaxor AFE-ZGY-HW.docx:/app/Table of Contents-Relaxor AFE-ZGY-HW.docx:ro
+      # Env (kept out of image)
+      - ./.env:/app/.env:ro
+    env_file: .env
+    # No TTY by default; pipeline runs to completion and exits
+    stdin_open: false
+    tty: false

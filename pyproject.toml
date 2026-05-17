@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper2md"
+version = "0.1.0"
+description = "PDF to Markdown (PaddleOCR VL API)."
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31.0",
+    "pdfplumber>=0.11",
+    "pypdfium2>=4",
+    "python-docx>=1.1",
+    "openai>=1.50",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "Pillow>=10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+paper2md = "cli:main"
+
+[tool.setuptools]
+packages = [
+    "stages",
+    "stages.s01_ocr",
+    "stages.s02_clean",
+    "stages.s03_chapter",
+    "stages.s04_figures",
+    "stages.s05_template",
+    "stages.s06_context",
+    "stages.s07_figure_analyze",
+    "stages.s08_section_compose",
+    "stages.s09_render",
+    "llm",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "live: tests that call real LLM/OCR APIs (skipped by default; run via -m live)",
+]
+addopts = "-m 'not live'"

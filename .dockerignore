@@ -1,0 +1,15 @@
+.venv/
+runs/
+__pycache__/
+.pytest_cache/
+*.pyc
+.git/
+.DS_Store
+docs/
+tests/
+参考文献/
+*.docx
+*.pdf
+build/
+paper2md.egg-info/
+.env

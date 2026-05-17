@@ -1,0 +1,247 @@
+"""Stage 01 alternative backend: MinerU cloud API.
+
+Produces the same on-disk contract as the PaddleOCR backend (doc_<N>.md per page +
+imgs/<filename>.jpg) so downstream stages don't care which OCR was used.
+"""
+from __future__ import annotations
+
+import json
+import shutil
+import sys
+import time
+import zipfile
+from pathlib import Path
+from typing import Any
+
+import requests
+
+from stages._common import mark_done
+
+BATCH_URL = "https://mineru.net/api/v4/file-urls/batch"
+RESULTS_URL = "https://mineru.net/api/v4/extract-results/batch/{batch_id}"
+POLL_INTERVAL_S = 10
+MAX_POLL_S = 600
+
+
+class MinerUError(RuntimeError):
+    pass
+
+
+def _post_batch(token: str, pdf_name: str, data_id: str) -> tuple[str, str]:
+    r = requests.post(
+        BATCH_URL,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={
+            "enable_formula": True,
+            "language": "en",
+            "files": [{"name": pdf_name, "is_ocr": False, "data_id": data_id}],
+        },
+        timeout=30,
+    )
+    if not r.ok:
+        raise MinerUError(f"batch URL request failed: {r.status_code} {r.text[:200]}")
+    j = r.json()
+    if j.get("code") != 0:
+        raise MinerUError(f"batch URL error: {j}")
+    return j["data"]["batch_id"], j["data"]["file_urls"][0]
+
+
+def _upload(upload_url: str, pdf: Path) -> None:
+    with pdf.open("rb") as f:
+        r = requests.put(upload_url, data=f, timeout=600)
+    if not r.ok:
+        raise MinerUError(f"upload failed: {r.status_code}")
+
+
+def _poll(token: str, batch_id: str) -> dict:
+    deadline = time.time() + MAX_POLL_S
+    while time.time() < deadline:
+        r = requests.get(
+            RESULTS_URL.format(batch_id=batch_id),
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if not r.ok:
+            raise MinerUError(f"poll failed: {r.status_code} {r.text[:200]}")
+        j = r.json()
+        results = j.get("data", {}).get("extract_result", [])
+        if not results:
+            time.sleep(POLL_INTERVAL_S)
+            continue
+        first = results[0]
+        state = first.get("state")
+        print(f"[mineru] state={state}", file=sys.stderr)
+        if state == "done":
+            return first
+        if state == "failed":
+            raise MinerUError(f"extraction failed: {first.get('err_msg')}")
+        time.sleep(POLL_INTERVAL_S)
+    raise MinerUError("polling timeout")
+
+
+def _download_and_extract(zip_url: str, dest: Path) -> Path:
+    dest.mkdir(parents=True, exist_ok=True)
+    zip_path = dest / "mineru.zip"
+    with requests.get(zip_url, stream=True, timeout=300) as r:
+        r.raise_for_status()
+        with zip_path.open("wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(dest)
+    return dest
+
+
+_FIG_NUM_RE = __import__("re").compile(r"^Fig(?:ure)?\.?\s*(\d+)", __import__("re").IGNORECASE)
+
+
+def _ensure_figure_number(caption_text: str, expected_n: int) -> str:
+    """If `caption_text` already starts with 'Figure <digit>', return it untouched.
+    Otherwise inject `expected_n` so downstream FIG_CAP_RE matches.
+
+    MinerU's OCR occasionally drops the digit (e.g., "Figure ." for Fig. 2). This
+    keeps the s04 pairing robust without changing s04's regex.
+    """
+    if not caption_text:
+        return f"Figure {expected_n}. (caption missing)"
+    if _FIG_NUM_RE.match(caption_text):
+        return caption_text
+    # Strip leading "Figure" + punctuation if present
+    import re as _re
+    stripped = _re.sub(r"^Fig(?:ure)?\.?\s*[.\$]*\s*", "", caption_text, count=1,
+                       flags=_re.IGNORECASE)
+    return f"Figure {expected_n}. {stripped}"
+
+
+def _content_list_to_docs(content_list: list[dict], staged_imgs: Path,
+                          dest_imgs: Path, out_dir: Path) -> int:
+    """Convert MinerU's content_list.json items into per-page doc_<N>.md files.
+
+    Returns the number of pages written.
+
+    Strategy: group items by page_idx. For each page, emit markdown in document order.
+    For 'image' items, copy the source image to dest_imgs/img_mineru_NNN.jpg and emit an
+    <img> tag plus the original image caption text as a paragraph below.
+
+    For 'text' items, emit the text (or markdown_header for headings).
+    For 'table' items, emit either table HTML/markdown if available, else a placeholder.
+
+    Missing-field handling:
+    - Items missing 'type' are treated as type '' and skipped.
+    - Image items missing 'img_path' are skipped silently.
+    - Image source files that don't exist on disk are skipped silently (img tag omitted).
+    - text/title items with empty/whitespace text are skipped.
+    - equation items with empty text are skipped.
+    - table items with no table_body and no table_caption produce nothing.
+    """
+    by_page: dict[int, list[dict]] = {}
+    for item in content_list:
+        pi = item.get("page_idx", 0)
+        by_page.setdefault(pi, []).append(item)
+
+    dest_imgs.mkdir(parents=True, exist_ok=True)
+    img_counter = 0
+    img_map: dict[str, str] = {}  # source img_path → new relative path
+
+    pages_written = 0
+    for page_idx in sorted(by_page.keys()):
+        page_md_lines: list[str] = []
+        for item in by_page[page_idx]:
+            t = item.get("type", "")
+            if t == "text":
+                txt = (item.get("text") or "").strip()
+                if not txt:
+                    continue
+                level = item.get("text_level")
+                if level:
+                    page_md_lines.append(f"{'#' * level} {txt}")
+                else:
+                    page_md_lines.append(txt)
+            elif t == "image":
+                src_path = item.get("img_path") or ""
+                if not src_path:
+                    continue
+                if src_path not in img_map:
+                    img_counter += 1
+                    new_name = f"img_mineru_{img_counter:03d}.jpg"
+                    src_abs = staged_imgs / Path(src_path).name
+                    if not src_abs.exists():
+                        # try with full src path relative to ZIP root
+                        src_abs = staged_imgs.parent / src_path
+                    if src_abs.exists():
+                        shutil.copy2(src_abs, dest_imgs / new_name)
+                        img_map[src_path] = f"imgs/{new_name}"
+                    else:
+                        # Image file not found on disk — record as missing so we
+                        # don't re-attempt the copy, but skip emitting the tag.
+                        img_map[src_path] = ""
+                rel = img_map[src_path]
+                if not rel:
+                    # source file was missing; skip this item entirely
+                    continue
+                page_md_lines.append(f'<img src="{rel}">')
+                caps = item.get("image_caption") or []
+                for cap in caps:
+                    cap_clean = _ensure_figure_number(
+                        (cap or "").strip(), expected_n=img_counter,
+                    )
+                    if cap_clean:
+                        page_md_lines.append(cap_clean)
+            elif t == "table":
+                tbl_body = item.get("table_body") or item.get("table_caption", [""])[0] or ""
+                if tbl_body:
+                    page_md_lines.append(str(tbl_body))
+            elif t == "equation":
+                eq = item.get("text") or ""
+                if eq:
+                    page_md_lines.append(f"$${eq}$$")
+            elif t == "title":
+                txt = item.get("text", "")
+                if txt:
+                    page_md_lines.append(f"# {txt}")
+        body = "\n\n".join(page_md_lines).strip()
+        if not body:
+            continue
+        (out_dir / f"doc_{page_idx}.md").write_text(body + "\n", encoding="utf-8")
+        pages_written += 1
+    return pages_written
+
+
+def run(*, pdf: Path, out_dir: Path, token: str) -> dict:
+    """Submit `pdf` to MinerU, download the result, and produce paper2md-compatible
+    artifacts under `out_dir`."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    data_id = pdf.stem[:50] or "paper"
+    print(f"[mineru] submitting {pdf.name}", file=sys.stderr)
+    batch_id, upload_url = _post_batch(token, pdf.name, data_id)
+    print(f"[mineru] batch_id={batch_id}", file=sys.stderr)
+    _upload(upload_url, pdf)
+    print(f"[mineru] uploaded; polling...", file=sys.stderr)
+    result = _poll(token, batch_id)
+    zip_url = result.get("full_zip_url")
+    if not zip_url:
+        raise MinerUError("no full_zip_url in done result")
+
+    stage_dir = out_dir / "_mineru_raw"
+    if stage_dir.exists():
+        shutil.rmtree(stage_dir)
+    _download_and_extract(zip_url, stage_dir)
+    # find content_list.json
+    cl_candidates = list(stage_dir.glob("*_content_list.json"))
+    if not cl_candidates:
+        raise MinerUError(f"no *_content_list.json in {stage_dir}")
+    content_list = json.loads(cl_candidates[0].read_text(encoding="utf-8"))
+    # images live under stage_dir/images/
+    staged_imgs = stage_dir / "images"
+    dest_imgs = out_dir / "imgs"
+    n_pages = _content_list_to_docs(content_list, staged_imgs, dest_imgs, out_dir)
+
+    mark_done(out_dir, {
+        "backend": "mineru",
+        "docs": n_pages,
+        "images_extracted": len(list(dest_imgs.glob("*.jpg"))),
+    })
+    # Clean up extracted raw zip dir to save space
+    shutil.rmtree(stage_dir, ignore_errors=True)
+    return {"backend": "mineru", "docs": n_pages,
+            "images": len(list(dest_imgs.glob("*.jpg")))}

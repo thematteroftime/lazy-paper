@@ -1,0 +1,15 @@
+# Role-based LLM configuration. Each role resolves env vars:
+#   <ROLE>_BASE_URL  -> base_url for openai client
+#   <ROLE>_API_KEY   -> api_key
+#   <ROLE>_MODEL     -> model name
+# Defaults are sensible if env vars not set; CLI uses them directly.
+vision:
+  env_prefix: LLM_VISION
+  default_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  default_model: qwen-vl-max-latest
+  supports_images: true
+text:
+  env_prefix: LLM_TEXT
+  default_base_url: https://api.deepseek.com/v1
+  default_model: deepseek-chat
+  supports_images: false

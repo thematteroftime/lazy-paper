@@ -1,0 +1,30 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# OS
+.DS_Store
+
+# Secrets / local env
+.env
+.envrc
+
+# Claude Code per-user local settings (project-shared settings.json is OK to commit)
+.claude/settings.local.json
+
+# Runtime outputs (per-paper artifacts, uploads, build)
+runs/
+upload/
+upload.zip
+build/
+
+# Sibling project (mypaper is its own repo, not part of paper2md)
+mypaper/
+
+# Source / input data (PDFs, references, private templates)
+参考文献/
+*.pdf
+*.docx
