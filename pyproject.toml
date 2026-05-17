@@ -27,6 +27,7 @@ paper2md = "cli:main"
 [tool.setuptools]
 packages = [
     "stages",
+    "stages._common",
     "stages.s01_ocr",
     "stages.s02_clean",
     "stages.s03_chapter",
