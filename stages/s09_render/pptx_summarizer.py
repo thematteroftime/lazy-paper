@@ -41,9 +41,9 @@ _OUTLINE_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" /
 _PAPER_SUMMARY_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "pptx_paper_summary.md"
 
 # Bump these constants to invalidate old caches when prompts change.
-_CHAPTER_PROMPT_VERSION = "v11-cross-context"
-_OUTLINE_PROMPT_VERSION = "v11-budget-aware"
-_PAPER_PROMPT_VERSION = "v10-quantitative-summary"
+_CHAPTER_PROMPT_VERSION = "v12-quantitative-preservation"
+_OUTLINE_PROMPT_VERSION = "v12-extended-template"
+_PAPER_PROMPT_VERSION = "v12-quantitative-takeaway"
 
 
 def _is_low_diversity(groups: list[dict]) -> bool:
@@ -206,7 +206,7 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=user_prompt,
                     temperature=temp,
-                    max_tokens=1200,
+                    max_tokens=2400,
                 )
                 payload = json.loads(response.content)
                 if "groups" not in payload:
@@ -250,7 +250,7 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=prompt,
                     temperature=0.2,
-                    max_tokens=1000,
+                    max_tokens=2000,
                 )
                 payload = json.loads(response.content)
                 if "bullets" not in payload or "takeaway" not in payload:
@@ -304,7 +304,7 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=prompt,
                     temperature=0.2,
-                    max_tokens=1000,
+                    max_tokens=2000,
                 )
                 payload = json.loads(response.content)
                 payload = _normalize_chapter_summary(payload)

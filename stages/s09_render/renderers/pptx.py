@@ -323,15 +323,18 @@ class PptxRenderer(Renderer):
           Vertical separator at x=4.5" (y=1.0"–6.5")
           Right block (x=5.0"–12.5"): eyebrow label, rounded-rect card, bullets
           Nav hint bottom-right, footer as usual.
+
+        v12: uses slide.group_idx for the §N label (hierarchical §<group>).
         """
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
-        sec_num = self._sec_idx + 1
+        # v12: prefer slide.group_idx (set by SlidePlanner); fall back to counter
+        sec_num = slide.group_idx if slide.group_idx > 0 else (self._sec_idx + 1)
 
         # ── LEFT BLOCK ──────────────────────────────────────────────────────────
 
-        _tb1(s, f"§{sec_num:02d}",
+        _tb1(s, f"§{sec_num}",
              Inches(0.5), Inches(0.8), Inches(3.8), Inches(0.55),
              Pt(22), _GRAY88, T.LAT_SERIF, T.EA_SERIF,
              bold=False, align=PP_ALIGN.LEFT)
@@ -452,7 +455,12 @@ class PptxRenderer(Renderer):
             sec_label = "总结 · Conclusion"
         else:
             kw = "要点" if doc.lang == "zh" else "Key Insights"
-            sec_label = f"§{chi + 1}  ·  {slide.title}  ·  {kw}"
+            # v12: use hierarchical §group.chapter label when available
+            if slide.group_idx > 0 and slide.chapter_in_group > 0:
+                num_label = f"§{slide.group_idx}.{slide.chapter_in_group}"
+            else:
+                num_label = f"§{chi + 1}"
+            sec_label = f"{num_label}  ·  {slide.title}  ·  {kw}"
 
         _tb1(s, sec_label,
              Inches(0.7), Inches(0.15), Inches(12.0), Inches(0.45),
@@ -482,8 +490,12 @@ class PptxRenderer(Renderer):
         # Parse figure number from slide.title (e.g. "图 1: CAFE 相调控...")
         fig_num = _parse_fig_num(slide.title)
         fig_label = f"Fig. {fig_num}" if fig_num else "Fig."
-        # Build header with fig number
-        header_text = f"§{chi + 1}  ·  {fig_label}  ·  {_short_title(slide.title, 50)}"
+        # v12: use hierarchical §group.chapter label when available
+        if slide.group_idx > 0 and slide.chapter_in_group > 0:
+            sec_label = f"§{slide.group_idx}.{slide.chapter_in_group}"
+        else:
+            sec_label = f"§{chi + 1}"
+        header_text = f"{sec_label}  ·  {fig_label}  ·  {_short_title(slide.title, 50)}"
         _tb1(s, header_text,
              Inches(0.7), Inches(0.15), Inches(12.0), Inches(0.45),
              Pt(12), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, wrap=True)
@@ -577,7 +589,12 @@ class PptxRenderer(Renderer):
         fig_num = _parse_fig_num(slide.caption or "") or str(self._fig_idx + 1)
         fig_label = f"Fig. {fig_num}"
         caption_short = _short_title(slide.caption or slide.title, 50)
-        header_text = f"§{chi + 1}  ·  {slide.title}  ·  {fig_label}  ·  {caption_short}"
+        # v12: use hierarchical §group.chapter label when available
+        if slide.group_idx > 0 and slide.chapter_in_group > 0:
+            sec_label = f"§{slide.group_idx}.{slide.chapter_in_group}"
+        else:
+            sec_label = f"§{chi + 1}"
+        header_text = f"{sec_label}  ·  {slide.title}  ·  {fig_label}  ·  {caption_short}"
         _tb1(s, header_text,
              Inches(0.7), Inches(0.15), Inches(12.0), Inches(0.45),
              Pt(12), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, wrap=True)

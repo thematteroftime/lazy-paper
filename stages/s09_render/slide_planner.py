@@ -33,6 +33,8 @@ class Slide:
     deep_observation: str = ""            # joined string (backward compat + speaker notes)
     observations: tuple[str, ...] = field(default_factory=tuple)  # v9: 2-3 analytical points
     notes: str = ""                        # speaker notes
+    group_idx: int = 0                     # v12: 1-based group index (0 = not part of a group)
+    chapter_in_group: int = 0              # v12: 1-based chapter position within its group (0 = section divider)
 
 
 @dataclass(frozen=True)
@@ -66,7 +68,7 @@ class SlidePlanner:
                        "takeaway": ""}]
 
         # Per-group: section divider + chapter content slides
-        for group in groups:
+        for g_num, group in enumerate(groups, start=1):
             group_headings = group.get("chapter_headings") or []
 
             # Gather bullets from pure-bullet chapters in this group for section divider
@@ -77,12 +79,17 @@ class SlidePlanner:
                 bullets=tuple(bullets_preview),
                 caption=group.get("takeaway", ""),
                 notes="",
+                group_idx=g_num,
+                chapter_in_group=0,
             ))
 
             # Per-chapter content slides (only figure-bearing chapters)
+            # Track position-within-group for hierarchical §g.c numbering
+            ch_pos = 0
             for ch in doc.chapters:
                 if ch.heading not in group_headings:
                     continue
+                ch_pos += 1
                 has_figure = any(isinstance(b, FigureBlock) for b in ch.blocks)
                 if not has_figure:
                     # Pure-bullet chapter: already absorbed into section divider
@@ -92,7 +99,19 @@ class SlidePlanner:
                     # Drop old per-chapter divider slides — section_divider replaces them
                     if sl.kind == "divider":
                         continue
-                    slides.append(sl)
+                    # Attach hierarchical numbering to every content slide in this chapter
+                    slides.append(Slide(
+                        kind=sl.kind,
+                        title=sl.title,
+                        bullets=sl.bullets,
+                        image_paths=sl.image_paths,
+                        caption=sl.caption,
+                        deep_observation=sl.deep_observation,
+                        observations=sl.observations,
+                        notes=sl.notes,
+                        group_idx=g_num,
+                        chapter_in_group=ch_pos,
+                    ))
 
         # Closing slide
         if paper_brief:

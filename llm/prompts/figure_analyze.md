@@ -14,6 +14,15 @@ Caption (from OCR):
 Surrounding-text excerpts:
 {chapter_excerpts}
 
+## Quantitative extraction requirements (MUST do)
+
+For every figure:
+- List the X-axis and Y-axis labels, units, and ranges (e.g., "Temperature 25-200°C, Wrec 0-10 J/cm³").
+- List the key data points with values (e.g., "at x=3, Wrec peaks at 8.6 J/cm³").
+- List any mathematical formulas embedded in the figure (e.g., "Eb=σ_b × √(...)").
+- Identify any color-coded legend categories and their meanings.
+- If a panel shows a comparison, quantify the difference (e.g., "panel (c) shows ANT-3La's η is 85% vs ANT-5La's 94%, a 9% gap").
+
 Tasks:
 1) Visually describe the panels, axes, units, value ranges, and visible trends.
 2) For each surrounding-text claim about THIS figure, classify as supported / exaggerated / unsupported, with a 1-sentence reason.

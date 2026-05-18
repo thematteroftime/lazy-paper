@@ -18,6 +18,8 @@ Use this context to make your bullets PROGRESSIVELY connected: reference what wa
 Rules:
 - No prose, no preamble. Output ONLY the JSON object.
 - Bullets must be self-contained (a slide reader can understand without context).
+- At least ONE bullet per chapter MUST contain a specific numerical value from the source (e.g., "8.6 J/cm³", "350 kV/cm", "x=3"). Skip this rule only if the source chapter is purely conceptual with no numbers.
+- Observations: at least 50% must reference specific values from the figure.
 - **figure_observations**: provide 2-3 INDEPENDENT analytical points per figure (not 1).
   Each observation MUST:
   - Reference at least ONE specific panel label (e.g., "图(a)", "panel (e)", "Fig.X(c)") OR a specific dataset/curve feature.

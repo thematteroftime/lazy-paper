@@ -68,8 +68,8 @@ def test_parse_template_real_afe_template(tmp_path: Path, repo_root: Path):
         pytest.skip("real template not present")
     tree = parse_template(real)
     titles = [n["title"] for n in tree]
-    # Should be substantially fewer than 29 (was the buggy count); expect ~7-12 top-level
-    assert 5 <= len(titles) <= 14, (len(titles), titles)
+    # Template now has 11 original + 6 optional sections added in v12; expect ~11-25 top-level
+    assert 5 <= len(titles) <= 25, (len(titles), titles)
     # Must include some recognizable sections
     joined = "|".join(titles).lower()
     assert "introduction" in joined
