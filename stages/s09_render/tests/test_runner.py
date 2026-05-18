@@ -114,3 +114,47 @@ def test_multi_panel_embed(tmp_path: Path):
     d = Document(out_dir / "preview.docx")
     # Both panels embedded
     assert len(d.inline_shapes) == 2, f"expected 2 embeds, got {len(d.inline_shapes)}"
+
+
+def test_run_uses_title_from_context_yaml(tmp_path: Path):
+    """When context_dir contains a context.yaml with `title:`, use it."""
+    import yaml as _y
+    compose = tmp_path / "compose"; (compose / "chapters").mkdir(parents=True)
+    (compose / "chapters" / "01.md").write_text("# C\n\nbody\n", encoding="utf-8")
+
+    fig_dir = tmp_path / "fig"; fig_dir.mkdir()
+    (fig_dir / "fig_notes.yaml").write_text("[]", encoding="utf-8")
+
+    context_dir = tmp_path / "ctx"; context_dir.mkdir()
+    (context_dir / "context.yaml").write_text(
+        _y.safe_dump({"title": "Real Paper Title From OCR"}, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "out"
+    from stages.s09_render.runner import run
+    run(compose_dir=compose, fig_notes_dir=fig_dir, context_dir=context_dir,
+        out_dir=out_dir, paper_title="fallback-id", lang="en", formats=["docx"])
+
+    d = Document(out_dir / "preview.docx")
+    text = "\n".join(p.text for p in d.paragraphs)
+    assert "Real Paper Title From OCR" in text
+    assert "fallback-id" not in text
+
+
+def test_run_falls_back_when_context_yaml_missing(tmp_path: Path):
+    """If context_dir doesn't exist or context.yaml is absent, use paper_title."""
+    compose = tmp_path / "compose"; (compose / "chapters").mkdir(parents=True)
+    (compose / "chapters" / "01.md").write_text("# C\n\nbody\n", encoding="utf-8")
+
+    fig_dir = tmp_path / "fig"; fig_dir.mkdir()
+    (fig_dir / "fig_notes.yaml").write_text("[]", encoding="utf-8")
+
+    out_dir = tmp_path / "out"
+    from stages.s09_render.runner import run
+    run(compose_dir=compose, fig_notes_dir=fig_dir, context_dir=tmp_path / "missing",
+        out_dir=out_dir, paper_title="fallback-id", lang="en", formats=["docx"])
+
+    d = Document(out_dir / "preview.docx")
+    text = "\n".join(p.text for p in d.paragraphs)
+    assert "fallback-id" in text

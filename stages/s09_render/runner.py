@@ -35,13 +35,15 @@ DEFAULT_FORMATS = ("docx", "pdf", "html")
 def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         paper_title: str = "Paper Preview", lang: str = "zh",
         formats: Iterable[str] | None = None,
-        pptx_bullets: str = "llm") -> dict:
+        pptx_bullets: str = "llm",
+        context_dir: Path | None = None) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     chapters_md = _read_chapters(Path(compose_dir))
     fig_notes = _read_fig_notes(Path(fig_notes_dir))
-    doc = DocumentBuilder(lang=lang, paper_title=paper_title).build(chapters_md, fig_notes)
+    resolved_title = _resolve_paper_title(context_dir, paper_title)
+    doc = DocumentBuilder(lang=lang, paper_title=resolved_title).build(chapters_md, fig_notes)
 
     requested = list(formats) if formats is not None else list(DEFAULT_FORMATS)
     summaries = _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir)
@@ -105,6 +107,24 @@ def _pptx_state(summaries, requested, pptx_bullets) -> str:
     if pptx_bullets != "llm":
         return "rule"
     return "ok" if summaries is not None else "degraded"
+
+
+def _resolve_paper_title(context_dir: Path | None, fallback: str) -> str:
+    """Prefer the LLM-extracted title from s06_context/context.yaml; fall back
+    to the caller-supplied title (typically the paper_id or PDF stem)."""
+    if context_dir is None:
+        return fallback
+    path = Path(context_dir) / "context.yaml"
+    if not path.exists():
+        return fallback
+    try:
+        ctx = load_yaml(path) or {}
+    except Exception:
+        return fallback
+    title = ctx.get("title")
+    if isinstance(title, str) and title.strip():
+        return title.strip()
+    return fallback
 
 
 def _read_chapters(compose_dir: Path) -> dict[str, str]:

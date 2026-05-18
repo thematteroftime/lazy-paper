@@ -173,6 +173,7 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
         _s09.run(
             compose_dir=stage_dir(run_root, paper_id, "s08_section_compose"),
             fig_notes_dir=stage_dir(run_root, paper_id, "s07_figure_analyze"),
+            context_dir=stage_dir(run_root, paper_id, "s06_context"),
             out_dir=out,
             paper_title=args.paper_id or Path(args.pdf).stem,
             lang=args.lang,
