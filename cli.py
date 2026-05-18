@@ -50,6 +50,12 @@ STAGE_ORDER = [
 ]
 
 
+def _parse_formats(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
 def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
     out = stage_dir(run_root, paper_id, name)
     if is_done(out) and not args.force:
@@ -107,12 +113,15 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             lang=args.lang,
         )
     elif name == "s09_render":
+        formats = _parse_formats(args.formats)
         _s09.run(
             compose_dir=stage_dir(run_root, paper_id, "s08_section_compose"),
             fig_notes_dir=stage_dir(run_root, paper_id, "s07_figure_analyze"),
             out_dir=out,
             paper_title=args.paper_id or Path(args.pdf).stem,
             lang=args.lang,
+            formats=formats,
+            pptx_bullets=args.pptx_bullets,
         )
 
 
@@ -131,6 +140,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="Re-run stages even if done.yaml is present")
     r.add_argument("--lang", choices=("en", "zh"), default="zh",
                    help="Output language for LLM stages and render")
+    r.add_argument("--formats", default=None,
+                   help="Comma-separated subset of docx,pdf,html,pptx "
+                        "(default: docx,pdf,html — PPT is opt-in because it uses LLM)")
+    r.add_argument("--pptx-bullets", choices=("llm", "rule"), default="llm",
+                   help="How PPT bullets are generated (llm = quality, rule = offline)")
+    r.add_argument("--retry-failed", action="store_true",
+                   help="In --only mode, re-run only the formats marked partial in done.yaml")
     args = ap.parse_args(argv)
 
     if args.cmd != "run":

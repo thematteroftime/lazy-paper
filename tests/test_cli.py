@@ -57,3 +57,45 @@ def test_cli_run_creates_run_dir(tmp_path: Path, monkeypatch):
     meta = yaml.safe_load((runs_dir / "paper" / "meta.yaml").read_text(encoding="utf-8"))
     assert meta["paper_id"] == "paper"
     assert meta["stages_completed"] == [t.rsplit(".", 2)[0].split(".")[1] for t in targets]
+
+
+def test_cli_passes_formats_to_s09(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PADDLEOCR_TOKEN", "fake")
+    monkeypatch.setenv("LLM_VISION_API_KEY", "fake")
+    monkeypatch.setenv("LLM_TEXT_API_KEY", "fake")
+
+    pdf = tmp_path / "p.pdf"; pdf.write_bytes(b"%PDF-1.4\n")
+    tpl = tmp_path / "t.docx"
+    from docx import Document as DocxDocument
+    DocxDocument().save(tpl)
+
+    captured: dict = {}
+
+    def mk_runner(name):
+        def fake_run(**kwargs):
+            outd = kwargs["out_dir"]; outd.mkdir(parents=True, exist_ok=True)
+            (outd / "done.yaml").write_text("ok\n", encoding="utf-8")
+            if name == "stages.s09_render.runner.run":
+                captured.update(kwargs)
+            return {"name": name}
+        return fake_run
+
+    targets = [f"stages.{s}.runner.run" for s in [
+        "s01_ocr", "s02_clean", "s03_chapter", "s04_figures", "s05_template",
+        "s06_context", "s07_figure_analyze", "s08_section_compose", "s09_render",
+    ]]
+    patches = [patch(t, mk_runner(t)) for t in targets]
+    for pp in patches: pp.start()
+    try:
+        from cli import main
+        rc = main([
+            "run", "--pdf", str(pdf), "--template", str(tpl),
+            "--runs-dir", str(tmp_path / "runs"), "--paper-id", "p",
+            "--formats", "docx,pptx", "--pptx-bullets", "rule",
+        ])
+    finally:
+        for pp in patches: pp.stop()
+
+    assert rc == 0
+    assert captured.get("formats") == ["docx", "pptx"]
+    assert captured.get("pptx_bullets") == "rule"
