@@ -1,8 +1,12 @@
-"""Render a SlideDeck to .pptx — academic defense style (v7).
+"""Render a SlideDeck to .pptx — academic defense style (v8).
 
 Design: monochrome cream bg (#FBFAF7), near-black text, no accent colors,
 formal graduation-defense aesthetic, compact layout, no brand tag.
 Template-swap: caller may supply a .pptx master via `template_path`.
+
+v8 changes vs v7:
+- section_divider redesigned: left vertical title block + right key-points card
+  (Design B: 左定锚 + 右卡片, meeting/report feel)
 
 v7 changes vs v6:
 - Outline slide now shows 4-5 grouped sections (outline_grouped kind)
@@ -308,48 +312,105 @@ class PptxRenderer(Renderer):
         _notes(s, slide.notes)
 
     def _section_divider(self, prs, slide, *, idx, total, doc):
-        """Section divider slide: big section name + takeaway + absorbed bullets (v7)."""
+        """Section divider slide v8: left anchor block + right key-points card.
+
+        Layout (16:9, 13.33"×7.5"):
+          Left block  (x=0.5"–4.3"): §N, section title, thin rule, takeaway
+          Vertical separator at x=4.5" (y=1.0"–6.5")
+          Right block (x=5.0"–12.5"): eyebrow label, rounded-rect card, bullets
+          Nav hint bottom-right, footer as usual.
+        """
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
         sec_num = self._sec_idx + 1
 
-        # Section number
-        _tb1(s, f"§{sec_num}",
-             Inches(0), Inches(1.8), Inches(13.333), Inches(0.55),
-             Pt(18), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, align=PP_ALIGN.CENTER)
+        # ── LEFT BLOCK ──────────────────────────────────────────────────────────
 
-        # Section name — big serif bold
+        # §N — serif 22pt gray, left-aligned
+        _tb1(s, f"§{sec_num:02d}",
+             Inches(0.5), Inches(0.8), Inches(3.8), Inches(0.55),
+             Pt(22), RGBColor(0x88, 0x88, 0x88), T.LAT_SERIF, T.EA_SERIF,
+             bold=False, align=PP_ALIGN.LEFT)
+
+        # Section title — serif 28pt bold dark, multi-line OK
         _tb1(s, slide.title,
-             Inches(1.5), Inches(2.45), Inches(10.333), Inches(1.1),
-             Pt(32), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True,
-             align=PP_ALIGN.CENTER, wrap=True)
+             Inches(0.5), Inches(1.6), Inches(3.8), Inches(2.2),
+             Pt(28), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True,
+             align=PP_ALIGN.LEFT, wrap=True)
 
-        # Thin rule
-        rule_w = Inches(4.0)
-        rule_x = (_T.W - rule_w) / 2
-        _line(s, rule_x, Inches(3.65), rule_x + rule_w, Inches(3.65), T.RULE, Pt(1))
+        # Thin rule — 1.5" wide, left-aligned at x=0.5", y=4.0"
+        _line(s, Inches(0.5), Inches(4.0), Inches(2.0), Inches(4.0),
+              RGBColor(0xD0, 0xD0, 0xD0), Pt(1))
 
-        # Takeaway (caption)
+        # Takeaway sentence — 12pt italic gray, may wrap
         if slide.caption:
             _tb1(s, slide.caption,
-                 Inches(1.5), Inches(3.8), Inches(10.333), Inches(0.5),
-                 Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True,
-                 align=PP_ALIGN.CENTER)
+                 Inches(0.5), Inches(4.3), Inches(3.8), Inches(1.8),
+                 Pt(12), RGBColor(0x66, 0x66, 0x66), T.LAT_SANS, T.EA_SANS,
+                 italic=True, align=PP_ALIGN.LEFT, wrap=True)
 
-        # Absorbed bullets (from pure-text chapters in this group)
-        if slide.bullets:
-            MARKERS = ["❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾", "❿"]
-            bullet_top = Inches(4.4)
-            row_h = Inches(0.48)
-            for i, bul in enumerate(slide.bullets[:5]):
-                by = bullet_top + i * row_h
+        # ── VERTICAL SEPARATOR ──────────────────────────────────────────────────
+        _line(s, Inches(4.5), Inches(1.0), Inches(4.5), Inches(6.5),
+              RGBColor(0xD0, 0xD0, 0xD0), Pt(1))
+
+        # ── RIGHT BLOCK ─────────────────────────────────────────────────────────
+
+        # Eyebrow label
+        eyebrow = "本节要点 · KEY POINTS" if doc.lang == "zh" else "Key Points"
+        _tb1(s, eyebrow,
+             Inches(5.0), Inches(1.0), Inches(7.5), Inches(0.38),
+             Pt(11), RGBColor(0x88, 0x88, 0x88), T.LAT_SANS, T.EA_SANS,
+             align=PP_ALIGN.LEFT)
+
+        # Card container: rounded rectangle, white fill, 1pt border
+        card = s.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Inches(5.0), Inches(1.5), Inches(7.5), Inches(4.5)
+        )
+        card.adjustments[0] = 0.05   # small corner radius
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        card.line.color.rgb = RGBColor(0xE5, 0xE5, 0xE5)
+        card.line.width = Pt(1)
+        card.text_frame.text = ""    # ensure no auto text
+
+        # Bullets inside card
+        MARKERS = ["❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾", "❿"]
+        bullets = slide.bullets[:5] if slide.bullets else []
+        n_bullets = len(bullets)
+
+        if n_bullets > 0:
+            # Distribute bullets evenly within card (y=1.5" to 6.0")
+            card_top    = 1.5
+            card_bottom = 6.0
+            card_h      = card_bottom - card_top
+            padding     = 0.4    # padding from card edges
+            usable_h    = card_h - 2 * padding
+            row_h       = usable_h / max(n_bullets, 1)
+
+            for i, bul in enumerate(bullets):
+                by = Inches(card_top + padding + i * row_h + row_h * 0.15)
                 marker = MARKERS[i] if i < len(MARKERS) else "▸"
-                _tb1(s, marker, Inches(1.8), by, Inches(0.4), row_h,
-                     Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS)
-                _tb1(s, bul, Inches(2.3), by, Inches(9.0), row_h,
-                     Pt(13), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
+                # Marker circle
+                _tb1(s, marker,
+                     Inches(5.4), by, Inches(0.45), Inches(row_h * 0.7),
+                     Pt(14), RGBColor(0x88, 0x88, 0x88), T.LAT_SANS, T.EA_SANS,
+                     align=PP_ALIGN.LEFT)
+                # Bullet text
+                _tb1(s, bul,
+                     Inches(5.9), by, Inches(6.35), Inches(row_h * 0.7),
+                     Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS,
+                     align=PP_ALIGN.LEFT, wrap=True)
 
+        # Nav hint — bottom-right
+        nav_text = "» 继续 →" if doc.lang == "zh" else "» continue →"
+        _tb1(s, nav_text,
+             Inches(11.0), Inches(6.3), Inches(1.8), Inches(0.35),
+             Pt(9), RGBColor(0x88, 0x88, 0x88), T.LAT_SANS, T.EA_SANS,
+             italic=True, align=PP_ALIGN.RIGHT)
+
+        # Chapter label for footer (use parent section name)
         _footer(s, idx, total, chapter=slide.title)
         _notes(s, slide.notes)
 
