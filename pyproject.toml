@@ -18,6 +18,7 @@ dependencies = [
     "Pillow>=10",
     "jinja2>=3.1",
     "weasyprint>=62",
+    "python-pptx>=0.6.23",
 ]
 
 [project.optional-dependencies]
