@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## v0.6 — multi-format renderer + PPT v9 academic-defense design (2026-05-18)
+
+### Multi-format renderer (s09_render redesign)
+
+- `s09_render` rebuilt around a format-neutral document model (`model.py`) and a shared builder (`builder.py`) that assembles the model from stage YAML. Four independent renderer classes live in `stages/s09_render/renderers/`: `docx.py`, `pdf.py`, `html.py`, `pptx.py`.
+- HTML and PDF renderers use a Jinja2 template (`templates/preview.html.j2` + `templates/styles.css`). PDF is rendered via WeasyPrint from the same HTML; the two formats share one template pass.
+- Soft-failure semantics: if one renderer raises, the other formats complete. Failed formats are recorded in `done.yaml` as `formats.<fmt> = {error: ...}` and `done.yaml.partial = true`.
+- `--retry-failed` flag re-runs only the formats recorded as failed in the prior `done.yaml`. Used with `--only s09_render`.
+- Docker image bumped to Python 3.11; apt layer adds `libpango-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 libffi8` for WeasyPrint.
+- macOS local path: `conftest.py` and `cli.py` auto-augment `DYLD_FALLBACK_LIBRARY_PATH` so WeasyPrint finds the brew-installed Pango/Cairo without shell-level export.
+
+### New CLI flags
+
+- `--formats <fmt,...>` — select any subset of `docx,pdf,html,pptx`; default is `docx,pdf,html`.
+- `--pptx-bullets {llm,rule}` — `llm` (default) uses the cached LLM summarizer; `rule` extracts bullets deterministically from s08 YAML without LLM calls.
+- `--pptx-template <file.pptx>` — use a custom slide master for the PPTX renderer.
+- `--pptx-subtitle <text>` — subtitle line on the PPT title slide.
+- `--presenter <name>` — presenter name on the PPT title slide.
+- `--affiliation <lab>` — affiliation line on the PPT title slide.
+- `--only <stage>` — run only the named stage (e.g. `--only s09_render`).
+- `--retry-failed` — combined with `--only s09_render`, re-renders only formats marked failed.
+
+### PPT academic-defense design (v9 final)
+
+- Visual identity: cream background (#FFFDF5), charcoal text (#1C1C1C), serif display font for titles, sans-serif body.
+- Section divider slides: left-anchored label + right key-points card with ❶❷❸❹❺ numbered bullets.
+- Content slides: combined bullets + figure layout; ◇ markers for figure observation lines.
+- Closing slide: 5–7 analytical bullets + single highlighted take-away sentence drawn from `summarize_paper` LLM call.
+- Two new LLM calls per paper (both cached in `llm_cache/`): `summarize_outline` (groups 11 template chapters into 4–5 logical sections via `pptx_outline.md` prompt) and `summarize_paper` (5–7 closing bullets + takeaway via `pptx_paper_summary.md` prompt). Per-chapter `summarize` call is already cached from s06–s08.
+- `pptx_summarizer.py` manages cache read/write and both LLM calls. `slide_planner.py` maps the document model + outline grouping to a slide sequence.
+
+### Math normalization
+
+- `stages/s09_render/_math.py` — `normalize_math()` converts common LaTeX Greek letters (η, σ, α, …) and sub/sup notation (^{3}, _{2}) to Unicode. Serves as a safety-net for any LaTeX that slips through LLM prompts requesting Unicode directly.
+
+### Code cleanup
+
+- Dead code and redundant helpers removed: -176 lines net across s09_render and cli.py.
+- All 134 tests pass (up from 51 at v0.5 baseline).
+
 ## v0.5 — MinerU as default, 46-paper batch (2026-05-17)
 
 - `OCR_BACKEND` default changed from `paddleocr` to `mineru` (empirically wins on figure completeness and Wiley sidebar exclusion).

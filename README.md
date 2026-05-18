@@ -122,8 +122,12 @@ Examples:
 # Default: docx + pdf + html (no LLM calls beyond the existing s06–s08 stages)
 paper2md run --pdf paper.pdf --template tpl.docx
 
-# All four formats (PPT adds LLM calls for bullets/figure one-liners)
-paper2md run --pdf paper.pdf --template tpl.docx --formats docx,pdf,html,pptx
+# All four formats with presenter metadata for the PPT title slide
+paper2md run --pdf paper.pdf --template tpl.docx \
+  --formats docx,pdf,html,pptx \
+  --presenter "Dr. X" --affiliation "Lab Y" \
+  --pptx-subtitle "AFE relaxor ceramics" \
+  --pptx-template slides_custom.pptx
 
 # Only PPT, with rule-based bullet extraction (no extra LLM calls)
 paper2md run --pdf paper.pdf --template tpl.docx --formats pptx --pptx-bullets rule
@@ -143,10 +147,22 @@ paper2md run --pdf paper.pdf --template tpl.docx --only s09_render --retry-faile
 
 When `--formats` includes `pptx` and `--pptx-bullets=llm` (the default for PPT), each chapter's LLM summary is cached at `runs/<paper_id>/s09_render/llm_cache/<chapter>.json`. Re-runs with identical input reuse the cache (zero LLM calls). The cache directory also stores `.prompt.md` and `.response.json` for audit.
 
+### PPT layout
+
+The PPTX renderer produces an academic-defense style deck. Visual structure:
+
+- **Background**: cream (#FFFDF5) with charcoal (#1C1C1C) text throughout.
+- **Title slide**: serif display font for the paper title; presenter name, affiliation, and subtitle rendered below in a smaller sans weight.
+- **Section dividers**: full-width slide with a left-anchored section label and a right-side key-points card listing the section's ❶❷❸❹❺ bullets.
+- **Content slides**: combined bullets + figure layout; ◇ markers distinguish figure observation lines from analytical bullets.
+- **Closing slide**: rich summary with 5–7 takeaway bullets drawn from the LLM `summarize_paper` call, ending with a single highlighted take-away sentence.
+
+Two additional LLM calls are made per paper when PPT is enabled (both cached): `summarize_outline` clusters the 11 template chapters into 4–5 logical sections, and `summarize_paper` produces the 5–7 closing bullets + takeaway. The per-chapter `summarize` call (bullets + figure observations) is shared with the docx/html/pdf path and is therefore already cached from prior runs.
+
 ## Running tests
 
 ```bash
-uv run pytest -v               # ~98 tests, skips live API tests by default
+uv run pytest -v               # 134 tests, skips live API tests by default
 uv run pytest -v -m live       # runs the live LLM smoke tests (uses .env keys)
 ```
 
@@ -183,11 +199,19 @@ paper2md/
 │   ├── s06_context/      # paper context via text LLM
 │   ├── s07_figure_analyze/ # per-figure visual LLM (multi-panel support)
 │   ├── s08_section_compose/# per-section text LLM
-│   └── s09_render/       # Document model + 4 renderers (docx/pdf/html/pptx) + SlidePlanner + PptxSummarizer + mypaper bundle
+│   └── s09_render/       # Document model + renderers + slide planning + mypaper bundle
+│       ├── model.py      # shared document model (Section, Figure, Bullet, …)
+│       ├── builder.py    # assembles the model from stage YAML
+│       ├── _math.py      # normalize_math(): Greek + sub/sup converter (LaTeX safety-net)
+│       ├── pptx_summarizer.py  # LLM calls for outline grouping + paper-level summary
+│       ├── slide_planner.py    # maps model sections → slide sequence
+│       ├── templates/    # preview.html.j2 (Jinja2 HTML template) + styles.css
+│       └── renderers/    # one class per format: docx.py, pdf.py, html.py, pptx.py
 ├── llm/
 │   ├── client.py         # OpenAI-compatible client (vision + text roles)
 │   ├── models.yaml       # role → default base_url / model
-│   └── prompts/          # paper_context.md, figure_analyze.md, section_compose.md, pptx_summarize.md
+│   └── prompts/          # paper_context.md, figure_analyze.md, section_compose.md,
+│                         #   pptx_summarize.md, pptx_outline.md, pptx_paper_summary.md
 └── runs/<paper_id>/      # per-paper stage artifacts (YAML + MD + DOCX + PDF + HTML + PPTX + LLM audit)
 ```
 
