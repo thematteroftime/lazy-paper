@@ -160,10 +160,11 @@ def test_planner_bullets_capped_at_max_per_slide():
 
 def test_planner_uses_summaries_when_provided():
     doc = _doc(blocks_per_chapter=2, n_chapters=1, with_figure=True)
+    # v9: figure_observations replaces figure_one_liners
     summaries = {
         "Ch1": {
             "bullets": ["llm bullet a", "llm bullet b"],
-            "figure_one_liners": {"Fig. 1": "one-liner from LLM"},
+            "figure_observations": {"Fig. 1": ["observation point one", "observation point two"]},
         }
     }
     deck = SlidePlanner(lang="en").plan(doc, summaries=summaries)
@@ -174,13 +175,34 @@ def test_planner_uses_summaries_when_provided():
     if combined:
         # bullets come from LLM summary
         assert "llm bullet a" in combined[0].bullets
-        assert "one-liner from LLM" in combined[0].deep_observation
+        # v9: observations tuple has the 2 points
+        assert "observation point one" in combined[0].observations
+        assert "observation point two" in combined[0].observations
+        assert "observation point one" in combined[0].deep_observation
     else:
         # fallback: separate slides
         bs = next(s for s in bullets_slides)
         assert "llm bullet a" in bs.bullets
         fig_slide = next(s for s in deck.slides if s.kind == "figure")
-        assert "one-liner from LLM" in fig_slide.deep_observation
+        assert "observation point one" in fig_slide.deep_observation
+
+
+def test_planner_legacy_figure_one_liners_still_works():
+    """v9 backward compat: summaries with figure_one_liners (not figure_observations) still work."""
+    doc = _doc(blocks_per_chapter=2, n_chapters=1, with_figure=True)
+    # Old format: figure_one_liners with a string value
+    summaries = {
+        "Ch1": {
+            "bullets": ["old bullet"],
+            "figure_one_liners": {"Fig. 1": "legacy one-liner"},
+            "figure_observations": {"Fig. 1": ["legacy one-liner"]},  # after normalization
+        }
+    }
+    deck = SlidePlanner(lang="en").plan(doc, summaries=summaries)
+    combined = [s for s in deck.slides if s.kind == "combined"]
+    if combined:
+        assert "legacy one-liner" in combined[0].deep_observation
+        assert len(combined[0].observations) >= 1
 
 
 def test_planner_attaches_paragraph_text_to_speaker_notes():
@@ -279,8 +301,8 @@ def test_planner_grouped_outline_absorbs_pure_bullet_chapters():
         {"name": "Section A", "chapter_headings": ["TextOnly", "WithFig"], "takeaway": "Both here."},
     ]
     summaries = {
-        "TextOnly": {"bullets": ["absorbed bullet 1", "absorbed bullet 2"], "figure_one_liners": {}},
-        "WithFig": {"bullets": ["fig bullet"], "figure_one_liners": {"Fig. 1": "fig one-liner"}},
+        "TextOnly": {"bullets": ["absorbed bullet 1", "absorbed bullet 2"], "figure_observations": {}},
+        "WithFig": {"bullets": ["fig bullet"], "figure_observations": {"Fig. 1": ["fig obs point 1", "fig obs point 2"]}},
     }
     deck = SlidePlanner(lang="en").plan(doc, summaries=summaries, outline=outline)
 

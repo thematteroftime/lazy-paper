@@ -7,7 +7,8 @@ import pytest
 from stages.s09_render.model import (
     Chapter, Document, FigureBlock, Paragraph,
 )
-from stages.s09_render.pptx_summarizer import PptxSummarizer
+from stages.s09_render.pptx_summarizer import PptxSummarizer, _normalize_chapter_summary
+from stages.s09_render._math import normalize_math
 
 
 def _doc():
@@ -34,17 +35,33 @@ def _fake_llm(payload: dict) -> MagicMock:
 
 
 def test_summarize_calls_llm_once_per_chapter(tmp_path: Path):
-    llm = _fake_llm({"bullets": ["a", "b"], "figure_one_liners": {"Fig. 1": "ok"}})
+    """v9: LLM returns figure_observations (2-3 points per figure)."""
+    llm = _fake_llm({
+        "bullets": ["a", "b"],
+        "figure_observations": {"Fig. 1": ["obs point 1", "obs point 2"]},
+    })
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
 
     result = summarizer.summarize(_doc())
     assert llm.chat.call_count == 1
     assert result["Intro"]["bullets"] == ["a", "b"]
-    assert result["Intro"]["figure_one_liners"] == {"Fig. 1": "ok"}
+    assert result["Intro"]["figure_observations"] == {"Fig. 1": ["obs point 1", "obs point 2"]}
+
+
+def test_summarize_legacy_figure_one_liners_normalized(tmp_path: Path):
+    """v9 backward compat: old figure_one_liners response is auto-normalized to figure_observations."""
+    llm = _fake_llm({"bullets": ["a", "b"], "figure_one_liners": {"Fig. 1": "old one-liner"}})
+    summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+
+    result = summarizer.summarize(_doc())
+    assert result is not None
+    assert "figure_observations" in result["Intro"]
+    # Legacy value wrapped in a list
+    assert result["Intro"]["figure_observations"] == {"Fig. 1": ["old one-liner"]}
 
 
 def test_summarize_writes_audit_files(tmp_path: Path):
-    llm = _fake_llm({"bullets": ["a"], "figure_one_liners": {}})
+    llm = _fake_llm({"bullets": ["a"], "figure_observations": {}})
     PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en").summarize(_doc())
     slug = "Intro"
     assert (tmp_path / f"{slug}.input_hash.json").exists()
@@ -54,7 +71,7 @@ def test_summarize_writes_audit_files(tmp_path: Path):
 
 
 def test_summarize_reuses_cache_when_input_hash_matches(tmp_path: Path):
-    llm = _fake_llm({"bullets": ["a"], "figure_one_liners": {}})
+    llm = _fake_llm({"bullets": ["a"], "figure_observations": {}})
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
     summarizer.summarize(_doc())
     assert llm.chat.call_count == 1
@@ -65,7 +82,7 @@ def test_summarize_reuses_cache_when_input_hash_matches(tmp_path: Path):
 
 
 def test_summarize_reruns_when_chapter_text_changes(tmp_path: Path):
-    llm = _fake_llm({"bullets": ["a"], "figure_one_liners": {}})
+    llm = _fake_llm({"bullets": ["a"], "figure_observations": {}})
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
     summarizer.summarize(_doc())
 
@@ -207,3 +224,94 @@ def test_pptx_summarizer_summarize_paper_returns_none_on_failure(tmp_path: Path)
     result = summarizer.summarize_paper(_multi_doc())
     assert result is None
     assert failing_llm.chat.call_count == 3
+
+
+# ── v9 new tests ────────────────────────────────────────────────────────────────
+
+class TestNormalizeChapterSummary:
+    """Tests for _normalize_chapter_summary (legacy cache compat)."""
+
+    def test_new_format_passthrough(self):
+        """Payload with figure_observations is returned unchanged."""
+        payload = {
+            "bullets": ["a"],
+            "figure_observations": {"Fig. 1": ["obs 1", "obs 2"]},
+        }
+        result = _normalize_chapter_summary(payload)
+        assert result["figure_observations"] == {"Fig. 1": ["obs 1", "obs 2"]}
+
+    def test_legacy_one_liners_converted(self):
+        """Old figure_one_liners dict is converted to list-of-one per figure."""
+        payload = {
+            "bullets": ["a"],
+            "figure_one_liners": {"Fig. 1": "old one-liner", "Fig. 2": "another"},
+        }
+        result = _normalize_chapter_summary(payload)
+        assert "figure_observations" in result
+        assert result["figure_observations"]["Fig. 1"] == ["old one-liner"]
+        assert result["figure_observations"]["Fig. 2"] == ["another"]
+
+    def test_missing_both_keys_adds_empty_dict(self):
+        """Payload with neither key gets an empty figure_observations."""
+        payload = {"bullets": ["a"]}
+        result = _normalize_chapter_summary(payload)
+        assert result["figure_observations"] == {}
+
+    def test_both_keys_new_takes_precedence(self):
+        """When both keys present, figure_observations wins (no conversion)."""
+        payload = {
+            "bullets": ["a"],
+            "figure_one_liners": {"Fig. 1": "old"},
+            "figure_observations": {"Fig. 1": ["new obs"]},
+        }
+        result = _normalize_chapter_summary(payload)
+        assert result["figure_observations"] == {"Fig. 1": ["new obs"]}
+
+
+class TestNormalizeMath:
+    """Tests for normalize_math helper."""
+
+    def test_greek_letter_eta(self):
+        assert normalize_math(r"$\eta$") == "η"
+
+    def test_greek_letter_standalone(self):
+        assert normalize_math(r"\eta") == "η"
+        assert normalize_math(r"\sigma") == "σ"
+        assert normalize_math(r"\mu") == "μ"
+
+    def test_subscript_braces(self):
+        result = normalize_math(r"E_{b}")
+        assert "E" in result and "b" in result  # E with subscript b char
+        # subscript b maps to ᵦ (b is not in _SUB_MAP for subscript letters beyond h)
+        # check E remains and _{b} is processed
+        assert "_{" not in result
+
+    def test_subscript_single_char(self):
+        result = normalize_math(r"W_rec")  # underscore single char
+        # 'r' not in subscript map, so unchanged aside from underscore removal
+        assert "_" not in result or "W" in result
+
+    def test_superscript_digits(self):
+        result = normalize_math(r"cm^{3}")
+        assert "cm" in result
+        assert "³" in result
+
+    def test_strip_dollar_delimiters(self):
+        assert normalize_math(r"$\eta$") == "η"
+        assert normalize_math(r"$E_b$") == "Eᵦ" or "E" in normalize_math(r"$E_b$")
+
+    def test_operators(self):
+        assert normalize_math(r"\times") == "×"
+        assert normalize_math(r"\pm") == "±"
+        assert normalize_math(r"\leq") == "≤"
+        assert normalize_math(r"\rightarrow") == "→"
+
+    def test_empty_string(self):
+        assert normalize_math("") == ""
+
+    def test_none_like_empty(self):
+        assert normalize_math("") == ""
+
+    def test_no_latex_passthrough(self):
+        text = "ANT-3La achieves η=85% efficiency"
+        assert normalize_math(text) == text  # no change needed

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
+from stages.s09_render._math import normalize_math
 from stages.s09_render.model import (
     Chapter, Document, FigureBlock, Paragraph,
 )
@@ -29,7 +30,8 @@ class Slide:
     bullets: tuple[str, ...] = field(default_factory=tuple)
     image_paths: tuple[Path, ...] = field(default_factory=tuple)
     caption: str = ""
-    deep_observation: str = ""
+    deep_observation: str = ""            # joined string (backward compat + speaker notes)
+    observations: tuple[str, ...] = field(default_factory=tuple)  # v9: 2-3 analytical points
     notes: str = ""                        # speaker notes
 
 
@@ -127,8 +129,8 @@ class SlidePlanner:
 
     def _closing_slide_rich(self, doc: Document, paper_brief: dict) -> Slide:
         """Rich closing slide using paper_brief (v7)."""
-        bullets = tuple(paper_brief.get("bullets", [])[:7])
-        takeaway = paper_brief.get("takeaway", "")
+        bullets = tuple(normalize_math(b) for b in paper_brief.get("bullets", [])[:7])
+        takeaway = normalize_math(paper_brief.get("takeaway", ""))
         return Slide(
             kind="closing_rich",
             title=self._localize("Conclusion", "结论"),
@@ -177,30 +179,42 @@ class SlidePlanner:
                 start = i * per_fig
                 end = (i + 1) * per_fig if i < figs_n - 1 else len(bullets)
                 chunk = bullets[start:end][:self.MAX_BULLETS_PER_SLIDE]
-                obs = (summary or {}).get("figure_one_liners", {}).get(fb.fig_id) or fb.deep_observation
+                # v9: get 2-3 observation points from figure_observations
+                obs_list = (summary or {}).get("figure_observations", {}).get(fb.fig_id)
+                if not obs_list:
+                    # Fallback: single-element list from deep_observation
+                    obs_list = [fb.deep_observation[:200]] if fb.deep_observation else []
+                observations = tuple(normalize_math(o) for o in obs_list)
+                deep_obs = " · ".join(observations)
                 notes_full = "\n\n".join(
                     p.text for p in paragraphs
                 ) + (f"\n\nFull deep observation:\n{fb.deep_observation}" if fb.deep_observation else "")
                 slides.append(Slide(
                     kind="combined",
                     title=chapter.heading,
-                    bullets=tuple(chunk),
+                    bullets=tuple(normalize_math(b) for b in chunk),
                     image_paths=fb.image_paths,
-                    caption=fb.caption,
-                    deep_observation=obs,
+                    caption=normalize_math(fb.caption),
+                    deep_observation=deep_obs,
+                    observations=observations,
                     notes=notes_full,
                 ))
         elif figures:
             # Only figures (no bullets) — fall back to figure-only slides
-            one_liners = (summary or {}).get("figure_one_liners", {})
+            fig_obs_map = (summary or {}).get("figure_observations", {})
             for fb in figures:
-                obs = one_liners.get(fb.fig_id) or fb.deep_observation
+                obs_list = fig_obs_map.get(fb.fig_id)
+                if not obs_list:
+                    obs_list = [fb.deep_observation[:200]] if fb.deep_observation else []
+                observations = tuple(normalize_math(o) for o in obs_list)
+                deep_obs = " · ".join(observations)
                 slides.append(Slide(
                     kind="figure",
-                    title=f"{fb.label}: {fb.caption}",
+                    title=f"{fb.label}: {normalize_math(fb.caption)}",
                     image_paths=fb.image_paths,
-                    caption=fb.caption,
-                    deep_observation=obs,
+                    caption=normalize_math(fb.caption),
+                    deep_observation=deep_obs,
+                    observations=observations,
                     notes=f"Full deep observation:\n{fb.deep_observation}",
                 ))
         elif bullets:
@@ -210,7 +224,7 @@ class SlidePlanner:
                 slides.append(Slide(
                     kind="bullets",
                     title=chapter.heading,
-                    bullets=tuple(chunk),
+                    bullets=tuple(normalize_math(b) for b in chunk),
                     notes=notes_full,
                 ))
         return slides

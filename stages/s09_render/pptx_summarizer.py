@@ -1,4 +1,4 @@
-"""Generate PPT bullets and figure one-liners via the text LLM.
+"""Generate PPT bullets and figure observations via the text LLM.
 
 Caches per-chapter results: if the chapter's input hash matches the cached one,
 the LLM is not called. Always writes prompt/response files alongside the cache
@@ -7,6 +7,11 @@ for auditability.
 v7 additions:
 - summarize_outline(): group chapters into 4-5 high-level sections
 - summarize_paper(): produce rich 5-7-bullet closing summary + take-away
+
+v9 additions:
+- figure_observations replaces figure_one_liners (2-3 points per figure)
+- Legacy cache compatibility: old figure_one_liners auto-converted
+- _PROMPT_VERSION constants invalidate old caches on prompt changes
 """
 from __future__ import annotations
 
@@ -24,6 +29,28 @@ _MAX_RETRIES = 3
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "pptx_summarize.md"
 _OUTLINE_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "pptx_outline.md"
 _PAPER_SUMMARY_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "pptx_paper_summary.md"
+
+# Bump these constants to invalidate old caches when prompts change.
+_CHAPTER_PROMPT_VERSION = "v9-figure-observations"
+_OUTLINE_PROMPT_VERSION = "v9-unicode-math"
+_PAPER_PROMPT_VERSION = "v9-unicode-math"
+
+
+def _normalize_chapter_summary(payload: dict) -> dict:
+    """Ensure payload uses figure_observations (list-per-fig) format.
+
+    Legacy caches produced figure_one_liners: {fig_id: str}.
+    Convert those to figure_observations: {fig_id: [str]} for backward compat.
+    """
+    if "figure_observations" not in payload and "figure_one_liners" in payload:
+        payload["figure_observations"] = {
+            fid: [obs]
+            for fid, obs in payload["figure_one_liners"].items()
+        }
+    # If neither key, add empty dict
+    if "figure_observations" not in payload:
+        payload["figure_observations"] = {}
+    return payload
 
 
 class PptxSummarizer:
@@ -128,9 +155,10 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=prompt,
                     temperature=0.2,
-                    max_tokens=800,
+                    max_tokens=1000,
                 )
                 payload = json.loads(response.content)
+                payload = _normalize_chapter_summary(payload)
                 self._write_cache(slug, input_hash, payload, prompt, response)
                 return payload
             except Exception as exc:
@@ -143,7 +171,10 @@ class PptxSummarizer:
 
     def _input_hash(self, chapter: Chapter) -> str:
         # Hash the chapter content + lang so a language switch invalidates.
+        # _CHAPTER_PROMPT_VERSION included so prompt changes invalidate old caches.
         h = hashlib.sha256()
+        h.update(_CHAPTER_PROMPT_VERSION.encode("utf-8"))
+        h.update(b"\x00")
         h.update(self.lang.encode("utf-8"))
         h.update(b"\x00")
         h.update(chapter.heading.encode("utf-8"))
@@ -164,8 +195,10 @@ class PptxSummarizer:
         return h.hexdigest()
 
     def _outline_input_hash(self, doc: Document) -> str:
-        """sha256 of (lang + all chapter headings + first 200 chars of each chapter's first paragraph)."""
+        """sha256 of (version + lang + all chapter headings + first 200 chars of each chapter's first paragraph)."""
         h = hashlib.sha256()
+        h.update(_OUTLINE_PROMPT_VERSION.encode("utf-8"))
+        h.update(b"\x00")
         h.update(self.lang.encode("utf-8"))
         h.update(b"\x00")
         for ch in doc.chapters:
@@ -181,8 +214,10 @@ class PptxSummarizer:
         return h.hexdigest()
 
     def _paper_input_hash(self, doc: Document) -> str:
-        """sha256 of (lang + all chapter headings + last chapter's full text + first 500 chars of each chapter)."""
+        """sha256 of (version + lang + all chapter headings + last chapter's full text + first 500 chars of each chapter)."""
         h = hashlib.sha256()
+        h.update(_PAPER_PROMPT_VERSION.encode("utf-8"))
+        h.update(b"\x00")
         h.update(self.lang.encode("utf-8"))
         h.update(b"\x00")
         for ch in doc.chapters:
@@ -213,7 +248,17 @@ class PptxSummarizer:
             return None
         if stored.get("hash") != input_hash:
             return None
-        return json.loads(out_file.read_text(encoding="utf-8"))
+        payload = json.loads(out_file.read_text(encoding="utf-8"))
+        # Normalize legacy figure_one_liners → figure_observations for chapter payloads.
+        # Chapter payloads have "bullets" but NOT "takeaway" (paper payload) or "groups" (outline).
+        is_chapter_payload = (
+            "bullets" in payload
+            and "takeaway" not in payload
+            and "groups" not in payload
+        )
+        if is_chapter_payload:
+            payload = _normalize_chapter_summary(payload)
+        return payload
 
     def _write_cache(self, slug: str, input_hash: str, output: dict,
                      prompt: str, response) -> None:

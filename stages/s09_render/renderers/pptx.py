@@ -556,16 +556,28 @@ class PptxRenderer(Renderer):
              Pt(14), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True, wrap=True)
         _line(s, tx, Inches(body_top + 0.85), tx + tw, Inches(body_top + 0.85), T.RULE, Pt(0.5))
 
-        # "深度观察" label
-        _tb1(s, "深度观察" if doc.lang == "zh" else "Deep Observation",
-             tx, Inches(body_top + 1.0), tw, Inches(0.35),
-             Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
+        # "深度观察" label (eyebrow)
+        obs_eyebrow = "深度观察 · KEY OBSERVATIONS" if doc.lang == "zh" else "Key Observations"
+        _tb1(s, obs_eyebrow,
+             tx, Inches(body_top + 1.0), tw, Inches(0.32),
+             Pt(10), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False)
+        # Micro-rule under eyebrow
+        _line(s, tx, Inches(body_top + 1.35), tx + tw, Inches(body_top + 1.35),
+              T.RULE, Pt(0.3))
 
-        # Observation text
-        if slide.deep_observation:
-            _tb1(s, slide.deep_observation,
-                 tx, Inches(body_top + 1.4), tw, Inches(body_h - 1.5),
-                 Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
+        # Observation bullets (v9: 2-3 points)
+        observations = slide.observations or ((slide.deep_observation,) if slide.deep_observation else ())
+        obs_row_h = Inches(0.48)
+        obs_area_top = Inches(body_top + 1.45)
+        obs_area_h = Inches(body_h - 1.55)
+        for j, obs_pt in enumerate(observations[:3]):
+            oy = obs_area_top + j * obs_row_h
+            if oy + obs_row_h > obs_area_top + obs_area_h:
+                break
+            _tb1(s, "◇", tx, oy, Inches(0.28), obs_row_h,
+                 Pt(10), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
+            _tb1(s, obs_pt, tx + Inches(0.28), oy, tw - Inches(0.28), obs_row_h,
+                 Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
         _footer(s, idx, total, chapter=self._cur_chapter)
         _notes(s, slide.notes)
@@ -669,19 +681,31 @@ class PptxRenderer(Renderer):
             _tb1(s, bul, tx + Inches(0.38), by, tw - Inches(0.38), bullet_row_h,
                  Pt(14), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
 
-        # "深 度 观 察" section below bullets
+        # "深 度 观 察" section below bullets (v9: bulleted observation list)
         n_bullets = len(slide.bullets)
         obs_top = bullets_top + n_bullets * bullet_row_h + Inches(0.15)
+        slide_bottom = Inches(body_top + body_h)
 
-        if obs_top < Inches(body_top + body_h - 1.0):
-            obs_label = "深  度  观  察" if doc.lang == "zh" else "Deep Observation"
-            _tb1(s, obs_label, tx, obs_top, tw, Inches(0.32),
-                 Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
-            obs_text_top = obs_top + Inches(0.35)
-            remaining_h = Inches(body_top + body_h) - obs_text_top - Inches(0.1)
-            if slide.deep_observation and remaining_h > Inches(0.3):
-                _tb1(s, slide.deep_observation,
-                     tx, obs_text_top, tw, remaining_h,
+        if obs_top < slide_bottom - Inches(0.8):
+            # Eyebrow label
+            obs_eyebrow = "深度观察 · KEY OBSERVATIONS" if doc.lang == "zh" else "Key Observations"
+            _tb1(s, obs_eyebrow, tx, obs_top, tw, Inches(0.30),
+                 Pt(10), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False)
+            # Micro-rule
+            _line(s, tx, obs_top + Inches(0.32), tx + tw, obs_top + Inches(0.32),
+                  T.RULE, Pt(0.3))
+
+            # Observation bullets
+            observations = slide.observations or ((slide.deep_observation,) if slide.deep_observation else ())
+            obs_item_top = obs_top + Inches(0.38)
+            obs_row_h = Inches(0.46)
+            for j, obs_pt in enumerate(observations[:3]):
+                oy = obs_item_top + j * obs_row_h
+                if oy + obs_row_h > slide_bottom - Inches(0.05):
+                    break
+                _tb1(s, "◇", tx, oy, Inches(0.28), obs_row_h,
+                     Pt(10), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
+                _tb1(s, obs_pt, tx + Inches(0.28), oy, tw - Inches(0.28), obs_row_h,
                      Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
         _footer(s, idx, total, chapter=self._cur_chapter)
