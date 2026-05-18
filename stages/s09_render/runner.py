@@ -17,6 +17,7 @@ from stages.s09_render.renderers import RENDERERS
 import stages.s09_render.renderers.docx  # noqa: F401
 import stages.s09_render.renderers.html  # noqa: F401
 import stages.s09_render.renderers.pdf   # noqa: F401
+import stages.s09_render.renderers.pptx  # noqa: F401
 
 
 BUNDLE_README = """\

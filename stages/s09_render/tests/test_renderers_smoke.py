@@ -9,6 +9,7 @@ from stages.s09_render.renderers import RENDERERS
 import stages.s09_render.renderers.docx  # noqa: F401 — triggers RENDERERS["docx"] registration
 import stages.s09_render.renderers.html  # noqa: F401 — triggers RENDERERS["html"] registration
 import stages.s09_render.renderers.pdf   # noqa: F401 — triggers RENDERERS["pdf"] registration
+import stages.s09_render.renderers.pptx  # noqa: F401 — triggers RENDERERS["pptx"] registration
 
 
 @pytest.fixture
@@ -68,3 +69,20 @@ def test_pdf_renderer_produces_valid_pdf_file(tmp_path: Path, one_image: Path):
     assert out.exists()
     assert out.read_bytes()[:5] == b"%PDF-"
     assert out.stat().st_size > 10_000  # cover page + 1 image
+
+
+def test_pptx_renderer_produces_valid_deck(tmp_path: Path, one_image: Path):
+    from pptx import Presentation
+    doc = _make_doc(one_image)
+    out = tmp_path / "preview.pptx"
+    RENDERERS["pptx"]().render(doc, out)
+    assert out.exists() and out.stat().st_size > 10_000
+
+    prs = Presentation(str(out))
+    n = len(prs.slides)
+    # Minimum: title + outline + at least one content + closing = 4
+    assert n >= 4
+    # First slide is the title
+    title_shape = prs.slides[0].shapes.title
+    assert title_shape is not None
+    assert "Smoke Test Paper" in title_shape.text
