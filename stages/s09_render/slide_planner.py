@@ -231,21 +231,33 @@ class SlidePlanner:
 
     def _extract_group_preview_bullets(self, group: dict, doc: Document,
                                        summaries: dict | None) -> list[str]:
-        """For pure-bullet chapters in the group (no figures), pull their bullets
-        up to the section divider (max 5 total)."""
-        bullets: list[str] = []
-        group_headings = group.get("chapter_headings") or []
-        if summaries:
-            for ch in doc.chapters:
-                if ch.heading not in group_headings:
-                    continue
-                has_figure = any(isinstance(b, FigureBlock) for b in ch.blocks)
-                if has_figure:
-                    continue  # this chapter will get its own combined slide
-                s = summaries.get(ch.heading) or {}
-                for bullet in s.get("bullets", []):
-                    bullets.append(bullet)
-        return bullets[:5]
+        """Pull preview bullets for the section divider.
+
+        Priority: bullets from pure-bullet (no-figure) chapters in the group;
+        if none, fall back to bullets from figure-bearing chapters in the group
+        so the divider is never empty."""
+        if not summaries:
+            return []
+
+        headings = set(group.get("chapter_headings") or [])
+        pure_bullets: list[str] = []
+        figure_bullets: list[str] = []
+
+        for ch in doc.chapters:
+            if ch.heading not in headings:
+                continue
+            s = summaries.get(ch.heading) or {}
+            bs = list(s.get("bullets", []))
+            if not bs:
+                continue
+            has_figure = any(isinstance(b, FigureBlock) for b in ch.blocks)
+            if has_figure:
+                figure_bullets.extend(bs)
+            else:
+                pure_bullets.extend(bs)
+
+        bullets = pure_bullets[:5] if pure_bullets else figure_bullets[:5]
+        return bullets
 
     def _get_bullets(self, chapter: Chapter, paragraphs: list[Paragraph],
                      summary: dict | None) -> list[str]:

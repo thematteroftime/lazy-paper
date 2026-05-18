@@ -79,7 +79,7 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
     doc = DocumentBuilder(lang=lang, paper_title=ctx.title(paper_title)).build(chapters_md, fig_notes)
 
     requested = list(formats) if formats is not None else list(DEFAULT_FORMATS)
-    summaries, outline, paper_brief = _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir)
+    summaries, outline, paper_brief = _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir, context_dir=context_dir)
 
     results: dict[str, object] = {}
     partial = False
@@ -131,13 +131,15 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
     }
 
 
-def _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir):
+def _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir,
+                               context_dir=None):
     if "pptx" not in requested or pptx_bullets != "llm":
         return None, None, None
     from llm.client import LLM
     from stages.s09_render.pptx_summarizer import PptxSummarizer
     llm = LLM("text")
-    summarizer = PptxSummarizer(llm=llm, cache_dir=out_dir / "llm_cache", lang=doc.lang)
+    summarizer = PptxSummarizer(llm=llm, cache_dir=out_dir / "llm_cache",
+                                lang=doc.lang, context_dir=context_dir)
     summaries = summarizer.summarize(doc)
     outline = summarizer.summarize_outline(doc)
     paper_brief = summarizer.summarize_paper(doc)

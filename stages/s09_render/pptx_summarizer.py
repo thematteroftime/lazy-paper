@@ -19,6 +19,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from stages._common import load_yaml
 from stages._common.paths import slugify
 from stages.s09_render.model import (
     Chapter, Document, FigureBlock, Paragraph,
@@ -31,9 +32,32 @@ _OUTLINE_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" /
 _PAPER_SUMMARY_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "pptx_paper_summary.md"
 
 # Bump these constants to invalidate old caches when prompts change.
-_CHAPTER_PROMPT_VERSION = "v9-figure-observations"
-_OUTLINE_PROMPT_VERSION = "v9-unicode-math"
-_PAPER_PROMPT_VERSION = "v9-unicode-math"
+_CHAPTER_PROMPT_VERSION = "v10-deeper-obs"
+_OUTLINE_PROMPT_VERSION = "v10-grounded-grouping"
+_PAPER_PROMPT_VERSION = "v10-quantitative-summary"
+
+
+def _strip_md_heading(heading: str) -> str:
+    """Strip leading markdown heading markers (##, #, etc.) from a heading string."""
+    stripped = heading.lstrip("# ").strip()
+    return stripped if stripped else heading
+
+
+def _normalize_outline_groups(groups: list[dict] | None) -> list[dict] | None:
+    """Normalize chapter_headings in outline groups by stripping ## prefixes.
+
+    Some LLMs echo back the markdown heading format (## Heading) used in the
+    input chapters_block. This strips those prefixes so the headings match the
+    actual ch.heading values in the Document model.
+    """
+    if not groups:
+        return groups
+    normalized = []
+    for g in groups:
+        headings = g.get("chapter_headings") or []
+        normalized_headings = [_strip_md_heading(h) for h in headings]
+        normalized.append({**g, "chapter_headings": normalized_headings})
+    return normalized
 
 
 def _normalize_chapter_summary(payload: dict) -> dict:
@@ -56,10 +80,12 @@ def _normalize_chapter_summary(payload: dict) -> dict:
 class PptxSummarizer:
     """LLM-backed summarizer with double-track cache (audit + reuse)."""
 
-    def __init__(self, llm, cache_dir: Path, lang: str):
+    def __init__(self, llm, cache_dir: Path, lang: str,
+                 context_dir: Path | None = None):
         self.llm = llm
         self.cache_dir = Path(cache_dir)
         self.lang = lang
+        self.context_dir = Path(context_dir) if context_dir is not None else None
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._template = _PROMPT_PATH.read_text(encoding="utf-8")
         self._outline_template = _OUTLINE_PROMPT_PATH.read_text(encoding="utf-8")
@@ -85,7 +111,7 @@ class PptxSummarizer:
         input_hash = self._outline_input_hash(doc)
         cached = self._try_cache("_outline", input_hash)
         if cached is not None:
-            return cached.get("groups")
+            return _normalize_outline_groups(cached.get("groups"))
 
         prompt = self._build_outline_prompt(doc)
         last_error: Exception | None = None
@@ -101,7 +127,7 @@ class PptxSummarizer:
                 if "groups" not in payload:
                     raise ValueError("Missing 'groups' key in LLM response")
                 self._write_cache("_outline", input_hash, payload, prompt, response)
-                return payload.get("groups")
+                return _normalize_outline_groups(payload.get("groups"))
             except Exception as exc:
                 last_error = exc
                 continue
@@ -200,6 +226,14 @@ class PptxSummarizer:
             preview = first_para.text[:200] if first_para else ""
             chunks += [ch.heading.encode("utf-8"), b"\x00",
                        preview.encode("utf-8"), b"\x00"]
+        # Include context terms so cache invalidates when context.yaml changes
+        ctx = self._load_context()
+        system = ctx.get("system", "") or ""
+        key_terms = "; ".join(ctx.get("key_terms", []) or [])
+        keywords = "; ".join(ctx.get("keywords", []) or [])
+        chunks += [system.encode("utf-8"), b"\x00",
+                   key_terms.encode("utf-8"), b"\x00",
+                   keywords.encode("utf-8"), b"\x00"]
         return self._make_hash(_OUTLINE_PROMPT_VERSION, self.lang, *chunks)
 
     def _paper_input_hash(self, doc: Document) -> str:
@@ -288,11 +322,30 @@ class PptxSummarizer:
             preview = (first_para.text[:200] if first_para else "(no text)")
             lines.append(f"## {ch.heading}\n{preview}")
         chapters_block = "\n\n".join(lines)
+        ctx = self._load_context()
+        system = ctx.get("system", "") or ""
+        key_terms = "; ".join(ctx.get("key_terms", []) or [])
+        keywords = "; ".join(ctx.get("keywords", []) or [])
         return (
             self._outline_template
             .replace("{title}", doc.paper_title)
             .replace("{chapters_block}", chapters_block)
+            .replace("{system}", system)
+            .replace("{key_terms}", key_terms)
+            .replace("{keywords}", keywords)
         )
+
+    def _load_context(self) -> dict:
+        """Load context.yaml if context_dir is set, else return empty dict."""
+        if self.context_dir is None:
+            return {}
+        ctx_path = self.context_dir / "context.yaml"
+        if not ctx_path.exists():
+            return {}
+        try:
+            return load_yaml(ctx_path) or {}
+        except Exception:
+            return {}
 
     def _build_paper_summary_prompt(self, doc: Document) -> str:
         lines: list[str] = []
