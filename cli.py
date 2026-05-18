@@ -1,4 +1,4 @@
-"""paper2md CLI: orchestrates the 9 stages over (pdf, template) -> (bundle + preview)."""
+"""lazy-paper CLI: orchestrates the 9 stages over (pdf, template) -> (bundle + preview)."""
 from __future__ import annotations
 
 import argparse
@@ -180,7 +180,7 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="paper2md")
+    ap = argparse.ArgumentParser(prog="lazy-paper")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("run", help="Run the full pipeline on one (pdf, template) pair")

@@ -1,13 +1,13 @@
-# Convenience wrapper for running paper2md without typing long volume flags.
+# Convenience wrapper for running lazy-paper without typing long volume flags.
 #
-#   docker compose run --rm paper2md run \
+#   docker compose run --rm lazy-paper run \
 #     --pdf "参考文献/your.pdf" --template "your.docx" \
 #     --paper-id myid --lang en
 
 services:
-  paper2md:
+  lazy-paper:
     build: .
-    image: paper2md:latest
+    image: lazy-paper:latest
     volumes:
       # Working artifacts persist across runs
       - ./runs:/app/runs

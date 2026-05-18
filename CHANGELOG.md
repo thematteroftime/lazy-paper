@@ -1,4 +1,4 @@
-# CHANGELOG
+# lazy-paper CHANGELOG
 
 ## v0.6 — multi-format renderer + PPT v9 academic-defense design (2026-05-18)
 

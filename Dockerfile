@@ -1,6 +1,6 @@
-# paper2md container — system-isolated runtime for cross-platform use.
-# Build:  docker build -t paper2md .
-# Run:    docker run --rm -v $(pwd)/runs:/app/runs -v $(pwd)/.env:/app/.env:ro paper2md run --pdf ... --template ...
+# lazy-paper container — system-isolated runtime for cross-platform use.
+# Build:  docker build -t lazy-paper .
+# Run:    docker run --rm -v $(pwd)/runs:/app/runs -v $(pwd)/.env:/app/.env:ro lazy-paper run --pdf ... --template ...
 #
 # Notes:
 # - Uses the official uv image to keep image size tight (~280 MB after build).

@@ -208,7 +208,7 @@ def _content_list_to_docs(content_list: list[dict], staged_imgs: Path,
 
 
 def run(*, pdf: Path, out_dir: Path, token: str) -> dict:
-    """Submit `pdf` to MinerU, download the result, and produce paper2md-compatible
+    """Submit `pdf` to MinerU, download the result, and produce lazy-paper-compatible
     artifacts under `out_dir`."""
     out_dir.mkdir(parents=True, exist_ok=True)
     data_id = pdf.stem[:50] or "paper"

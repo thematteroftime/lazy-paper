@@ -1,4 +1,4 @@
-# paper2md — Production Hand-off
+# lazy-paper — Production Hand-off
 
 > Status: **shipped**. 134/134 tests pass. 18 papers (current batch) + 46 historical papers processed end-to-end. 4 output formats: DOCX, PDF, HTML, PPTX.
 
@@ -6,7 +6,7 @@
 
 ## 1. What this project does
 
-paper2md is a 9-stage pipeline that accepts a scientific PDF and a Markdown outline template (`.docx`) and produces `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}` (any combination of the four formats, controlled by `--formats`) plus `runs/<paper_id>/s09_render/mypaper_bundle/`, a set of chapter Markdown files + extracted figures + README that drop directly into the `mypaper/` thesis-typesetting project. OCR is handled by MinerU (default) or PaddleOCR-VL. All LLM inference runs through user-supplied OpenAI-compatible endpoints (Qwen-VL for vision, DeepSeek for text by default).
+lazy-paper is a 9-stage pipeline that accepts a scientific PDF and a Markdown outline template (`.docx`) and produces `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}` (any combination of the four formats, controlled by `--formats`) plus `runs/<paper_id>/s09_render/mypaper_bundle/`, a set of chapter Markdown files + extracted figures + README that drop directly into the `mypaper/` thesis-typesetting project. OCR is handled by MinerU (default) or PaddleOCR-VL. All LLM inference runs through user-supplied OpenAI-compatible endpoints (Qwen-VL for vision, DeepSeek for text by default).
 
 ---
 
@@ -54,7 +54,7 @@ uv run python -m cli run `
 
 ```bash
 # 1. Build image (~250 MB, no model weights bundled)
-docker build -t paper2md .
+docker build -t lazy-paper .
 
 # 2. Configure credentials
 cp .env.example .env   # fill in tokens
@@ -65,7 +65,7 @@ docker run --rm \
   -v "$(pwd)/runs:/app/runs" \
   -v "$(pwd)/参考文献:/app/参考文献" \
   -v "$(pwd)/.env:/app/.env:ro" \
-  paper2md run \
+  lazy-paper run \
     --pdf "/app/参考文献/your-paper.pdf" \
     --template "/app/Table of Contents-Relaxor AFE-ZGY-HW.docx" \
     --paper-id mypaper --lang zh
@@ -170,7 +170,7 @@ These are development artifacts that are not part of the production pipeline:
 | `runs/<paper_id>/s01_ocr/` | Large raw OCR output. Re-generatable with `--force`. Keep if you want to skip re-OCR. |
 | `runs/<paper_id>/*/\*.prompt.md` | LLM audit trail. Safe to delete; re-generated on re-run. |
 | `runs/<paper_id>/*/\*.response.json` | LLM audit trail. Same as above. |
-| `paper2md.egg-info/` | pip editable-install metadata. Recreated by `uv pip install -e .` |
+| `lazy_paper.egg-info/` | pip editable-install metadata. Recreated by `uv pip install -e .` |
 | `docs/` | Internal design notes from development. Not referenced by the pipeline. |
 
 Do NOT delete `runs/<paper_id>/s09_render/` — that's the final output.

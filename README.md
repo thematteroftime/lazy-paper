@@ -1,4 +1,4 @@
-# paper2md
+# lazy-paper
 
 > **Production deployment & hand-off:** see [HANDOFF.md](HANDOFF.md).
 
@@ -22,7 +22,7 @@ template.docx ─ s05_template ────────────────�
 
 ### 1. Get the code
 ```bash
-git clone <repo> && cd paper2md
+git clone <repo> && cd lazy-paper
 ```
 
 ### 2. Configure API keys
@@ -43,14 +43,14 @@ You need three credentials:
 Docker is the recommended path — it ships with all system libraries (Pango/Cairo/gdk-pixbuf for PDF rendering) and an aligned Python 3.11, so nothing leaks onto your host.
 
 ```bash
-docker build -t paper2md .
+docker build -t lazy-paper .
 
 # One-off run:
 docker run --rm \
   -v "$(pwd)/runs:/app/runs" \
   -v "$(pwd)/参考文献:/app/参考文献" \
   -v "$(pwd)/.env:/app/.env:ro" \
-  paper2md run \
+  lazy-paper run \
     --pdf "/app/参考文献/your-paper.pdf" \
     --template "/app/Table of Contents-Relaxor AFE-ZGY-HW.docx" \
     --paper-id mypaper --lang zh
@@ -58,7 +58,7 @@ docker run --rm \
 
 Or use docker compose (volume mounts pre-wired in `docker-compose.yml`):
 ```bash
-docker compose run --rm paper2md run \
+docker compose run --rm lazy-paper run \
   --pdf "参考文献/your-paper.pdf" \
   --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \
   --paper-id mypaper --lang zh
@@ -120,17 +120,17 @@ Examples:
 
 ```bash
 # Default: docx + pdf + html (no LLM calls beyond the existing s06–s08 stages)
-paper2md run --pdf paper.pdf --template tpl.docx
+lazy-paper run --pdf paper.pdf --template tpl.docx
 
 # All four formats with presenter metadata for the PPT title slide
-paper2md run --pdf paper.pdf --template tpl.docx \
+lazy-paper run --pdf paper.pdf --template tpl.docx \
   --formats docx,pdf,html,pptx \
   --presenter "Dr. X" --affiliation "Lab Y" \
   --pptx-subtitle "AFE relaxor ceramics" \
   --pptx-template slides_custom.pptx
 
 # Only PPT, with rule-based bullet extraction (no extra LLM calls)
-paper2md run --pdf paper.pdf --template tpl.docx --formats pptx --pptx-bullets rule
+lazy-paper run --pdf paper.pdf --template tpl.docx --formats pptx --pptx-bullets rule
 ```
 
 ### Soft failure & retry
@@ -138,7 +138,7 @@ paper2md run --pdf paper.pdf --template tpl.docx --formats pptx --pptx-bullets r
 If one format fails (e.g. WeasyPrint trips on a malformed image), the other formats still complete. The failed format is recorded in `done.yaml.formats[<fmt>] = {error: ...}` and `done.yaml.partial = true`. Re-run only the failed formats with:
 
 ```bash
-paper2md run --pdf paper.pdf --template tpl.docx --only s09_render --retry-failed
+lazy-paper run --pdf paper.pdf --template tpl.docx --only s09_render --retry-failed
 ```
 
 (The `--only` and `--retry-failed` flags re-execute just the render stage and just the formats marked as failed in the prior `done.yaml`.)
@@ -168,11 +168,11 @@ uv run pytest -v -m live       # runs the live LLM smoke tests (uses .env keys)
 
 ## Backends & quality
 
-paper2md ships with two OCR backends. Switch via the `OCR_BACKEND` env var (or `--ocr-backend` if you prefer a CLI flag; not currently exposed but `OCR_BACKEND` works the same).
+lazy-paper ships with two OCR backends. Switch via the `OCR_BACKEND` env var (or `--ocr-backend` if you prefer a CLI flag; not currently exposed but `OCR_BACKEND` works the same).
 
 ### PaddleOCR-VL (default)
 
-Set `OCR_BACKEND=paddleocr` (default) + `PADDLEOCR_TOKEN`. Free cloud API; fast; handles formulas and tables well. **Limitation**: panel-by-panel figure crops, sometimes missing top portions of figures or capturing journal-template sidebars. paper2md post-processes via `stages/s04_figures::_merge_figure_subpanels` to merge sub-panels back into one figure when multiple bboxes share a caption.
+Set `OCR_BACKEND=paddleocr` (default) + `PADDLEOCR_TOKEN`. Free cloud API; fast; handles formulas and tables well. **Limitation**: panel-by-panel figure crops, sometimes missing top portions of figures or capturing journal-template sidebars. lazy-paper post-processes via `stages/s04_figures::_merge_figure_subpanels` to merge sub-panels back into one figure when multiple bboxes share a caption.
 
 ### MinerU (recommended for figure-heavy papers)
 
@@ -187,7 +187,7 @@ If `OCR_BACKEND=mineru` is set but `MINERU_TOKEN` is missing, the CLI fails fast
 ## Project layout
 
 ```
-paper2md/
+lazy-paper/
 ├── cli.py                # single entry: python -m cli run --pdf ... --template ...
 ├── stages/
 │   ├── _common/          # shared YAML I/O, stage_dir, safe_parse_yaml, bbox helpers, done-marker
