@@ -27,6 +27,17 @@
           {% endif %}
         {% endif %}
       </figure>
+    {% elif block.__class__.__name__ == 'TableBlock' %}
+      <table class="md-table">
+        <thead>
+          <tr>{% for h in block.headers %}<th>{{ h }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for row in block.rows %}
+            <tr>{% for c in row %}<td>{{ c }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
     {% endif %}
   {% endfor %}
 </section>

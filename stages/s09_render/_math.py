@@ -43,5 +43,10 @@ def normalize_math(text: str) -> str:
     text = re.sub(r"_\{([^}]+)\}", lambda m: m.group(1).translate(_SUB_MAP), text)
     text = re.sub(r"_([0-9a-zA-Z+\-])", lambda m: m.group(1).translate(_SUB_MAP), text)
     text = re.sub(r"\$([^$]+)\$", r"\1", text)
+    # Strip LaTeX inline/display math delimiters
+    text = re.sub(r"\\\(\s*", "", text)   # \(
+    text = re.sub(r"\s*\\\)", "", text)   # \)
+    text = re.sub(r"\\\[\s*", "", text)   # \[
+    text = re.sub(r"\s*\\\]", "", text)   # \]
     text = text.replace(r"\%", "%").replace(r"\&", "&")
     return text

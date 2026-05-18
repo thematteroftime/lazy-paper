@@ -19,7 +19,7 @@ from typing import ClassVar
 
 from stages.s09_render._math import normalize_math
 from stages.s09_render.model import (
-    Chapter, Document, FigureBlock, Paragraph,
+    Chapter, Document, FigureBlock, Paragraph, TableBlock,
 )
 
 
@@ -182,6 +182,13 @@ class SlidePlanner:
 
     def _chapter_slides(self, chapter: Chapter, summary: dict | None) -> list[Slide]:
         paragraphs = [b for b in chapter.blocks if isinstance(b, Paragraph)]
+        # TableBlocks are converted to synthetic Paragraph bullets for PPTX rendering
+        for tb in chapter.blocks:
+            if isinstance(tb, TableBlock) and tb.headers:
+                row_texts = [" | ".join(r) for r in tb.rows[:5]]  # cap at 5 rows
+                header_str = " | ".join(tb.headers)
+                synthetic = "\n".join([header_str] + row_texts)
+                paragraphs.append(Paragraph(text=synthetic))
         figures = [b for b in chapter.blocks if isinstance(b, FigureBlock)]
 
         slides: list[Slide] = []

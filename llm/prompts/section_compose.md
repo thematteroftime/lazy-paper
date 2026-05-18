@@ -15,7 +15,15 @@ This paper's source has been OCR'd from PDF. Many numerical values, units, and c
 2. **Every chemical formula** mentioned (e.g., AgNbO₃, (Bi₀.₅Na₀.₅)TiO₃, PbZrO₃, La³⁺ doping ratios x=0,1,3,5) MUST appear in subscript Unicode form somewhere in the output, AT LEAST once per chapter that discusses it.
 3. **Every parameter assignment** in the source (η=85%, E_b=350 kV/cm, T_C=120°C, δ_g=12, x=3, ε_r=2000, etc.) MUST be preserved with its symbol and value. Do not paraphrase to "high efficiency" or "low loss".
 4. **Every figure cited** in the source MUST be referenced by its label and panel (Fig.1(c), Fig.3(d-f), etc.) when discussing the data it contains.
-5. **Mathematical formulas** must be in Unicode (W_rec = ∫ E dP, η = W_rec/(W_rec+W_loss), ε(T) = C/(T-T₀)), NOT LaTeX ($\\eta$, \\frac{}{}). If the source has LaTeX, convert to Unicode.
+5. **LaTeX/Math format — STRICT**:
+   - Use Unicode for ALL math: η, σ, ε, μ, Δ, ², ³, ₐ, ᵦ, ∫, ∑, ≤, ≥
+   - DO NOT use LaTeX inline math syntax: NO `\( ... \)`, NO `$...$`, NO `\frac{}{}`, NO `\eta`
+   - If you reference a formula, write it in Unicode: "Wrec = ∫ E dP", "η = Wrec / (Wrec + Wloss)", "ε(T) = C / (T - T₀)"
+   - Examples of FORBIDDEN forms that will be rejected:
+     - `\( η = 85\% \)` → write as `η = 85%`
+     - `$W_{rec} = 8.6$ J/cm³` → write as `W_rec = 8.6 J/cm³`
+     - `\frac{C}{T-T_0}` → write as `C / (T - T₀)`
+   - If the source has LaTeX, convert to Unicode before including in your output.
 6. **Tables**: if the source has a comparison table, reproduce its key columns (component, key parameter values, conditions) as a Markdown table.
 
 **Failure modes to actively avoid**:

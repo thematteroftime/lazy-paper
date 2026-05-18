@@ -4,8 +4,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from stages.s09_render._math import normalize_math
 from stages.s09_render.model import (
-    Document, Chapter, Paragraph, FigureBlock, Block,
+    Document, Chapter, Paragraph, FigureBlock, TableBlock, Block,
 )
 
 
@@ -59,12 +60,35 @@ class DocumentBuilder:
             return lines[0][2:].strip(), 1, 1
         return "Untitled", 1, 0
 
-    @staticmethod
-    def _split_paragraphs(body: str):
+    def _split_paragraphs(self, body: str):
         for para in body.split("\n\n"):
             text = para.strip()
-            if text:
-                yield Paragraph(text=text)
+            if not text:
+                continue
+            if self._looks_like_md_table(text):
+                yield self._parse_md_table(text)
+            else:
+                yield Paragraph(text=normalize_math(text))
+
+    @staticmethod
+    def _looks_like_md_table(text: str) -> bool:
+        lines = [l for l in text.splitlines() if l.strip()]
+        return len(lines) >= 2 and all(l.strip().startswith("|") for l in lines)
+
+    @staticmethod
+    def _parse_md_table(text: str) -> TableBlock:
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        headers: tuple[str, ...] = ()
+        rows: list[tuple[str, ...]] = []
+        for i, line in enumerate(lines):
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if i == 0:
+                headers = tuple(cells)
+            elif set("".join(cells).strip()) <= set("-: "):
+                continue  # separator row
+            else:
+                rows.append(tuple(cells))
+        return TableBlock(headers=headers, rows=tuple(rows))
 
     def _collect_referenced_figures(self, body: str, fig_notes: list[dict],
                                     embedded: set[str]):

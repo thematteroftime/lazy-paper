@@ -27,6 +27,7 @@ Output STRICT JSON only:
 
 Rules:
 - 4-5 groups total. Prefer 4 for short papers, 5 for long.
+- **Even for papers with many figures (10+), produce 4-5 groups based on conceptual content, NOT figure count.**
 - Every chapter heading from input MUST appear in exactly one group's `chapter_headings`.
 - Preserve chapter order within groups; respect overall chapter order across groups.
 - takeaway: 1 sentence, ≤ 25 Chinese chars / ≤ 15 English words, focused on the central message.

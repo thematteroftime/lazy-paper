@@ -4,7 +4,7 @@ import pytest
 from docx import Document as DocxDocument
 from PIL import Image
 
-from stages.s09_render.model import Document, Chapter, Paragraph, FigureBlock
+from stages.s09_render.model import Document, Chapter, Paragraph, FigureBlock, TableBlock
 from stages.s09_render.renderers import RENDERERS
 import stages.s09_render.renderers.docx  # noqa: F401 — triggers RENDERERS["docx"] registration
 import stages.s09_render.renderers.html  # noqa: F401 — triggers RENDERERS["html"] registration
@@ -112,6 +112,87 @@ def test_pptx_renderer_layout_fallback_when_template_has_few_layouts(
     prs = Presentation()
     layout = PptxRenderer._lay(prs, 999)  # out of range
     assert layout is prs.slide_layouts[0]
+
+
+def test_table_block_parse_round_trip():
+    """TableBlock parsing correctly handles headers, separator, and data rows."""
+    from stages.s09_render.builder import DocumentBuilder
+    from stages.s09_render.model import TableBlock
+    builder = DocumentBuilder(lang="zh", paper_title="T")
+    md_table = "| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |"
+    block = builder._parse_md_table(md_table)
+    assert isinstance(block, TableBlock)
+    assert block.headers == ("A", "B", "C")
+    assert len(block.rows) == 2
+    assert block.rows[0] == ("1", "2", "3")
+
+
+def test_docx_table_block_renders(tmp_path: Path, one_image: Path):
+    """TableBlock in a chapter renders as a Word table (not pipe-text) in DOCX."""
+    doc = Document(
+        paper_title="Table Test Paper",
+        lang="zh",
+        chapters=(
+            Chapter(heading="数据对比", level=1, blocks=(
+                Paragraph(text="以下是比较数据。"),
+                TableBlock(
+                    headers=("材料", "Wrec (J/cm³)", "η (%)"),
+                    rows=(
+                        ("样品A", "8.6", "85"),
+                        ("样品B", "6.2", "78"),
+                    ),
+                ),
+            )),
+        ),
+    )
+    out = tmp_path / "preview.docx"
+    RENDERERS["docx"]().render(doc, out)
+    d = DocxDocument(out)
+    # Should have at least 1 Word table
+    assert len(d.tables) >= 1
+    # Header text should be in the first table
+    first_table_text = " ".join(
+        cell.text for row in d.tables[0].rows for cell in row.cells
+    )
+    assert "材料" in first_table_text
+    assert "样品A" in first_table_text
+
+
+def test_html_table_block_renders(tmp_path: Path, one_image: Path):
+    """TableBlock renders as <table> in HTML output."""
+    doc = Document(
+        paper_title="HTML Table Test",
+        lang="zh",
+        chapters=(
+            Chapter(heading="比较", level=1, blocks=(
+                TableBlock(
+                    headers=("系统", "性能"),
+                    rows=(("AFE-A", "高"),),
+                ),
+            )),
+        ),
+    )
+    out = tmp_path / "preview.html"
+    RENDERERS["html"]().render(doc, out)
+    html = out.read_text(encoding="utf-8")
+    assert "<table" in html
+    assert "系统" in html
+    assert "AFE-A" in html
+
+
+def test_builder_split_paragraphs_with_table():
+    """_split_paragraphs yields TableBlock for markdown table text."""
+    from stages.s09_render.builder import DocumentBuilder
+    builder = DocumentBuilder(lang="zh", paper_title="T")
+    body = "普通段落。\n\n| H1 | H2 |\n|---|---|\n| v1 | v2 |\n\n另一段落。"
+    blocks = list(builder._split_paragraphs(body))
+    # Should be: Paragraph, TableBlock, Paragraph
+    from stages.s09_render.model import Paragraph, TableBlock
+    assert len(blocks) == 3
+    assert isinstance(blocks[0], Paragraph)
+    assert isinstance(blocks[1], TableBlock)
+    assert isinstance(blocks[2], Paragraph)
+    assert blocks[1].headers == ("H1", "H2")
 
 
 def test_pptx_renderer_adds_footer_with_slide_numbers(tmp_path: Path, one_image: Path):

@@ -20,7 +20,13 @@ class FigureBlock:
     deep_observation: str             # may be empty string
 
 
-Block = Union[Paragraph, FigureBlock]   # union type for static dispatch
+@dataclass(frozen=True)
+class TableBlock:
+    headers: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+
+
+Block = Union[Paragraph, FigureBlock, TableBlock]   # union type for static dispatch
 
 
 @dataclass(frozen=True)

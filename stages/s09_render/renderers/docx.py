@@ -11,7 +11,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from stages.s09_render.model import Chapter, Document, FigureBlock, Paragraph
+from stages.s09_render.model import Chapter, Document, FigureBlock, Paragraph, TableBlock
 from stages.s09_render.renderers import RENDERERS
 from stages.s09_render.renderers.base import Renderer
 
@@ -49,6 +49,8 @@ class DocxRenderer(Renderer):
                 self._write_paragraph(out, block.text, body_pt, set_ea)
             elif isinstance(block, FigureBlock):
                 self._write_figure_block(out, block, img_cm, set_ea, lang)
+            elif isinstance(block, TableBlock):
+                self._write_table_block(out, block, set_ea)
 
     def _write_title(self, out, title: str, set_ea: bool) -> None:
         p = out.add_paragraph()
@@ -56,8 +58,13 @@ class DocxRenderer(Renderer):
         self._apply_cn_font(p.add_run(title), size=self.TITLE_PT, bold=True, set_ea=set_ea)
 
     def _write_heading(self, out, heading: str, set_ea: bool) -> None:
-        p = out.add_paragraph()
-        self._apply_cn_font(p.add_run(heading), size=self.HEADING_PT, bold=True, set_ea=set_ea)
+        try:
+            p = out.add_paragraph(heading, style="Heading 1")
+        except KeyError:
+            p = out.add_paragraph(heading)  # fallback if style missing
+        if set_ea:
+            for run in p.runs:
+                self._apply_cn_font(run, size=self.HEADING_PT, bold=True, set_ea=True)
 
     def _write_paragraph(self, out, text: str, body_pt: float, set_ea: bool) -> None:
         p = out.add_paragraph()
@@ -86,6 +93,28 @@ class DocxRenderer(Renderer):
                 obs.add_run(f"{prefix}{block.deep_observation}"),
                 size=self.CAPTION_PT, color=(0x33, 0x33, 0x66), set_ea=set_ea,
             )
+
+    def _write_table_block(self, out, block: TableBlock, set_ea: bool) -> None:
+        n_cols = len(block.headers)
+        if n_cols == 0:
+            return
+        n_rows = 1 + len(block.rows)
+        try:
+            table = out.add_table(rows=n_rows, cols=n_cols, style="Light Grid")
+        except KeyError:
+            table = out.add_table(rows=n_rows, cols=n_cols)
+        # Header row
+        for j, h in enumerate(block.headers):
+            cell = table.rows[0].cells[j]
+            cell.text = h
+            if cell.paragraphs:
+                run = cell.paragraphs[0].runs[0] if cell.paragraphs[0].runs else cell.paragraphs[0].add_run(h)
+                run.bold = True
+        # Data rows
+        for i, row in enumerate(block.rows):
+            for j, c in enumerate(row):
+                if j < n_cols:
+                    table.rows[i + 1].cells[j].text = c
 
     # ---------- font helper ----------
 

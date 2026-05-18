@@ -11,15 +11,31 @@ PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "paper_c
 
 
 def _gather_paper_text(chapters_dir: Path) -> str:
+    """Collect text from chapters that typically contain front-matter info.
+
+    Strategy:
+    1. Always include chapter_000 (Preface/cover) if it exists.
+    2. For chapter_001, use a case-insensitive glob — the name suffix may be
+       ABSTRACT, Introduction, INTRODUCTION, etc. depending on the paper.
+    3. If neither is found, fall back to the first 3 chapters lexically.
+    """
     pieces: list[str] = []
-    for name in ("chapter_000_Preface.md", "chapter_001_Introduction.md"):
-        p = chapters_dir / name
-        if p.exists():
-            pieces.append(p.read_text(encoding="utf-8"))
+    # Prefer preface/cover chapter
+    for p in sorted(chapters_dir.glob("chapter_000_*.md")):
+        pieces.append(p.read_text(encoding="utf-8"))
+        break  # only the first match
+
+    # Prefer abstract/introduction as chapter 001 — robust to name variants
+    candidates_001 = sorted(chapters_dir.glob("chapter_001_*.md"))
+    if candidates_001:
+        pieces.append(candidates_001[0].read_text(encoding="utf-8"))
+
     if not pieces:
-        for p in sorted(chapters_dir.glob("chapter_*.md"))[:2]:
+        # Fallback: first 3 chapters by filename order
+        for p in sorted(chapters_dir.glob("*.md"))[:3]:
             pieces.append(p.read_text(encoding="utf-8"))
-    return "\n\n---\n\n".join(pieces)[:20000]
+
+    return "\n\n---\n\n".join(pieces[:3])[:20000]
 
 
 

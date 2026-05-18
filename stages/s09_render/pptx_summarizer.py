@@ -31,7 +31,7 @@ from pathlib import Path
 from stages._common import load_yaml
 from stages._common.paths import slugify
 from stages.s09_render.model import (
-    Chapter, Document, FigureBlock, Paragraph,
+    Chapter, Document, FigureBlock, Paragraph, TableBlock,
 )
 
 
@@ -206,7 +206,7 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=user_prompt,
                     temperature=temp,
-                    max_tokens=2400,
+                    max_tokens=3500,
                 )
                 payload = json.loads(response.content)
                 if "groups" not in payload:
@@ -345,6 +345,8 @@ class PptxSummarizer:
                     block.caption.encode("utf-8"), b"|",
                     block.deep_observation.encode("utf-8"), b"\x00",
                 ]
+            elif isinstance(block, TableBlock):
+                chunks += [b"T:", str(block.headers).encode("utf-8"), b"\x00"]
         # Include cross-chapter context in hash so cache invalidates when context changes
         chunks += [
             system.encode("utf-8"), b"\x00",
@@ -440,9 +442,16 @@ class PptxSummarizer:
                       section_name: str = "",
                       prior_bullet: str = "",
                       next_heading: str = "") -> str:
-        body = "\n\n".join(
-            b.text for b in chapter.blocks if isinstance(b, Paragraph)
-        )
+        body_parts: list[str] = []
+        for b in chapter.blocks:
+            if isinstance(b, Paragraph):
+                body_parts.append(b.text)
+            elif isinstance(b, TableBlock):
+                # Render table as simple text for LLM context
+                header_row = " | ".join(b.headers)
+                rows_text = "\n".join(" | ".join(r) for r in b.rows)
+                body_parts.append(f"[Table]\n{header_row}\n{rows_text}")
+        body = "\n\n".join(body_parts)
         figures = [b for b in chapter.blocks if isinstance(b, FigureBlock)]
         if figures:
             figures_block = "\n".join(

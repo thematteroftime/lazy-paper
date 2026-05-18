@@ -10,7 +10,12 @@ Abstract and introduction of the paper follow between <<< >>> markers.
 
 Return YAML with this exact schema:
 title: <one-line English title>
-system: <chemical formula or short system descriptor, e.g. "Ag(1-3x)La(x)Nb(0.9)Ta(0.1)O3 ceramics">
+system: >-
+  <Specific material system with chemical formula — use the most detailed form mentioned in the paper.
+   GOOD: "(Pb0.94-xCdxLa0.04)(Hf0.7Sn0.3)O3 ceramics"
+   GOOD: "flash-heat-crystallized PbZrO3/LSMO/SRO heterostructure films"
+   BAD: "PbZrO3 film" (omits heterostructure/processing), "energy storage ceramic" (no formula)
+   e.g. "Ag(1-3x)La(x)Nb(0.9)Ta(0.1)O3 ceramics">
 abbreviations:
   - {abbr: <abbr>, expansion: <full term>}
 key_terms:
