@@ -65,6 +65,12 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
             print(f"[s09_render] WARNING: {fmt} render failed: {exc}. "
                   f"Other formats continue.", file=sys.stderr, flush=True)
 
+    if requested and all(isinstance(v, dict) and "error" in v for v in results.values()):
+        # All requested renderers failed — surface as a hard failure so the CLI
+        # exits non-zero and downstream agents can react.
+        errors = "; ".join(f"{k}: {v['error']}" for k, v in results.items())
+        raise RuntimeError(f"All requested formats failed: {errors}")
+
     bundle = _write_bundle(Path(compose_dir), fig_notes, out_dir)
     pptx_state = _pptx_state(summaries, requested, pptx_bullets)
 

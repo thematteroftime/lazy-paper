@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 from PIL import Image
 
@@ -50,3 +51,22 @@ def test_all_formats_succeed_means_partial_is_false(tmp_path: Path):
         paper_title="t", lang="en", formats=["docx", "html"])
     done = yaml.safe_load((out_dir / "done.yaml").read_text(encoding="utf-8"))
     assert done["partial"] is False
+
+
+def test_all_formats_failed_raises(tmp_path: Path):
+    """When every renderer fails, runner must raise (not silently return partial=True)."""
+    compose = tmp_path / "compose"
+    fig_dir = tmp_path / "fig"
+    out_dir = tmp_path / "out"
+    _seed(compose, fig_dir)
+
+    with patch("stages.s09_render.renderers.docx.DocxRenderer.render",
+               side_effect=RuntimeError("docx broken")), \
+         patch("stages.s09_render.renderers.html.HtmlRenderer.render",
+               side_effect=RuntimeError("html broken")):
+        with pytest.raises(RuntimeError, match="All requested formats failed"):
+            run(
+                compose_dir=compose, fig_notes_dir=fig_dir, out_dir=out_dir,
+                paper_title="t", lang="en",
+                formats=["docx", "html"],
+            )

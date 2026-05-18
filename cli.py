@@ -56,6 +56,43 @@ def _parse_formats(raw: str | None) -> list[str] | None:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
+def _is_partial_done(out: Path) -> bool:
+    """True if the stage's done.yaml exists and records partial=True."""
+    done = out / "done.yaml"
+    if not done.exists():
+        return False
+    try:
+        import yaml as _y
+        payload = _y.safe_load(done.read_text(encoding="utf-8")) or {}
+        return bool(payload.get("partial"))
+    except Exception:
+        return False
+
+
+def _print_done_summary(paper_id: str, duration_s: float, s09_dir: Path) -> None:
+    done = s09_dir / "done.yaml"
+    formats_str = "preview.docx (legacy fallback)"
+    if done.exists():
+        try:
+            import yaml as _y
+            payload = _y.safe_load(done.read_text(encoding="utf-8")) or {}
+            formats = payload.get("formats") or {}
+            produced = [k for k, v in formats.items() if isinstance(v, str)]
+            failed = [k for k, v in formats.items() if isinstance(v, dict) and "error" in v]
+            parts = []
+            if produced:
+                parts.append("produced: " + ", ".join(sorted(produced)))
+            if failed:
+                parts.append("failed: " + ", ".join(sorted(failed)))
+            if parts:
+                formats_str = " | ".join(parts)
+            if payload.get("partial"):
+                formats_str = "[partial] " + formats_str
+        except Exception:
+            pass
+    print(f"[done] {paper_id} in {duration_s:.1f}s → {s09_dir} ({formats_str})")
+
+
 def _resolve_formats_for_s09(args, out: Path) -> list[str] | None:
     """If --retry-failed: extract failed formats from prior done.yaml.
     Otherwise pass through --formats as-is."""
@@ -73,9 +110,13 @@ def _resolve_formats_for_s09(args, out: Path) -> list[str] | None:
 
 def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
     out = stage_dir(run_root, paper_id, name)
-    if is_done(out) and not args.force and not getattr(args, "retry_failed", False):
+    if is_done(out) and not args.force and not getattr(args, "retry_failed", False) \
+            and not _is_partial_done(out):
         print(f"[skip] {name} (already done)")
         return
+    if _is_partial_done(out) and not getattr(args, "retry_failed", False) and not args.force:
+        print(f"[s09_render] WARNING: previous run was partial — rerunning to recover failed formats. "
+              f"Use --retry-failed to rerun ONLY the failed ones.", file=sys.stderr, flush=True)
     print(f"[run]  {name}")
     if name == "s01_ocr":
         if args.skip_ocr:
@@ -189,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         "duration_s": time.time() - t0,
     }
     dump_yaml(run_root / paper_id / "meta.yaml", meta)
-    print(f"[done] {paper_id} in {meta['duration_s']:.1f}s → {run_root / paper_id / 's09_render' / 'preview.docx'}")
+    _print_done_summary(paper_id, meta["duration_s"], run_root / paper_id / "s09_render")
     return 0
 
 

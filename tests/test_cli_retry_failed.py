@@ -47,3 +47,46 @@ def test_retry_failed_only_reruns_formats_marked_in_done_yaml(tmp_path: Path, mo
     assert rc == 0
     # Only the failed format(s) should have been requested
     assert captured.get("formats") == ["pdf"]
+
+
+def test_partial_done_rerun_without_retry_flag_does_not_skip(tmp_path: Path, monkeypatch):
+    """If prior run was partial, normal `paper2md run` should re-run s09 (not skip)."""
+    monkeypatch.setenv("PADDLEOCR_TOKEN", "fake")
+    monkeypatch.setenv("LLM_VISION_API_KEY", "fake")
+    monkeypatch.setenv("LLM_TEXT_API_KEY", "fake")
+
+    runs = tmp_path / "runs"
+    paper_dir = runs / "p" / "s09_render"
+    paper_dir.mkdir(parents=True)
+    paper_dir.joinpath("done.yaml").write_text(
+        yaml.safe_dump({
+            "partial": True,
+            "formats": {
+                "docx": "/x/preview.docx",
+                "pdf":  {"error": "weasyprint failed"},
+            },
+        }), encoding="utf-8",
+    )
+
+    pdf = tmp_path / "p.pdf"; pdf.write_bytes(b"%PDF-1.4\n")
+    tpl = tmp_path / "t.docx"
+    from docx import Document as DocxDocument
+    DocxDocument().save(tpl)
+
+    s09_called = {"count": 0}
+
+    def fake_s09_run(**kwargs):
+        s09_called["count"] += 1
+        (kwargs["out_dir"] / "done.yaml").write_text("ok\n", encoding="utf-8")
+        return {}
+
+    with patch("stages.s09_render.runner.run", side_effect=fake_s09_run):
+        # No --retry-failed: should still re-run because partial=True
+        rc = main([
+            "run", "--pdf", str(pdf), "--template", str(tpl),
+            "--runs-dir", str(runs), "--paper-id", "p",
+            "--only", "s09_render",
+        ])
+
+    assert rc == 0
+    assert s09_called["count"] == 1, "s09_render should have been re-run, not skipped"
