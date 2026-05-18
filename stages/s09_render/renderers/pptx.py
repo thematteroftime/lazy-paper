@@ -1,14 +1,14 @@
-"""Render a SlideDeck to .pptx — academic defense style (v6).
+"""Render a SlideDeck to .pptx — academic defense style (v7).
 
 Design: monochrome cream bg (#FBFAF7), near-black text, no accent colors,
 formal graduation-defense aesthetic, compact layout, no brand tag.
 Template-swap: caller may supply a .pptx master via `template_path`.
 
-v6 changes vs v5:
-- Title: horizontal one-line byline (presenter · affiliation · date) with small-caps labels
-- Outline: vertical SINGLE column always (no more 2-column layout)
-- Combined slide: bullets + figure merged into one two-pane slide (NEW)
-- _dispatch handles "combined" kind
+v7 changes vs v6:
+- Outline slide now shows 4-5 grouped sections (outline_grouped kind)
+- section_divider replaces per-chapter dividers; absorbs pure-bullet chapter content
+- closing_rich slide uses LLM paper_brief (5-7 bullets + takeaway)
+- _dispatch handles "section_divider", "outline_grouped", "closing_rich"
 """
 from __future__ import annotations
 
@@ -57,21 +57,31 @@ class PptxRenderer(Renderer):
     extension: ClassVar[str] = "pptx"
 
     def __init__(self, summaries: dict | None = None,
+                 outline: list[dict] | None = None,
+                 paper_brief: dict | None = None,
                  template_path: Path | None = None,
                  presenter: str | None = None,
                  affiliation: str | None = None,
                  subtitle: str | None = None):
         self.summaries = summaries
+        self.outline = outline
+        self.paper_brief = paper_brief
         self.template_path = template_path
         self.presenter = presenter or "Paper2MD Auto-Analysis"
         self.affiliation = affiliation or "Scientific Paper Deep Analysis"
         self.subtitle = subtitle
         self._ch: int = -1          # chapter index, incremented on each divider
+        self._sec_idx: int = -1     # section_divider index (v7)
         self._fig_idx: int = 0      # figure counter for alternating layout
         self._cur_chapter: str = "" # current chapter heading for footer
+        self._cur_section: str = "" # current section name for footer (v7)
 
     def render(self, doc: Document, out_path: Path) -> None:
-        deck = SlidePlanner(lang=doc.lang).plan(doc, self.summaries)
+        deck = SlidePlanner(lang=doc.lang).plan(
+            doc, self.summaries,
+            outline=self.outline,
+            paper_brief=self.paper_brief,
+        )
         if self.template_path is not None:
             prs = Presentation(str(self.template_path))
         else:
@@ -79,8 +89,10 @@ class PptxRenderer(Renderer):
             prs.slide_width, prs.slide_height = _T.W, _T.H
         total = len(deck.slides)
         self._ch = -1
+        self._sec_idx = -1
         self._fig_idx = 0
         self._cur_chapter = ""
+        self._cur_section = ""
         # Build heading → 0-based chapter index lookup for §N tracking
         self._ch_idx: dict[str, int] = {
             ch.heading: i for i, ch in enumerate(doc.chapters)
@@ -91,8 +103,13 @@ class PptxRenderer(Renderer):
 
     def _dispatch(self, prs, slide, idx, total, doc):
         kw = dict(idx=idx, total=total, doc=doc)
-        if   slide.kind == "title":    self._title(prs, slide, **kw)
-        elif slide.kind == "outline":  self._outline(prs, slide, **kw)
+        if   slide.kind == "title":          self._title(prs, slide, **kw)
+        elif slide.kind == "outline":        self._outline(prs, slide, **kw)
+        elif slide.kind == "outline_grouped": self._outline_grouped(prs, slide, **kw)
+        elif slide.kind == "section_divider":
+            self._sec_idx += 1
+            self._cur_section = slide.title
+            self._section_divider(prs, slide, **kw)
         elif slide.kind == "divider":
             self._ch += 1
             self._cur_chapter = slide.title
@@ -103,8 +120,10 @@ class PptxRenderer(Renderer):
         elif slide.kind == "combined":
             self._combined(prs, slide, **kw)
             self._fig_idx += 1
+        elif slide.kind == "closing_rich":
+            self._closing_rich(prs, slide, **kw)
         else:
-            if slide.kind == "bullets":
+            if slide.kind in ("bullets", "closing"):
                 self._cur_chapter = slide.title
             self._bullets(prs, slide, **kw)
 
@@ -245,6 +264,132 @@ class PptxRenderer(Renderer):
              align=PP_ALIGN.CENTER)
 
         _footer(s, idx, total, chapter=slide.title)
+        _notes(s, slide.notes)
+
+    def _outline_grouped(self, prs, slide, *, idx, total, doc):
+        """Outline slide with 4-5 high-level sections (v7)."""
+        s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
+        _bg(s)
+        T = _T
+        # Title
+        _tb1(s, "目  录  ·  Contents",
+             Inches(0), Inches(0.25), Inches(13.333), Inches(0.6),
+             Pt(22), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True, align=PP_ALIGN.CENTER)
+        _line(s, Inches(0.8), Inches(0.9), Inches(12.5), Inches(0.9), T.RULE, Pt(1))
+
+        n = len(slide.bullets)
+        row_h = Inches(0.9)
+        content_start_y = Inches(1.05)
+
+        # Parse takeaways from caption field (newline-separated)
+        takeaways = slide.caption.split("\n") if slide.caption else []
+
+        for i, name in enumerate(slide.bullets):
+            y = content_start_y + i * row_h
+            takeaway = takeaways[i] if i < len(takeaways) else ""
+
+            # Number: bold gray serif
+            _tb1(s, f"{i+1:02d}", Inches(2.2), y, Inches(0.5), Inches(0.5),
+                 Pt(20), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
+            # Section name: bold sans
+            _tb1(s, name, Inches(2.8), y, Inches(8.5), Inches(0.45),
+                 Pt(20), T.TEXT, T.LAT_SANS, T.EA_SANS, bold=True, wrap=True)
+            # Takeaway: italic gray, smaller
+            if takeaway:
+                _tb1(s, takeaway, Inches(2.8), y + Inches(0.45), Inches(8.5), Inches(0.38),
+                     Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
+
+            # Separator (not after last item)
+            if i < n - 1:
+                sep_y = y + row_h - Inches(0.04)
+                _line(s, Inches(2.2), sep_y, Inches(11.3), sep_y, T.RULE, Pt(0.3))
+
+        _footer(s, idx, total, chapter="")
+        _notes(s, slide.notes)
+
+    def _section_divider(self, prs, slide, *, idx, total, doc):
+        """Section divider slide: big section name + takeaway + absorbed bullets (v7)."""
+        s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
+        _bg(s)
+        T = _T
+        sec_num = self._sec_idx + 1
+
+        # Section number
+        _tb1(s, f"§{sec_num}",
+             Inches(0), Inches(1.8), Inches(13.333), Inches(0.55),
+             Pt(18), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, align=PP_ALIGN.CENTER)
+
+        # Section name — big serif bold
+        _tb1(s, slide.title,
+             Inches(1.5), Inches(2.45), Inches(10.333), Inches(1.1),
+             Pt(32), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True,
+             align=PP_ALIGN.CENTER, wrap=True)
+
+        # Thin rule
+        rule_w = Inches(4.0)
+        rule_x = (_T.W - rule_w) / 2
+        _line(s, rule_x, Inches(3.65), rule_x + rule_w, Inches(3.65), T.RULE, Pt(1))
+
+        # Takeaway (caption)
+        if slide.caption:
+            _tb1(s, slide.caption,
+                 Inches(1.5), Inches(3.8), Inches(10.333), Inches(0.5),
+                 Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True,
+                 align=PP_ALIGN.CENTER)
+
+        # Absorbed bullets (from pure-text chapters in this group)
+        if slide.bullets:
+            MARKERS = ["❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾", "❿"]
+            bullet_top = Inches(4.4)
+            row_h = Inches(0.48)
+            for i, bul in enumerate(slide.bullets[:5]):
+                by = bullet_top + i * row_h
+                marker = MARKERS[i] if i < len(MARKERS) else "▸"
+                _tb1(s, marker, Inches(1.8), by, Inches(0.4), row_h,
+                     Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS)
+                _tb1(s, bul, Inches(2.3), by, Inches(9.0), row_h,
+                     Pt(13), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
+
+        _footer(s, idx, total, chapter=slide.title)
+        _notes(s, slide.notes)
+
+    def _closing_rich(self, prs, slide, *, idx, total, doc):
+        """Rich closing slide with 5-7 bullets + takeaway (v7)."""
+        s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
+        _bg(s)
+        T = _T
+
+        # Header
+        title_text = "结论 · Conclusion" if doc.lang == "zh" else "Conclusion"
+        _tb1(s, title_text,
+             Inches(0.7), Inches(0.15), Inches(12.0), Inches(0.45),
+             Pt(12), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, wrap=True)
+        _line(s, Inches(0.7), Inches(0.63), Inches(12.6), Inches(0.63), T.RULE, Pt(0.75))
+
+        # Bullets
+        MARKERS = ["❶", "❷", "❸", "❹", "❺", "❻", "❼"]
+        body_top = Inches(0.9)
+        row_h = Inches(0.62)
+        n_bullets = min(len(slide.bullets), 7)
+        for i, bul in enumerate(slide.bullets[:n_bullets]):
+            by = body_top + i * row_h
+            marker = MARKERS[i] if i < len(MARKERS) else "▸"
+            _tb1(s, marker, Inches(0.7), by, Inches(0.45), row_h,
+                 Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS)
+            _tb1(s, bul, Inches(1.2), by, Inches(11.6), row_h,
+                 Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
+
+        # Separator above takeaway
+        sep_y = body_top + n_bullets * row_h + Inches(0.1)
+        _line(s, Inches(0.7), sep_y, Inches(12.6), sep_y, T.RULE, Pt(0.5))
+
+        # Takeaway
+        if slide.caption:
+            _tb1(s, f"→ {slide.caption}",
+                 Inches(0.7), sep_y + Inches(0.12), Inches(11.6), Inches(0.6),
+                 Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True, italic=True, wrap=True)
+
+        _footer(s, idx, total, chapter="")
         _notes(s, slide.notes)
 
     def _bullets(self, prs, slide, *, idx, total, doc):

@@ -21,11 +21,30 @@ def test_second_run_with_same_input_makes_zero_llm_calls(tmp_path: Path):
     out_dir = tmp_path / "out"
     _seed(compose, fig_dir)
 
+    # v7: three LLM call types — chapter bullets, outline groups, paper summary.
+    # Each must return a valid payload so the result is cached and the second run
+    # makes zero additional LLM calls.
+    chapter_payload = json.dumps({"bullets": ["a", "b"], "figure_one_liners": {}})
+    outline_payload = json.dumps({
+        "groups": [{"name": "All", "chapter_headings": ["Intro"], "takeaway": "Context."}]
+    })
+    paper_payload = json.dumps({
+        "bullets": ["Key finding 1", "Key finding 2"],
+        "takeaway": "Important work.",
+    })
+
+    _responses = iter([chapter_payload, outline_payload, paper_payload])
+
+    def _next_response(*args, **kwargs):
+        try:
+            content = next(_responses)
+        except StopIteration:
+            # Fallback: return outline payload (shouldn't happen in a properly cached run)
+            content = outline_payload
+        return MagicMock(content=content, model="fake", usage={}, latency_ms=1.0)
+
     fake_llm = MagicMock()
-    fake_llm.chat.return_value = MagicMock(
-        content=json.dumps({"bullets": ["a", "b"], "figure_one_liners": {}}),
-        model="fake", usage={}, latency_ms=1.0,
-    )
+    fake_llm.chat.side_effect = _next_response
 
     with patch("llm.client.LLM", return_value=fake_llm):
         run(compose_dir=compose, fig_notes_dir=fig_dir, out_dir=out_dir,

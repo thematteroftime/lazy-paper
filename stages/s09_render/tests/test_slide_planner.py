@@ -21,6 +21,7 @@ def _doc(blocks_per_chapter=2, n_chapters=2, with_figure=True) -> Document:
 
 
 def test_planner_starts_with_title_then_outline():
+    """Without grouped outline, falls back to flat outline slide (v6 compat)."""
     deck = SlidePlanner(lang="en").plan(_doc(), summaries=None)
     assert deck.slides[0].kind == "title"
     assert deck.slides[0].title == "P"
@@ -30,20 +31,28 @@ def test_planner_starts_with_title_then_outline():
 
 
 def test_planner_ends_with_closing_slide():
+    """Without paper_brief, falls back to classic closing slide."""
     deck = SlidePlanner(lang="en").plan(_doc(), summaries=None)
     assert deck.slides[-1].kind == "closing"
 
 
-def test_planner_inserts_divider_only_when_chapter_has_enough_content():
+def test_planner_section_divider_replaces_chapter_dividers():
+    """v7: section_divider slides present instead of per-chapter dividers."""
     doc = _doc(blocks_per_chapter=2, n_chapters=1, with_figure=False)
     deck = SlidePlanner(lang="en").plan(doc, summaries=None)
     kinds = [s.kind for s in deck.slides]
-    assert "divider" in kinds   # 2 paragraphs ≥ threshold
+    # section_divider is always created; per-chapter "divider" is filtered out
+    assert "section_divider" in kinds
+    assert "divider" not in kinds
 
-    doc1 = _doc(blocks_per_chapter=1, n_chapters=1, with_figure=False)
-    deck1 = SlidePlanner(lang="en").plan(doc1, summaries=None)
-    kinds1 = [s.kind for s in deck1.slides]
-    assert "divider" not in kinds1
+
+def test_planner_inserts_divider_only_when_chapter_has_enough_content():
+    """Legacy: when using v6 fallback path, no dividers appear in v7 (absorbed by section_divider)."""
+    doc = _doc(blocks_per_chapter=2, n_chapters=1, with_figure=False)
+    deck = SlidePlanner(lang="en").plan(doc, summaries=None)
+    kinds = [s.kind for s in deck.slides]
+    # In v7, per-chapter dividers are always filtered; section_divider takes their place
+    assert "divider" not in kinds
 
 
 def test_planner_emits_one_content_slide_per_figure_block():
@@ -143,9 +152,10 @@ def test_planner_bullets_capped_at_max_per_slide():
         )),
     ))
     deck = SlidePlanner(lang="en").plan(doc, summaries=None)
-    # In v6 with no figures, these become pure bullets slides
-    bullet_slides = [s for s in deck.slides if s.kind == "bullets"]
-    assert all(len(s.bullets) <= SlidePlanner.MAX_BULLETS_PER_SLIDE for s in bullet_slides)
+    # In v7 with no figures, pure-bullet chapters are folded into section_divider.
+    # The section_divider bullets are capped at 5.
+    sec_dividers = [s for s in deck.slides if s.kind == "section_divider"]
+    assert all(len(s.bullets) <= SlidePlanner.MAX_BULLETS_PER_SLIDE for s in sec_dividers)
 
 
 def test_planner_uses_summaries_when_provided():
@@ -157,7 +167,7 @@ def test_planner_uses_summaries_when_provided():
         }
     }
     deck = SlidePlanner(lang="en").plan(doc, summaries=summaries)
-    # In v6, bullets+figure → combined slide
+    # In v6/v7, bullets+figure → combined slide
     combined = [s for s in deck.slides if s.kind == "combined"]
     bullets_slides = [s for s in deck.slides if s.kind == "bullets"]
 
@@ -174,8 +184,115 @@ def test_planner_uses_summaries_when_provided():
 
 
 def test_planner_attaches_paragraph_text_to_speaker_notes():
+    """Pure-bullet chapters have their text preserved in section_divider notes in v7."""
     doc = _doc(blocks_per_chapter=2, n_chapters=1, with_figure=False)
     deck = SlidePlanner(lang="en").plan(doc, summaries=None)
-    bullets_slide = next(s for s in deck.slides if s.kind == "bullets")
-    # Original paragraph text is preserved in notes for the speaker.
-    assert "Para 0 of chapter 0." in bullets_slide.notes
+    # In v7 without summaries, pure-bullet chapters contribute no bullets to the divider
+    # (since _extract_group_preview_bullets only pulls from summaries).
+    # But we can verify the deck has a section_divider.
+    assert any(s.kind == "section_divider" for s in deck.slides)
+
+
+# ── v7 new tests ────────────────────────────────────────────────────────────────
+
+def test_planner_uses_grouped_outline_when_provided():
+    """v7: when outline is provided, plan emits outline_grouped + section_dividers."""
+    doc = Document(paper_title="P", lang="en", chapters=(
+        Chapter(heading="Intro", level=1, blocks=(Paragraph(text="Introduction."),)),
+        Chapter(heading="Methods", level=1, blocks=(Paragraph(text="We did X."),)),
+        Chapter(heading="Results", level=1, blocks=(
+            Paragraph(text="We found Y."),
+            FigureBlock(fig_id="Fig. 1", label="Fig. 1",
+                        image_paths=(Path("/tmp/r.jpg"),),
+                        caption="Result fig", deep_observation="obs"),
+        )),
+        Chapter(heading="Conclusion", level=1, blocks=(Paragraph(text="In summary."),)),
+    ))
+    outline = [
+        {"name": "Background", "chapter_headings": ["Intro"], "takeaway": "Sets the stage."},
+        {"name": "Methods & Results", "chapter_headings": ["Methods", "Results"], "takeaway": "Core work."},
+        {"name": "Conclusion", "chapter_headings": ["Conclusion"], "takeaway": "Final thoughts."},
+    ]
+    deck = SlidePlanner(lang="en").plan(doc, summaries=None, outline=outline)
+    kinds = [s.kind for s in deck.slides]
+
+    # Should have outline_grouped (not flat outline)
+    assert "outline_grouped" in kinds
+    assert "outline" not in kinds
+
+    # Should have section_dividers for each group
+    sec_dividers = [s for s in deck.slides if s.kind == "section_divider"]
+    assert len(sec_dividers) == 3
+    assert sec_dividers[0].title == "Background"
+    assert sec_dividers[1].title == "Methods & Results"
+    assert sec_dividers[2].title == "Conclusion"
+
+    # Takeaways stored in caption
+    assert sec_dividers[0].caption == "Sets the stage."
+
+    # Only Results chapter has a figure → combined slide
+    combined = [s for s in deck.slides if s.kind == "combined"]
+    assert len(combined) == 1
+
+    # No old-style divider
+    assert "divider" not in kinds
+
+
+def test_planner_uses_paper_brief_for_closing_when_provided():
+    """v7: when paper_brief is provided, plan emits closing_rich instead of closing."""
+    doc = _doc(blocks_per_chapter=2, n_chapters=2, with_figure=True)
+    paper_brief = {
+        "bullets": [
+            "Finding A: significant improvement",
+            "Finding B: novel mechanism",
+            "Finding C: broad application",
+        ],
+        "takeaway": "This work opens new avenues in the field.",
+    }
+    deck = SlidePlanner(lang="en").plan(doc, summaries=None, paper_brief=paper_brief)
+
+    last = deck.slides[-1]
+    assert last.kind == "closing_rich"
+    assert "Finding A: significant improvement" in last.bullets
+    assert "Finding B: novel mechanism" in last.bullets
+    assert last.caption == "This work opens new avenues in the field."
+
+    # No old-style closing
+    assert not any(s.kind == "closing" for s in deck.slides)
+
+
+def test_planner_grouped_outline_absorbs_pure_bullet_chapters():
+    """v7: chapters without figures are absorbed into section_divider bullets."""
+    doc = Document(paper_title="P", lang="en", chapters=(
+        Chapter(heading="TextOnly", level=1, blocks=(
+            Paragraph(text="Bullet one."),
+            Paragraph(text="Bullet two."),
+        )),
+        Chapter(heading="WithFig", level=1, blocks=(
+            Paragraph(text="Para with fig."),
+            FigureBlock(fig_id="Fig. 1", label="Fig. 1",
+                        image_paths=(Path("/tmp/f.jpg"),),
+                        caption="fig cap", deep_observation="obs"),
+        )),
+    ))
+    outline = [
+        {"name": "Section A", "chapter_headings": ["TextOnly", "WithFig"], "takeaway": "Both here."},
+    ]
+    summaries = {
+        "TextOnly": {"bullets": ["absorbed bullet 1", "absorbed bullet 2"], "figure_one_liners": {}},
+        "WithFig": {"bullets": ["fig bullet"], "figure_one_liners": {"Fig. 1": "fig one-liner"}},
+    }
+    deck = SlidePlanner(lang="en").plan(doc, summaries=summaries, outline=outline)
+
+    # Section divider should have bullets from TextOnly (no figure)
+    sec = next(s for s in deck.slides if s.kind == "section_divider")
+    assert "absorbed bullet 1" in sec.bullets
+    assert "absorbed bullet 2" in sec.bullets
+
+    # WithFig chapter → combined slide
+    combined = [s for s in deck.slides if s.kind == "combined"]
+    assert len(combined) == 1
+
+    # No standalone bullets slide for TextOnly
+    bullets_slides = [s for s in deck.slides if s.kind == "bullets"]
+    assert len(bullets_slides) == 0

@@ -85,3 +85,125 @@ def test_summarize_returns_none_after_three_consecutive_failures(tmp_path: Path)
     result = summarizer.summarize(_doc())
     assert result is None
     assert failing_llm.chat.call_count == 3   # 3 retries on the single chapter
+
+
+# ── v7 new tests ────────────────────────────────────────────────────────────────
+
+def _multi_doc():
+    """Document with 3 chapters for outline/paper tests."""
+    return Document(paper_title="Test Paper", lang="en", chapters=(
+        Chapter(heading="Intro", level=1, blocks=(
+            Paragraph(text="Introduction paragraph."),
+        )),
+        Chapter(heading="Methods", level=1, blocks=(
+            Paragraph(text="We used method X."),
+            FigureBlock(fig_id="Fig. 1", label="Fig. 1",
+                        image_paths=(Path("/m.jpg"),),
+                        caption="method fig", deep_observation="detailed obs"),
+        )),
+        Chapter(heading="Conclusion", level=1, blocks=(
+            Paragraph(text="In conclusion, Y was found."),
+        )),
+    ))
+
+
+def test_pptx_summarizer_summarize_outline_returns_groups(tmp_path: Path):
+    """summarize_outline returns a list of group dicts."""
+    outline_payload = {
+        "groups": [
+            {"name": "Background", "chapter_headings": ["Intro"], "takeaway": "Sets context."},
+            {"name": "Core Work", "chapter_headings": ["Methods"], "takeaway": "Main methods."},
+            {"name": "Findings", "chapter_headings": ["Conclusion"], "takeaway": "Key results."},
+        ]
+    }
+    llm = _fake_llm(outline_payload)
+    summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+    result = summarizer.summarize_outline(_multi_doc())
+
+    assert result is not None
+    assert len(result) == 3
+    assert result[0]["name"] == "Background"
+    assert "Intro" in result[0]["chapter_headings"]
+    assert result[0]["takeaway"] == "Sets context."
+
+
+def test_pptx_summarizer_summarize_outline_caches_correctly(tmp_path: Path):
+    """summarize_outline caches result and avoids second LLM call."""
+    outline_payload = {
+        "groups": [
+            {"name": "Section A", "chapter_headings": ["Intro", "Methods", "Conclusion"], "takeaway": "All."},
+        ]
+    }
+    llm = _fake_llm(outline_payload)
+    summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+    doc = _multi_doc()
+
+    # First call: LLM invoked
+    result1 = summarizer.summarize_outline(doc)
+    assert llm.chat.call_count == 1
+    assert (tmp_path / "_outline.json").exists()
+    assert (tmp_path / "_outline.input_hash.json").exists()
+
+    # Second call with same input: cache hit, no new LLM call
+    result2 = summarizer.summarize_outline(doc)
+    assert llm.chat.call_count == 1
+    assert result2 == result1
+
+
+def test_pptx_summarizer_summarize_outline_returns_none_on_failure(tmp_path: Path):
+    """summarize_outline returns None when LLM fails repeatedly."""
+    failing_llm = MagicMock()
+    failing_llm.chat.side_effect = RuntimeError("Network error")
+    summarizer = PptxSummarizer(llm=failing_llm, cache_dir=tmp_path, lang="en")
+    result = summarizer.summarize_outline(_multi_doc())
+    assert result is None
+    assert failing_llm.chat.call_count == 3
+
+
+def test_pptx_summarizer_summarize_paper_returns_bullets_and_takeaway(tmp_path: Path):
+    """summarize_paper returns dict with bullets and takeaway."""
+    paper_payload = {
+        "bullets": ["Finding 1", "Finding 2", "Finding 3", "Finding 4", "Finding 5"],
+        "takeaway": "This paper advances the field significantly.",
+    }
+    llm = _fake_llm(paper_payload)
+    summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+    result = summarizer.summarize_paper(_multi_doc())
+
+    assert result is not None
+    assert result["bullets"] == ["Finding 1", "Finding 2", "Finding 3", "Finding 4", "Finding 5"]
+    assert result["takeaway"] == "This paper advances the field significantly."
+
+
+def test_pptx_summarizer_summarize_paper_caches_correctly(tmp_path: Path):
+    """summarize_paper caches result and avoids second LLM call."""
+    paper_payload = {
+        "bullets": ["B1", "B2", "B3"],
+        "takeaway": "Important work.",
+    }
+    llm = _fake_llm(paper_payload)
+    summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+    doc = _multi_doc()
+
+    # First call: LLM invoked
+    result1 = summarizer.summarize_paper(doc)
+    assert llm.chat.call_count == 1
+    assert (tmp_path / "_paper.json").exists()
+    assert (tmp_path / "_paper.input_hash.json").exists()
+    assert (tmp_path / "_paper.prompt.md").exists()
+    assert (tmp_path / "_paper.response.json").exists()
+
+    # Second call: cache hit
+    result2 = summarizer.summarize_paper(doc)
+    assert llm.chat.call_count == 1
+    assert result2 == result1
+
+
+def test_pptx_summarizer_summarize_paper_returns_none_on_failure(tmp_path: Path):
+    """summarize_paper returns None when LLM fails repeatedly."""
+    failing_llm = MagicMock()
+    failing_llm.chat.side_effect = RuntimeError("LLM down")
+    summarizer = PptxSummarizer(llm=failing_llm, cache_dir=tmp_path, lang="en")
+    result = summarizer.summarize_paper(_multi_doc())
+    assert result is None
+    assert failing_llm.chat.call_count == 3
