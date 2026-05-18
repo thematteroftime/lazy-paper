@@ -8,6 +8,7 @@ from stages.s09_render.model import Document, Chapter, Paragraph, FigureBlock
 from stages.s09_render.renderers import RENDERERS
 import stages.s09_render.renderers.docx  # noqa: F401 — triggers RENDERERS["docx"] registration
 import stages.s09_render.renderers.html  # noqa: F401 — triggers RENDERERS["html"] registration
+import stages.s09_render.renderers.pdf   # noqa: F401 — triggers RENDERERS["pdf"] registration
 
 
 @pytest.fixture
@@ -58,3 +59,12 @@ def test_html_renderer_self_contained_base64(tmp_path: Path, one_image: Path):
     # Base64 embedded image — no external file refs
     assert 'src="data:image/' in html
     assert 'src="/tmp' not in html  # absolute paths must NOT leak
+
+
+def test_pdf_renderer_produces_valid_pdf_file(tmp_path: Path, one_image: Path):
+    doc = _make_doc(one_image)
+    out = tmp_path / "preview.pdf"
+    RENDERERS["pdf"]().render(doc, out)
+    assert out.exists()
+    assert out.read_bytes()[:5] == b"%PDF-"
+    assert out.stat().st_size > 10_000  # cover page + 1 image
