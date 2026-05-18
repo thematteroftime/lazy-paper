@@ -43,6 +43,9 @@ packages = [
     "llm",
 ]
 
+[tool.setuptools.package-data]
+"stages.s09_render" = ["templates/*.html.j2", "templates/*.css"]
+
 [tool.pytest.ini_options]
 markers = [
     "live: tests that call real LLM/OCR APIs (skipped by default; run via -m live)",
