@@ -12,6 +12,127 @@ from stages._common import dump_yaml, mark_done, slugify
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "section_compose.md"
 
+# Fallback text when a placeholder has no data
+_MISSING = {
+    "tables": "本论文未检出独立表格 / No standalone tables detected in this paper.",
+    "figures": "（图信息未检出 / No figure data available）",
+    "fig_observations_brief": "（无图注分析数据 / No figure observation data available）",
+    "abbreviations": "（缩写信息未检出 / No abbreviation data available）",
+    "keywords": "（关键词未检出 / No keywords available）",
+    "key_terms": "（关键术语未检出 / No key terms available）",
+    "title": "（标题未检出 / Title not available）",
+    "system": "（研究体系未检出 / System not available）",
+}
+
+
+def _build_paper_data(
+    context: dict,
+    figures: list[dict],
+    tables: list[dict],
+    fig_notes: list[dict],
+) -> dict[str, str]:
+    """Build the {paper.X} substitution dictionary from per-paper data sources.
+
+    Keys match the placeholder vocabulary: title, system, keywords, key_terms,
+    abbreviations, figures, tables, fig_observations_brief.
+    """
+    # title
+    title = str(context.get("title", "")).strip() or _MISSING["title"]
+
+    # system
+    system = str(context.get("system", "")).strip() or _MISSING["system"]
+
+    # keywords — top 5, semicolon-joined
+    raw_kw = context.get("keywords", []) or []
+    keywords_str = "; ".join(str(k) for k in raw_kw[:5]) if raw_kw else _MISSING["keywords"]
+
+    # key_terms — all, semicolon-joined
+    raw_kt = context.get("key_terms", []) or []
+    key_terms_str = "; ".join(str(k) for k in raw_kt) if raw_kt else _MISSING["key_terms"]
+
+    # abbreviations — inline "ABB = expansion" list
+    raw_abbr = context.get("abbreviations", []) or []
+    if raw_abbr:
+        abbr_parts = [
+            f"{a.get('abbr', '')} = {a.get('expansion', '')}"
+            for a in raw_abbr
+            if a.get("abbr") or a.get("expansion")
+        ]
+        abbreviations_str = "; ".join(abbr_parts) if abbr_parts else _MISSING["abbreviations"]
+    else:
+        abbreviations_str = _MISSING["abbreviations"]
+
+    # figures — one-line-per-fig "Fig.N: caption (truncated)"
+    if figures:
+        fig_lines = []
+        for f in figures:
+            fid = f.get("fig_id", "?")
+            cap = f.get("caption", "")
+            # Truncate caption to 120 chars to keep prompt manageable
+            cap_short = cap[:120].replace("\n", " ").strip()
+            if len(cap) > 120:
+                cap_short += "..."
+            fig_lines.append(f"{fid}: {cap_short}")
+        figures_str = "\n".join(fig_lines)
+    else:
+        figures_str = _MISSING["figures"]
+
+    # tables — one-line-per-table, or fallback
+    if tables:
+        tbl_lines = []
+        for t in tables:
+            tid = t.get("table_id", t.get("fig_id", "?"))
+            cap = t.get("caption", "")
+            cap_short = cap[:120].replace("\n", " ").strip()
+            tbl_lines.append(f"{tid}: {cap_short}")
+        tables_str = "\n".join(tbl_lines)
+    else:
+        tables_str = _MISSING["tables"]
+
+    # fig_observations_brief — each fig's deep_observation truncated to 100 chars
+    if fig_notes:
+        obs_lines = []
+        for note in fig_notes:
+            fid = note.get("fig_id", "?")
+            obs = (note.get("deep_observation") or note.get("deep_observation_cn") or "").strip()
+            obs_short = obs[:100].replace("\n", " ")
+            if len(obs) > 100:
+                obs_short += "..."
+            if obs_short:
+                obs_lines.append(f"{fid} — {obs_short}")
+        fig_observations_brief_str = "\n".join(obs_lines) if obs_lines else _MISSING["fig_observations_brief"]
+    else:
+        fig_observations_brief_str = _MISSING["fig_observations_brief"]
+
+    return {
+        "title": title,
+        "system": system,
+        "keywords": keywords_str,
+        "key_terms": key_terms_str,
+        "abbreviations": abbreviations_str,
+        "figures": figures_str,
+        "tables": tables_str,
+        "fig_observations_brief": fig_observations_brief_str,
+    }
+
+
+def substitute_placeholders(text: str, paper_data: dict[str, str]) -> str:
+    """Replace all {paper.X} tokens in *text* with concrete values from *paper_data*.
+
+    Unknown placeholder keys are left as-is (not silently dropped).
+    """
+    def _sub(m: re.Match) -> str:
+        key = m.group(1)  # e.g. "system" or "figures"
+        val = paper_data.get(key)
+        if val is None:
+            # Unknown key — leave verbatim so authors notice
+            return m.group(0)
+        if isinstance(val, list):
+            return "; ".join(str(v) for v in val)
+        return str(val)
+
+    return re.sub(r"\{paper\.([a-z_]+)\}", _sub, text)
+
 
 def _split_prompt(template: str) -> tuple[str, str]:
     sys_idx = template.index("SYSTEM:") + len("SYSTEM:")
@@ -72,6 +193,15 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
     fig_notes = yaml.safe_load((fig_notes_dir / "fig_notes.yaml").read_text(encoding="utf-8")) or []
     figures = yaml.safe_load((figures_stage_dir / "figures.yaml").read_text(encoding="utf-8")) or []
 
+    # Load tables (optional — path may not exist or be empty)
+    tables_path = figures_stage_dir / "tables.yaml"
+    tables: list[dict] = []
+    if tables_path.exists():
+        tables = yaml.safe_load(tables_path.read_text(encoding="utf-8")) or []
+
+    # Build paper-specific substitution dictionary
+    paper_data = _build_paper_data(context, figures, tables, fig_notes)
+
     system_tpl, user_tpl = _split_prompt(PROMPT_PATH.read_text(encoding="utf-8"))
     lang_text = LANG_INSTRUCTIONS.get(lang, LANG_INSTRUCTIONS["zh"])
     system_tpl = system_tpl.replace("{lang_instruction}", lang_text)
@@ -84,8 +214,13 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         title_cn = node["title"]
         title_en = node["title"]
         guidance = node.get("guidance", "")
+
+        # --- SUBSTITUTE {paper.X} placeholders BEFORE building the LLM prompt ---
+        guidance = substitute_placeholders(guidance, paper_data)
+        title_cn = substitute_placeholders(title_cn, paper_data)
+
         hints = node.get("hints", {})
-        keywords = re.findall(r"[A-Za-z一-鿿-]{3,}", f"{title_cn} {guidance}")
+        keywords = re.findall(r"[A-Za-z一-鿿]{3,}", f"{title_cn} {guidance}")
 
         excerpts = _relevant_chapter_excerpts(chapters_dir, keywords)
         notes_block = _relevant_fig_notes(fig_notes, figures, keywords)

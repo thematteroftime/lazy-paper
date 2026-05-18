@@ -13,7 +13,7 @@ _NEEDS_TABLE_RE = re.compile(r"\b(?:provide|include|tabulate|tables?)\b.*\btable
 _NEEDS_FIGURE_RE = re.compile(r"\b(?:figure|illustration|diagram|chart)\b", re.IGNORECASE)
 _NUMBERED_RE = re.compile(r"^\s*(\d+(?:\.\d+){0,2})\s+(.+?)\s*$")
 
-_GUIDANCE_PREFIXES = ("(", "-", "–", "—", "[")
+_GUIDANCE_PREFIXES = ("(", "-", "–", "—", "[", "·", "•")
 
 # Action-verb starters that signal an instruction/guidance line, not a section title
 _ACTION_VERB_RE = re.compile(
