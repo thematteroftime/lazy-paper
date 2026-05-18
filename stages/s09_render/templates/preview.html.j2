@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="{{ doc.lang }}">
+<head>
+<meta charset="utf-8">
+<title>{{ doc.paper_title }}</title>
+<style>{{ styles | safe }}</style>
+</head>
+<body data-lang="{{ doc.lang }}">
+<h1 class="paper-title">{{ doc.paper_title }}</h1>
+{% for ch in doc.chapters %}
+<section class="chapter">
+  <h2 class="chapter-heading">{{ ch.heading }}</h2>
+  {% for block in ch.blocks %}
+    {% if block.__class__.__name__ == 'Paragraph' %}
+      <p class="body-paragraph">{{ block.text }}</p>
+    {% elif block.__class__.__name__ == 'FigureBlock' %}
+      <figure class="figure-block">
+        {% for img_src in block_images(block) %}
+          <img src="{{ img_src }}" alt="{{ block.label }}">
+        {% endfor %}
+        <figcaption class="caption">{{ block.label }}. {{ block.caption }}</figcaption>
+        {% if block.deep_observation %}
+          {% if doc.lang == 'zh' %}
+            <p class="deep-observation">【深度观察】{{ block.deep_observation }}</p>
+          {% else %}
+            <p class="deep-observation">Deep observation: {{ block.deep_observation }}</p>
+          {% endif %}
+        {% endif %}
+      </figure>
+    {% endif %}
+  {% endfor %}
+</section>
+{% endfor %}
+</body>
+</html>

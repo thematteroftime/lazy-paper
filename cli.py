@@ -7,6 +7,28 @@ import sys
 import time
 from pathlib import Path
 
+
+def _augment_dyld_for_macos_brew() -> None:
+    """Help dyld find weasyprint's Homebrew-installed dependencies on macOS bare-metal.
+
+    No-op on Linux (Docker) and Windows. See conftest.py for the test-time twin.
+    """
+    if sys.platform != "darwin":
+        return
+    candidates = ["/opt/homebrew/lib", "/usr/local/lib"]
+    existing = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+    parts: list[str] = []
+    if existing:
+        parts.append(existing)
+    for path in candidates:
+        if os.path.isdir(path) and path not in parts:
+            parts.append(path)
+    if parts:
+        os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(parts)
+
+
+_augment_dyld_for_macos_brew()
+
 from dotenv import load_dotenv
 
 from stages._common import dump_yaml, slugify, stage_dir, is_done
@@ -28,11 +50,73 @@ STAGE_ORDER = [
 ]
 
 
+def _parse_formats(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _is_partial_done(out: Path) -> bool:
+    """True if the stage's done.yaml exists and records partial=True."""
+    done = out / "done.yaml"
+    if not done.exists():
+        return False
+    try:
+        import yaml as _y
+        payload = _y.safe_load(done.read_text(encoding="utf-8")) or {}
+        return bool(payload.get("partial"))
+    except Exception:
+        return False
+
+
+def _print_done_summary(paper_id: str, duration_s: float, s09_dir: Path) -> None:
+    done = s09_dir / "done.yaml"
+    formats_str = "preview.docx (legacy fallback)"
+    if done.exists():
+        try:
+            import yaml as _y
+            payload = _y.safe_load(done.read_text(encoding="utf-8")) or {}
+            formats = payload.get("formats") or {}
+            produced = [k for k, v in formats.items() if isinstance(v, str)]
+            failed = [k for k, v in formats.items() if isinstance(v, dict) and "error" in v]
+            parts = []
+            if produced:
+                parts.append("produced: " + ", ".join(sorted(produced)))
+            if failed:
+                parts.append("failed: " + ", ".join(sorted(failed)))
+            if parts:
+                formats_str = " | ".join(parts)
+            if payload.get("partial"):
+                formats_str = "[partial] " + formats_str
+        except Exception:
+            pass
+    print(f"[done] {paper_id} in {duration_s:.1f}s → {s09_dir} ({formats_str})")
+
+
+def _resolve_formats_for_s09(args, out: Path) -> list[str] | None:
+    """If --retry-failed: extract failed formats from prior done.yaml.
+    Otherwise pass through --formats as-is."""
+    if getattr(args, "retry_failed", False):
+        done_path = out / "done.yaml"
+        if done_path.exists():
+            import yaml as _y
+            done = _y.safe_load(done_path.read_text(encoding="utf-8")) or {}
+            failed = [k for k, v in (done.get("formats") or {}).items()
+                      if isinstance(v, dict) and "error" in v]
+            if failed:
+                return failed
+    return _parse_formats(args.formats)
+
+
 def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
     out = stage_dir(run_root, paper_id, name)
-    if is_done(out) and not args.force:
+    if is_done(out) and not args.force and not getattr(args, "retry_failed", False) \
+            and not _is_partial_done(out):
         print(f"[skip] {name} (already done)")
         return
+    if _is_partial_done(out) and not getattr(args, "retry_failed", False) and not args.force:
+        print(f"[s09_render] WARNING: previous run was partial — rerunning to recover failed formats. "
+              f"Use --retry-failed to rerun ONLY the failed ones.", file=sys.stderr, flush=True)
     print(f"[run]  {name}")
     if name == "s01_ocr":
         if args.skip_ocr:
@@ -85,12 +169,15 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             lang=args.lang,
         )
     elif name == "s09_render":
+        formats = _resolve_formats_for_s09(args, out)
         _s09.run(
             compose_dir=stage_dir(run_root, paper_id, "s08_section_compose"),
             fig_notes_dir=stage_dir(run_root, paper_id, "s07_figure_analyze"),
             out_dir=out,
             paper_title=args.paper_id or Path(args.pdf).stem,
             lang=args.lang,
+            formats=formats,
+            pptx_bullets=args.pptx_bullets,
         )
 
 
@@ -107,8 +194,17 @@ def main(argv: list[str] | None = None) -> int:
                    help="Assume s01_ocr outputs already exist in the run dir")
     r.add_argument("--force", action="store_true",
                    help="Re-run stages even if done.yaml is present")
+    r.add_argument("--only", default=None,
+                   help="Run only this single stage (e.g. s09_render) instead of all 9")
     r.add_argument("--lang", choices=("en", "zh"), default="zh",
                    help="Output language for LLM stages and render")
+    r.add_argument("--formats", default=None,
+                   help="Comma-separated subset of docx,pdf,html,pptx "
+                        "(default: docx,pdf,html — PPT is opt-in because it uses LLM)")
+    r.add_argument("--pptx-bullets", choices=("llm", "rule"), default="llm",
+                   help="How PPT bullets are generated (llm = quality, rule = offline)")
+    r.add_argument("--retry-failed", action="store_true",
+                   help="In --only mode, re-run only the formats marked partial in done.yaml")
     args = ap.parse_args(argv)
 
     if args.cmd != "run":
@@ -121,7 +217,8 @@ def main(argv: list[str] | None = None) -> int:
     run_root.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
-    for name in STAGE_ORDER:
+    stage_list = [args.only] if args.only else STAGE_ORDER
+    for name in stage_list:
         _run_one(args, name, run_root, paper_id)
 
     meta = {
@@ -133,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         "duration_s": time.time() - t0,
     }
     dump_yaml(run_root / paper_id / "meta.yaml", meta)
-    print(f"[done] {paper_id} in {meta['duration_s']:.1f}s → {run_root / paper_id / 's09_render' / 'preview.docx'}")
+    _print_done_summary(paper_id, meta["duration_s"], run_root / paper_id / "s09_render")
     return 0
 
 

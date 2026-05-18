@@ -16,6 +16,9 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "Pillow>=10",
+    "jinja2>=3.1",
+    "weasyprint>=62",
+    "python-pptx>=0.6.23",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +30,7 @@ paper2md = "cli:main"
 [tool.setuptools]
 packages = [
     "stages",
+    "stages._common",
     "stages.s01_ocr",
     "stages.s02_clean",
     "stages.s03_chapter",
@@ -36,8 +40,12 @@ packages = [
     "stages.s07_figure_analyze",
     "stages.s08_section_compose",
     "stages.s09_render",
+    "stages.s09_render.renderers",
     "llm",
 ]
+
+[tool.setuptools.package-data]
+"stages.s09_render" = ["templates/*.html.j2", "templates/*.css"]
 
 [tool.pytest.ini_options]
 markers = [
