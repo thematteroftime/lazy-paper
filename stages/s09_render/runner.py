@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -45,29 +46,41 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
     requested = list(formats) if formats is not None else list(DEFAULT_FORMATS)
     summaries = _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir)
 
-    results: dict[str, str] = {}
+    results: dict[str, object] = {}
+    partial = False
     for fmt in requested:
         if fmt not in RENDERERS:
             raise ValueError(f"unknown format {fmt!r}; available: {sorted(RENDERERS)}")
         out_path = out_dir / f"preview.{fmt}"
-        if fmt == "pptx":
-            renderer = RENDERERS[fmt](summaries=summaries)
-        else:
-            renderer = RENDERERS[fmt]()
-        renderer.render(doc, out_path)
-        results[fmt] = str(out_path)
+        try:
+            if fmt == "pptx":
+                renderer = RENDERERS[fmt](summaries=summaries)
+            else:
+                renderer = RENDERERS[fmt]()
+            renderer.render(doc, out_path)
+            results[fmt] = str(out_path)
+        except Exception as exc:
+            partial = True
+            results[fmt] = {"error": repr(exc)}
+            print(f"[s09_render] WARNING: {fmt} render failed: {exc}. "
+                  f"Other formats continue.", file=sys.stderr, flush=True)
 
     bundle = _write_bundle(Path(compose_dir), fig_notes, out_dir)
     pptx_state = _pptx_state(summaries, requested, pptx_bullets)
 
     mark_done(out_dir, {
         "formats": results,
+        "partial": partial,
         "bundle_chapters": len(list((bundle / "chapters").glob("*.md"))),
         "bundle_figures": len(list((bundle / "figures").glob("*"))),
         "pptx_summarizer": pptx_state,
     })
-    return {"preview_files": results, "bundle": str(bundle),
-            "pptx_summarizer": pptx_state}
+    return {
+        "preview_files": results,
+        "bundle": str(bundle),
+        "pptx_summarizer": pptx_state,
+        "partial": partial,
+    }
 
 
 def _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir):
