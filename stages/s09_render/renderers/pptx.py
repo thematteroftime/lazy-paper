@@ -563,12 +563,12 @@ class PptxRenderer(Renderer):
 
         _tb1(s, _S.pick(_S.FIG_EYEBROW, doc.lang),
              tx, Inches(body_top + 1.0), tw, Inches(0.32),
-             Pt(10), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False)
+             Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False)
         _line(s, tx, Inches(body_top + 1.35), tx + tw, Inches(body_top + 1.35),
               T.RULE, Pt(0.3))
 
         observations = slide.observations or ((slide.deep_observation,) if slide.deep_observation else ())
-        obs_row_h = Inches(0.48)
+        obs_row_h = Inches(0.52)   # v15: was 0.48 — slightly taller for readability
         obs_area_top = Inches(body_top + 1.45)
         obs_area_h = Inches(body_h - 1.55)
         for j, obs_pt in enumerate(observations[:3]):
@@ -576,7 +576,7 @@ class PptxRenderer(Renderer):
             if oy + obs_row_h > obs_area_top + obs_area_h:
                 break
             _tb1(s, "◇", tx, oy, Inches(0.28), obs_row_h,
-                 Pt(10), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
+                 Pt(11), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
             _tb1(s, obs_pt, tx + Inches(0.28), oy, tw - Inches(0.28), obs_row_h,
                  Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
@@ -664,40 +664,53 @@ class PptxRenderer(Renderer):
         tx = Inches(text_x)
         tw = Inches(text_pane_w - 0.1)
         ty = Inches(body_top + 0.1)
-
-        _tb1(s, _S.pick(_S.COMBINED_KW, doc.lang), tx, ty, tw, Inches(0.35),
-             Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
-
-        bullet_row_h = Inches(0.55)
-        bullets_top = ty + Inches(0.38)
-        for i, bul in enumerate(slide.bullets):
-            by = bullets_top + i * bullet_row_h
-            marker = _MARKERS[i] if i < len(_MARKERS) else "▸"
-            _tb1(s, marker, tx, by, Inches(0.35), bullet_row_h,
-                 Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS)
-            _tb1(s, bul, tx + Inches(0.38), by, tw - Inches(0.38), bullet_row_h,
-                 Pt(14), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
-
-        n_bullets = len(slide.bullets)
-        obs_top = bullets_top + n_bullets * bullet_row_h + Inches(0.15)
         slide_bottom = Inches(body_top + body_h)
 
-        if obs_top < slide_bottom - Inches(0.8):
+        observations = slide.observations or ((slide.deep_observation,) if slide.deep_observation else ())
+        has_bullets = bool(slide.bullets)
+        has_obs     = bool(observations)
+
+        if has_bullets:
+            # ── bullets section (upper part of right pane) ─────────────────
+            _tb1(s, _S.pick(_S.COMBINED_KW, doc.lang), tx, ty, tw, Inches(0.35),
+                 Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
+
+            bullet_row_h = Inches(0.55)
+            bullets_top = ty + Inches(0.38)
+            for i, bul in enumerate(slide.bullets):
+                by = bullets_top + i * bullet_row_h
+                marker = _MARKERS[i] if i < len(_MARKERS) else "▸"
+                _tb1(s, marker, tx, by, Inches(0.35), bullet_row_h,
+                     Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS)
+                _tb1(s, bul, tx + Inches(0.38), by, tw - Inches(0.38), bullet_row_h,
+                     Pt(14), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
+
+            n_bullets = len(slide.bullets)
+            obs_top = bullets_top + n_bullets * bullet_row_h + Inches(0.15)
+        else:
+            # ── no bullets: observations fill the full right pane ──────────
+            obs_top = ty
+
+        if has_obs:
+            # v15: clamp obs_top to ensure observations don't start too far down
+            obs_top = min(obs_top, slide_bottom - Inches(1.6))  # need room for ≥1 obs
+
             _tb1(s, _S.pick(_S.FIG_EYEBROW, doc.lang), tx, obs_top, tw, Inches(0.30),
-                 Pt(10), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False)
+                 Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False)
             _line(s, tx, obs_top + Inches(0.32), tx + tw, obs_top + Inches(0.32),
                   T.RULE, Pt(0.3))
 
-            # Observation bullets
-            observations = slide.observations or ((slide.deep_observation,) if slide.deep_observation else ())
+            # Observation bullets — adaptive row height based on available space
             obs_item_top = obs_top + Inches(0.38)
-            obs_row_h = Inches(0.46)
-            for j, obs_pt in enumerate(observations[:3]):
+            obs_area_h   = slide_bottom - obs_item_top - Inches(0.05)
+            n_obs = min(len(observations), 3)
+            obs_row_h = min(Inches(0.52), int(obs_area_h / max(n_obs, 1)))
+            for j, obs_pt in enumerate(observations[:n_obs]):
                 oy = obs_item_top + j * obs_row_h
                 if oy + obs_row_h > slide_bottom - Inches(0.05):
                     break
                 _tb1(s, "◇", tx, oy, Inches(0.28), obs_row_h,
-                     Pt(10), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
+                     Pt(11), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
                 _tb1(s, obs_pt, tx + Inches(0.28), oy, tw - Inches(0.28), obs_row_h,
                      Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 

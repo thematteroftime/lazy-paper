@@ -259,31 +259,36 @@ class SlidePlanner:
                                        summaries: dict | None) -> list[str]:
         """Pull preview bullets for the section divider.
 
-        Priority: bullets from pure-bullet (no-figure) chapters in the group;
-        if none, fall back to bullets from figure-bearing chapters in the group
-        so the divider is never empty."""
-        if not summaries:
-            return []
-
+        Priority:
+          1. LLM bullets from pure-bullet (no-figure) chapters in the group.
+          2. LLM bullets from figure-bearing chapters in the group.
+          3. Rule-based fallback: first sentence of first paragraph of each chapter.
+             (v15 safety net — ensures KEY POINTS card is never empty)
+        """
         headings = set(group.get("chapter_headings") or [])
         pure_bullets: list[str] = []
         figure_bullets: list[str] = []
+        fallback_bullets: list[str] = []
 
         for ch in doc.chapters:
             if ch.heading not in headings:
                 continue
-            s = summaries.get(ch.heading) or {}
+            s = (summaries or {}).get(ch.heading) or {}
             bs = list(s.get("bullets", []))
-            if not bs:
-                continue
             has_figure = any(isinstance(b, FigureBlock) for b in ch.blocks)
-            if has_figure:
-                figure_bullets.extend(bs)
+            if bs:
+                (figure_bullets if has_figure else pure_bullets).extend(bs)
             else:
-                pure_bullets.extend(bs)
+                # Priority 3: rule-based — first sentence of first paragraph
+                for block in ch.blocks:
+                    if isinstance(block, Paragraph) and block.text.strip():
+                        first = block.text.split("。")[0].split(". ")[0].strip()[:60]
+                        if first:
+                            fallback_bullets.append(first)
+                        break
 
-        bullets = pure_bullets[:7] if pure_bullets else figure_bullets[:7]  # v13: was 5
-        return bullets
+        bullets = pure_bullets or figure_bullets or fallback_bullets
+        return bullets[:7]  # v13: was 5
 
     def _get_bullets(self, chapter: Chapter, paragraphs: list[Paragraph],
                      summary: dict | None) -> list[str]:
