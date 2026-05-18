@@ -1,7 +1,4 @@
-"""Stage 09: build the Document model and render to one or more formats.
-
-Default formats are docx + the mypaper_bundle (legacy contract). HTML/PDF/PPTX
-are added in later milestones and exposed via the `formats` parameter."""
+"""Stage 09: build the Document model and render to one or more formats."""
 from __future__ import annotations
 
 import shutil
@@ -12,8 +9,7 @@ from stages._common import load_yaml, mark_done
 from stages.s09_render.builder import DocumentBuilder
 from stages.s09_render.renderers import RENDERERS
 
-# Import side-effect: each renderer module registers itself in RENDERERS.
-# Import here (not in __init__.py) to keep the module graph explicit.
+# Renderer registration side-effects:
 import stages.s09_render.renderers.docx  # noqa: F401
 import stages.s09_render.renderers.html  # noqa: F401
 import stages.s09_render.renderers.pdf   # noqa: F401
@@ -32,10 +28,13 @@ Drop this folder's contents into mypaper/ to render the styled thesis:
 The README of mypaper has the full template-swap instructions.
 """
 
+DEFAULT_FORMATS = ("docx", "pdf", "html")
+
 
 def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         paper_title: str = "Paper Preview", lang: str = "zh",
-        formats: Iterable[str] | None = None) -> dict:
+        formats: Iterable[str] | None = None,
+        pptx_bullets: str = "llm") -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -43,23 +42,50 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
     fig_notes = _read_fig_notes(Path(fig_notes_dir))
     doc = DocumentBuilder(lang=lang, paper_title=paper_title).build(chapters_md, fig_notes)
 
-    requested = list(formats) if formats is not None else ["docx"]
+    requested = list(formats) if formats is not None else list(DEFAULT_FORMATS)
+    summaries = _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir)
+
     results: dict[str, str] = {}
     for fmt in requested:
         if fmt not in RENDERERS:
             raise ValueError(f"unknown format {fmt!r}; available: {sorted(RENDERERS)}")
         out_path = out_dir / f"preview.{fmt}"
-        RENDERERS[fmt]().render(doc, out_path)
+        if fmt == "pptx":
+            renderer = RENDERERS[fmt](summaries=summaries)
+        else:
+            renderer = RENDERERS[fmt]()
+        renderer.render(doc, out_path)
         results[fmt] = str(out_path)
 
     bundle = _write_bundle(Path(compose_dir), fig_notes, out_dir)
+    pptx_state = _pptx_state(summaries, requested, pptx_bullets)
 
     mark_done(out_dir, {
         "formats": results,
         "bundle_chapters": len(list((bundle / "chapters").glob("*.md"))),
         "bundle_figures": len(list((bundle / "figures").glob("*"))),
+        "pptx_summarizer": pptx_state,
     })
-    return {"preview_files": results, "bundle": str(bundle)}
+    return {"preview_files": results, "bundle": str(bundle),
+            "pptx_summarizer": pptx_state}
+
+
+def _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir):
+    if "pptx" not in requested or pptx_bullets != "llm":
+        return None
+    from llm.client import LLM
+    from stages.s09_render.pptx_summarizer import PptxSummarizer
+    llm = LLM("text")
+    summarizer = PptxSummarizer(llm=llm, cache_dir=out_dir / "llm_cache", lang=doc.lang)
+    return summarizer.summarize(doc)
+
+
+def _pptx_state(summaries, requested, pptx_bullets) -> str:
+    if "pptx" not in requested:
+        return "not_requested"
+    if pptx_bullets != "llm":
+        return "rule"
+    return "ok" if summaries is not None else "degraded"
 
 
 def _read_chapters(compose_dir: Path) -> dict[str, str]:
@@ -76,7 +102,6 @@ def _write_bundle(compose_dir: Path, fig_notes: list[dict], out_dir: Path) -> Pa
     bundle = out_dir / "mypaper_bundle"
     (bundle / "chapters").mkdir(parents=True, exist_ok=True)
     (bundle / "figures").mkdir(exist_ok=True)
-    # Clear stale files from prior runs
     for stale in (bundle / "chapters").glob("*.md"):
         stale.unlink()
     for stale in (bundle / "figures").iterdir():
