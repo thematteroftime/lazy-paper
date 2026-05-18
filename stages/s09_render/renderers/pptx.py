@@ -62,11 +62,13 @@ class PptxRenderer(Renderer):
     def __init__(self, summaries: dict | None = None,
                  template_path: Path | None = None,
                  presenter: str | None = None,
-                 affiliation: str | None = None):
+                 affiliation: str | None = None,
+                 subtitle: str | None = None):
         self.summaries = summaries
         self.template_path = template_path
         self.presenter = presenter or "Paper2MD Auto-Analysis"
         self.affiliation = affiliation or "Scientific Paper Deep Analysis"
+        self.subtitle = subtitle
         self._ch: int = -1          # chapter index, incremented on each divider
         self._fig_idx: int = 0      # figure counter for alternating layout
         self._cur_chapter: str = "" # current chapter heading for footer
@@ -139,9 +141,9 @@ class PptxRenderer(Renderer):
         rule_x = (_T.W - rule_w) / 2
         _line(s, rule_x, Inches(3.95), rule_x + rule_w, Inches(3.95), T.RULE, Pt(0.75))
 
-        # --- Subtitle: first keyword / Chinese subtitle ---
-        subtitle = "· 反铁电/弛豫反铁电交叉态 ·"
-        _tb1(s, subtitle,
+        # --- Subtitle: from param or sensible default ---
+        subtitle_text = self.subtitle or f"· {doc.lang.upper()} · A PAPER MOMENT ·"
+        _tb1(s, subtitle_text,
              Inches(1.5), Inches(4.1), Inches(10.333), Inches(0.5),
              Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, align=PP_ALIGN.CENTER)
 

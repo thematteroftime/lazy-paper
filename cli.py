@@ -182,6 +182,7 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             pptx_template=getattr(args, "pptx_template", None),
             presenter=getattr(args, "presenter", None),
             affiliation=getattr(args, "affiliation", None),
+            pptx_subtitle=getattr(args, "pptx_subtitle", None),
         )
 
 
@@ -213,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="Presenter name shown on the title slide")
     r.add_argument("--affiliation", default=None, metavar="STR",
                    help="Affiliation shown on the title slide")
+    r.add_argument("--pptx-subtitle", default=None, metavar="STR",
+                   help="Custom subtitle for title slide (default: derived from context.yaml keywords)")
     r.add_argument("--retry-failed", action="store_true",
                    help="In --only mode, re-run only the formats marked partial in done.yaml")
     args = ap.parse_args(argv)

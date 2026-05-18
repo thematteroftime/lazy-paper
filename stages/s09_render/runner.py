@@ -32,6 +32,33 @@ The README of mypaper has the full template-swap instructions.
 DEFAULT_FORMATS = ("docx", "pdf", "html")
 
 
+def _resolve_pptx_subtitle(context_dir: Path | None, pptx_subtitle: str | None) -> str | None:
+    """Compute PPTX subtitle from keywords if not explicitly provided.
+
+    If pptx_subtitle is provided, use it directly.
+    Otherwise, try to load context.yaml and extract top 3 keywords.
+    Returns None if no subtitle can be derived.
+    """
+    if pptx_subtitle:
+        return pptx_subtitle
+    if context_dir is None:
+        return None
+    path = Path(context_dir) / "context.yaml"
+    if not path.exists():
+        return None
+    try:
+        ctx = load_yaml(path) or {}
+    except Exception:
+        return None
+    keywords = ctx.get("keywords") or []
+    if not isinstance(keywords, list) or not keywords:
+        return None
+    top = [str(k).strip() for k in keywords[:3] if k]
+    if not top:
+        return None
+    return "·  " + "  ·  ".join(top) + "  ·"
+
+
 def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         paper_title: str = "Paper Preview", lang: str = "zh",
         formats: Iterable[str] | None = None,
@@ -39,7 +66,8 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         context_dir: Path | None = None,
         pptx_template: Path | None = None,
         presenter: str | None = None,
-        affiliation: str | None = None) -> dict:
+        affiliation: str | None = None,
+        pptx_subtitle: str | None = None) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -53,6 +81,7 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
 
     results: dict[str, object] = {}
     partial = False
+    resolved_subtitle = _resolve_pptx_subtitle(context_dir, pptx_subtitle)
     for fmt in requested:
         if fmt not in RENDERERS:
             raise ValueError(f"unknown format {fmt!r}; available: {sorted(RENDERERS)}")
@@ -62,7 +91,8 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
                 renderer = RENDERERS[fmt](summaries=summaries,
                                          template_path=pptx_template,
                                          presenter=presenter,
-                                         affiliation=affiliation)
+                                         affiliation=affiliation,
+                                         subtitle=resolved_subtitle)
             else:
                 renderer = RENDERERS[fmt]()
             renderer.render(doc, out_path)
