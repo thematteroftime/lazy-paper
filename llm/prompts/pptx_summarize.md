@@ -6,6 +6,15 @@ Output STRICT JSON with these keys:
 - `figure_observations`: object {fig_id: [array of 2-3 observation strings]}.
   Each observation string: Chinese 40-80 chars, English 20-40 words.
 
+## Paper context (use this to keep chapter analysis connected)
+- System: {system}
+- Keywords: {keywords}
+- Outline section this chapter belongs to: {section_name}
+- Prior chapter's main finding (avoid restating; build upon or contrast): {prior_bullet}
+- Following chapter heading (what comes next — avoid pre-empting it): {next_heading}
+
+Use this context to make your bullets PROGRESSIVELY connected: reference what was established in the prior chapter when relevant, or set up what the next chapter will address. At least one bullet per chapter should explicitly link to either the prior or next chapter's theme (e.g., "承上节结论…", "为下节…奠定基础", "building on the prior finding that…", "this sets up the next section on…").
+
 Rules:
 - No prose, no preamble. Output ONLY the JSON object.
 - Bullets must be self-contained (a slide reader can understand without context).

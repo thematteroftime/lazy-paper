@@ -7,7 +7,7 @@ Paper-specific terminology to use in group naming:
 - Key terms: {key_terms}
 - Keywords: {keywords}
 
-Chapter headings (in order) with first-paragraph preview:
+Chapter headings (in order) with content metadata and first-paragraph preview:
 {chapters_block}
 
 Output STRICT JSON only:

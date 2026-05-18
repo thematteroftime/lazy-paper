@@ -21,19 +21,19 @@ def test_second_run_with_same_input_makes_zero_llm_calls(tmp_path: Path):
     out_dir = tmp_path / "out"
     _seed(compose, fig_dir)
 
-    # v7: three LLM call types — chapter bullets, outline groups, paper summary.
+    # v11 two-pass: call order is outline FIRST, then chapter bullets, then paper summary.
     # Each must return a valid payload so the result is cached and the second run
     # makes zero additional LLM calls.
-    chapter_payload = json.dumps({"bullets": ["a", "b"], "figure_one_liners": {}})
     outline_payload = json.dumps({
         "groups": [{"name": "All", "chapter_headings": ["Intro"], "takeaway": "Context."}]
     })
+    chapter_payload = json.dumps({"bullets": ["a", "b"], "figure_one_liners": {}})
     paper_payload = json.dumps({
         "bullets": ["Key finding 1", "Key finding 2"],
         "takeaway": "Important work.",
     })
 
-    _responses = iter([chapter_payload, outline_payload, paper_payload])
+    _responses = iter([outline_payload, chapter_payload, paper_payload])
 
     def _next_response(*args, **kwargs):
         try:

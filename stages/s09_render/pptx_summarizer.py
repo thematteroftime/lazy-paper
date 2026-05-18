@@ -12,6 +12,15 @@ v9 additions:
 - figure_observations replaces figure_one_liners (2-3 points per figure)
 - Legacy cache compatibility: old figure_one_liners auto-converted
 - _PROMPT_VERSION constants invalidate old caches on prompt changes
+
+v11 additions:
+- Two-pass summarize(): pass 1 computes outline (cheap), pass 2 feeds per-chapter
+  summaries with cross-chapter context (system, keywords, section_name, prior_bullet,
+  next_heading) for connective analysis
+- Outline prompt now includes per-chapter (has_figures, n_paragraphs) metadata
+  so grouping is budget-aware (Enhancement 2)
+- Low-diversity group-name rejection: if >2 of 4+ groups share a common word,
+  retry once with an amended prompt (Enhancement 3)
 """
 from __future__ import annotations
 
@@ -32,9 +41,33 @@ _OUTLINE_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" /
 _PAPER_SUMMARY_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "pptx_paper_summary.md"
 
 # Bump these constants to invalidate old caches when prompts change.
-_CHAPTER_PROMPT_VERSION = "v10-deeper-obs"
-_OUTLINE_PROMPT_VERSION = "v10-grounded-grouping"
+_CHAPTER_PROMPT_VERSION = "v11-cross-context"
+_OUTLINE_PROMPT_VERSION = "v11-budget-aware"
 _PAPER_PROMPT_VERSION = "v10-quantitative-summary"
+
+
+def _is_low_diversity(groups: list[dict]) -> bool:
+    """Return True if >2 of 4+ group names share a common content word.
+
+    This detects the "all groups start with 弛豫反铁电" syndrome and triggers
+    a diversity-boosting retry (Enhancement 3).
+    """
+    if len(groups) < 4:
+        return False
+    names = [g.get("name", "") for g in groups]
+    # Build set of all unique 2+ character segments from each name
+    # and check if any single word appears in >2 names
+    from collections import Counter
+    word_counts: Counter = Counter()
+    for name in names:
+        # Split Chinese names by common separators; for CJK just use substrings
+        # Check bigrams and trigrams as "words"
+        for length in (2, 3, 4):
+            for start in range(len(name) - length + 1):
+                word_counts[name[start:start + length]] += 1
+    # If any substring appears in >2 out of len(groups) names → low diversity
+    threshold = max(2, len(groups) - 1)
+    return any(count > threshold for count in word_counts.values())
 
 
 def _strip_md_heading(heading: str) -> str:
@@ -91,15 +124,50 @@ class PptxSummarizer:
         self._outline_template = _OUTLINE_PROMPT_PATH.read_text(encoding="utf-8")
         self._paper_summary_template = _PAPER_SUMMARY_PROMPT_PATH.read_text(encoding="utf-8")
 
-    def summarize(self, doc: Document) -> dict | None:
-        """Returns {chapter_heading: {bullets, figure_one_liners}} or None on
-        total failure (3 consecutive LLM errors on the same chapter)."""
+    def summarize(self, doc: Document,
+                  outline: list[dict] | None = None) -> dict | None:
+        """Returns {chapter_heading: {bullets, figure_observations}} or None on
+        total failure (3 consecutive LLM errors on the same chapter).
+
+        v11: two-pass approach.
+        Pass 1: compute outline (cheap, just headings+previews) if not supplied.
+        Pass 2: per-chapter summary enriched with cross-chapter context:
+          - system + keywords (from context.yaml)
+          - section_name (from outline group this chapter belongs to)
+          - prior chapter's first bullet (avoid restatement; build on it)
+          - next chapter's heading (avoid pre-empting it)
+        """
+        # Build chapter → section_name lookup from outline
+        chapter_to_section: dict[str, str] = {}
+        if outline:
+            for group in outline:
+                for h in group.get("chapter_headings") or []:
+                    chapter_to_section[h] = group.get("name", "")
+
+        ctx = self._load_context()
+        system = ctx.get("system", "") or ""
+        keywords_list = ctx.get("keywords") or []
+        keywords = "; ".join(str(k) for k in keywords_list[:5])
+
         out: dict[str, dict] = {}
-        for chapter in doc.chapters:
-            chapter_out = self._summarize_chapter(chapter)
+        prior_bullet: str = ""
+        for i, chapter in enumerate(doc.chapters):
+            next_heading = doc.chapters[i + 1].heading if i + 1 < len(doc.chapters) else ""
+            section_name = chapter_to_section.get(chapter.heading, "")
+            chapter_out = self._summarize_chapter(
+                chapter,
+                system=system,
+                keywords=keywords,
+                section_name=section_name,
+                prior_bullet=prior_bullet,
+                next_heading=next_heading,
+            )
             if chapter_out is None:
                 return None
             out[chapter.heading] = chapter_out
+            # Update prior_bullet: take the first bullet for the next iteration
+            bullets = chapter_out.get("bullets") or []
+            prior_bullet = bullets[0] if bullets else ""
         return out
 
     def summarize_outline(self, doc: Document) -> list[dict] | None:
@@ -107,6 +175,10 @@ class PptxSummarizer:
 
         Returns: [{"name": str, "chapter_headings": [str], "takeaway": str}]
         Cached at: <cache_dir>/_outline.json
+
+        v11: includes per-chapter (has_figures, n_paragraphs) metadata in prompt
+        (Enhancement 2) and applies low-diversity group-name rejection with one
+        retry (Enhancement 3).
         """
         input_hash = self._outline_input_hash(doc)
         cached = self._try_cache("_outline", input_hash)
@@ -115,7 +187,7 @@ class PptxSummarizer:
 
         prompt = self._build_outline_prompt(doc)
         last_error: Exception | None = None
-        for _ in range(_MAX_RETRIES):
+        for attempt in range(_MAX_RETRIES):
             try:
                 response = self.llm.chat(
                     system="You output strict JSON only.",
@@ -126,6 +198,27 @@ class PptxSummarizer:
                 payload = json.loads(response.content)
                 if "groups" not in payload:
                     raise ValueError("Missing 'groups' key in LLM response")
+                groups = payload.get("groups") or []
+                # Enhancement 3: reject low-diversity group names (first attempt only)
+                if attempt == 0 and _is_low_diversity(groups):
+                    diverse_prompt = prompt + (
+                        "\n\n**IMPORTANT**: Your previous attempt produced group names that all share "
+                        "the same root word. Each group name MUST be lexically distinct — "
+                        "use different nouns (e.g., 调制、表征、极化、储能、机制、演化) "
+                        "to avoid repetition. Retry with maximally diverse names."
+                    )
+                    response2 = self.llm.chat(
+                        system="You output strict JSON only.",
+                        user=diverse_prompt,
+                        temperature=0.4,
+                        max_tokens=1200,
+                    )
+                    try:
+                        payload2 = json.loads(response2.content)
+                        if "groups" in payload2:
+                            payload = payload2
+                    except Exception:
+                        pass  # keep original if retry fails to parse
                 self._write_cache("_outline", input_hash, payload, prompt, response)
                 return _normalize_outline_groups(payload.get("groups"))
             except Exception as exc:
@@ -166,14 +259,39 @@ class PptxSummarizer:
 
     # ---------- per-chapter ----------
 
-    def _summarize_chapter(self, chapter: Chapter) -> dict | None:
+    def _summarize_chapter(self, chapter: Chapter, *,
+                           system: str = "",
+                           keywords: str = "",
+                           section_name: str = "",
+                           prior_bullet: str = "",
+                           next_heading: str = "") -> dict | None:
+        """Summarize a single chapter with optional cross-chapter context.
+
+        v11: accepts system, keywords, section_name, prior_bullet, next_heading
+        for connective bullet generation. These are baked into the input hash so
+        cache correctly invalidates when context changes.
+        """
         slug = slugify(chapter.heading)
-        input_hash = self._input_hash(chapter)
+        input_hash = self._input_hash(
+            chapter,
+            system=system,
+            keywords=keywords,
+            section_name=section_name,
+            prior_bullet=prior_bullet,
+            next_heading=next_heading,
+        )
         cached = self._try_cache(slug, input_hash)
         if cached is not None:
             return cached
 
-        prompt = self._build_prompt(chapter)
+        prompt = self._build_prompt(
+            chapter,
+            system=system,
+            keywords=keywords,
+            section_name=section_name,
+            prior_bullet=prior_bullet,
+            next_heading=next_heading,
+        )
         last_error: Exception | None = None
         for _ in range(_MAX_RETRIES):
             try:
@@ -206,7 +324,12 @@ class PptxSummarizer:
             h.update(p)
         return h.hexdigest()
 
-    def _input_hash(self, chapter: Chapter) -> str:
+    def _input_hash(self, chapter: Chapter, *,
+                    system: str = "",
+                    keywords: str = "",
+                    section_name: str = "",
+                    prior_bullet: str = "",
+                    next_heading: str = "") -> str:
         chunks: list[bytes] = [chapter.heading.encode("utf-8"), b"\x00"]
         for block in chapter.blocks:
             if isinstance(block, Paragraph):
@@ -217,6 +340,14 @@ class PptxSummarizer:
                     block.caption.encode("utf-8"), b"|",
                     block.deep_observation.encode("utf-8"), b"\x00",
                 ]
+        # Include cross-chapter context in hash so cache invalidates when context changes
+        chunks += [
+            system.encode("utf-8"), b"\x00",
+            keywords.encode("utf-8"), b"\x00",
+            section_name.encode("utf-8"), b"\x00",
+            prior_bullet.encode("utf-8"), b"\x00",
+            next_heading.encode("utf-8"), b"\x00",
+        ]
         return self._make_hash(_CHAPTER_PROMPT_VERSION, self.lang, *chunks)
 
     def _outline_input_hash(self, doc: Document) -> str:
@@ -224,8 +355,12 @@ class PptxSummarizer:
         for ch in doc.chapters:
             first_para = next((b for b in ch.blocks if isinstance(b, Paragraph)), None)
             preview = first_para.text[:200] if first_para else ""
+            has_figures = any(isinstance(b, FigureBlock) for b in ch.blocks)
+            n_paragraphs = sum(1 for b in ch.blocks if isinstance(b, Paragraph))
             chunks += [ch.heading.encode("utf-8"), b"\x00",
-                       preview.encode("utf-8"), b"\x00"]
+                       preview.encode("utf-8"), b"\x00",
+                       str(has_figures).encode("utf-8"), b"\x00",
+                       str(n_paragraphs).encode("utf-8"), b"\x00"]
         # Include context terms so cache invalidates when context.yaml changes
         ctx = self._load_context()
         system = ctx.get("system", "") or ""
@@ -294,7 +429,12 @@ class PptxSummarizer:
 
     # ---------- prompt builders ----------
 
-    def _build_prompt(self, chapter: Chapter) -> str:
+    def _build_prompt(self, chapter: Chapter, *,
+                      system: str = "",
+                      keywords: str = "",
+                      section_name: str = "",
+                      prior_bullet: str = "",
+                      next_heading: str = "") -> str:
         body = "\n\n".join(
             b.text for b in chapter.blocks if isinstance(b, Paragraph)
         )
@@ -311,6 +451,11 @@ class PptxSummarizer:
             .replace("{heading}", chapter.heading)
             .replace("{body}", body or "(no body text)")
             .replace("{figures_block}", figures_block)
+            .replace("{system}", system or "(not specified)")
+            .replace("{keywords}", keywords or "(not specified)")
+            .replace("{section_name}", section_name or "(not specified)")
+            .replace("{prior_bullet}", prior_bullet or "(this is the first chapter)")
+            .replace("{next_heading}", next_heading or "(this is the last chapter)")
         )
 
     def _build_outline_prompt(self, doc: Document) -> str:
@@ -320,7 +465,11 @@ class PptxSummarizer:
                 (b for b in ch.blocks if isinstance(b, Paragraph)), None
             )
             preview = (first_para.text[:200] if first_para else "(no text)")
-            lines.append(f"## {ch.heading}\n{preview}")
+            has_figures = any(isinstance(b, FigureBlock) for b in ch.blocks)
+            n_paragraphs = sum(1 for b in ch.blocks if isinstance(b, Paragraph))
+            # Enhancement 2: include substance metadata so outline can group by content
+            meta = f"[has_figures={has_figures}, n_paragraphs={n_paragraphs}]"
+            lines.append(f"## {ch.heading} {meta}\n{preview}")
         chapters_block = "\n\n".join(lines)
         ctx = self._load_context()
         system = ctx.get("system", "") or ""

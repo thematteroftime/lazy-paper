@@ -140,8 +140,9 @@ def _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir,
     llm = LLM("text")
     summarizer = PptxSummarizer(llm=llm, cache_dir=out_dir / "llm_cache",
                                 lang=doc.lang, context_dir=context_dir)
-    summaries = summarizer.summarize(doc)
+    # v11 two-pass approach: outline first (cheap), then summaries with context
     outline = summarizer.summarize_outline(doc)
+    summaries = summarizer.summarize(doc, outline=outline)
     paper_brief = summarizer.summarize_paper(doc)
     return summaries, outline, paper_brief
 
