@@ -185,40 +185,45 @@ class PptxSummarizer:
         if cached is not None:
             return _normalize_outline_groups(cached.get("groups"))
 
+        all_chapter_headings = [ch.heading for ch in doc.chapters]
         prompt = self._build_outline_prompt(doc)
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
+                user_prompt = prompt
+                temp = 0.2
+                if attempt > 0:
+                    # Reinforcement on retry
+                    user_prompt = prompt + (
+                        f"\n\n**RETRY — STRICT ENFORCEMENT**: Your previous response was rejected. "
+                        f"Output EXACTLY 4 or 5 groups (not 1, not 11). "
+                        f"Every one of the {len(all_chapter_headings)} input chapter headings "
+                        f"MUST appear in exactly one group's `chapter_headings` array. "
+                        f"Each group name must be lexically distinct from the others."
+                    )
+                    temp = 0.4
                 response = self.llm.chat(
                     system="You output strict JSON only.",
-                    user=prompt,
-                    temperature=0.2,
+                    user=user_prompt,
+                    temperature=temp,
                     max_tokens=1200,
                 )
                 payload = json.loads(response.content)
                 if "groups" not in payload:
                     raise ValueError("Missing 'groups' key in LLM response")
                 groups = payload.get("groups") or []
-                # Enhancement 3: reject low-diversity group names (first attempt only)
-                if attempt == 0 and _is_low_diversity(groups):
-                    diverse_prompt = prompt + (
-                        "\n\n**IMPORTANT**: Your previous attempt produced group names that all share "
-                        "the same root word. Each group name MUST be lexically distinct — "
-                        "use different nouns (e.g., 调制、表征、极化、储能、机制、演化) "
-                        "to avoid repetition. Retry with maximally diverse names."
-                    )
-                    response2 = self.llm.chat(
-                        system="You output strict JSON only.",
-                        user=diverse_prompt,
-                        temperature=0.4,
-                        max_tokens=1200,
-                    )
-                    try:
-                        payload2 = json.loads(response2.content)
-                        if "groups" in payload2:
-                            payload = payload2
-                    except Exception:
-                        pass  # keep original if retry fails to parse
+                # Validate: chapter coverage always; group count only for ≥5-chapter papers
+                n = len(groups)
+                if len(all_chapter_headings) >= 5 and (n < 3 or n > 6):
+                    raise ValueError(f"Group count {n} outside [3, 6] for {len(all_chapter_headings)}-chapter paper")
+                assigned = []
+                for g in groups:
+                    assigned.extend(g.get("chapter_headings") or [])
+                missing = [h for h in all_chapter_headings if h not in assigned]
+                if missing:
+                    raise ValueError(f"Chapters not assigned to any group: {missing}")
+                if len(all_chapter_headings) >= 5 and _is_low_diversity(groups):
+                    raise ValueError("Low diversity: group names share too many roots")
                 self._write_cache("_outline", input_hash, payload, prompt, response)
                 return _normalize_outline_groups(payload.get("groups"))
             except Exception as exc:

@@ -148,7 +148,9 @@ def test_pptx_summarizer_summarize_outline_caches_correctly(tmp_path: Path):
     """summarize_outline caches result and avoids second LLM call."""
     outline_payload = {
         "groups": [
-            {"name": "Section A", "chapter_headings": ["Intro", "Methods", "Conclusion"], "takeaway": "All."},
+            {"name": "Background", "chapter_headings": ["Intro"], "takeaway": "Sets context."},
+            {"name": "Core Work", "chapter_headings": ["Methods"], "takeaway": "Main methods."},
+            {"name": "Findings", "chapter_headings": ["Conclusion"], "takeaway": "Key results."},
         ]
     }
     llm = _fake_llm(outline_payload)
