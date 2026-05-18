@@ -179,6 +179,7 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             lang=args.lang,
             formats=formats,
             pptx_bullets=args.pptx_bullets,
+            pptx_template=getattr(args, "pptx_template", None),
         )
 
 
@@ -204,6 +205,8 @@ def main(argv: list[str] | None = None) -> int:
                         "(default: docx,pdf,html — PPT is opt-in because it uses LLM)")
     r.add_argument("--pptx-bullets", choices=("llm", "rule"), default="llm",
                    help="How PPT bullets are generated (llm = quality, rule = offline)")
+    r.add_argument("--pptx-template", type=Path, default=None, metavar="PATH",
+                   help="Optional .pptx file used as slide-master base for PPT output")
     r.add_argument("--retry-failed", action="store_true",
                    help="In --only mode, re-run only the formats marked partial in done.yaml")
     args = ap.parse_args(argv)

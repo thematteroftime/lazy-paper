@@ -36,7 +36,8 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         paper_title: str = "Paper Preview", lang: str = "zh",
         formats: Iterable[str] | None = None,
         pptx_bullets: str = "llm",
-        context_dir: Path | None = None) -> dict:
+        context_dir: Path | None = None,
+        pptx_template: Path | None = None) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -56,7 +57,8 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         out_path = out_dir / f"preview.{fmt}"
         try:
             if fmt == "pptx":
-                renderer = RENDERERS[fmt](summaries=summaries)
+                renderer = RENDERERS[fmt](summaries=summaries,
+                                         template_path=pptx_template)
             else:
                 renderer = RENDERERS[fmt]()
             renderer.render(doc, out_path)
