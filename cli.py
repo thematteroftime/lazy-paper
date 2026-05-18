@@ -7,6 +7,28 @@ import sys
 import time
 from pathlib import Path
 
+
+def _augment_dyld_for_macos_brew() -> None:
+    """Help dyld find weasyprint's Homebrew-installed dependencies on macOS bare-metal.
+
+    No-op on Linux (Docker) and Windows. See conftest.py for the test-time twin.
+    """
+    if sys.platform != "darwin":
+        return
+    candidates = ["/opt/homebrew/lib", "/usr/local/lib"]
+    existing = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+    parts: list[str] = []
+    if existing:
+        parts.append(existing)
+    for path in candidates:
+        if os.path.isdir(path) and path not in parts:
+            parts.append(path)
+    if parts:
+        os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(parts)
+
+
+_augment_dyld_for_macos_brew()
+
 from dotenv import load_dotenv
 
 from stages._common import dump_yaml, slugify, stage_dir, is_done
