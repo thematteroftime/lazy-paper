@@ -61,15 +61,18 @@ _GRAY88 = RGBColor(0x88, 0x88, 0x88)
 
 
 class _S:
-    """Localized UI string pairs — (zh, en)."""
-    OUTLINE_TITLE   = ("目  录  ·  Contents", "Contents")
-    SECTION_EYEBROW = ("本节要点 · KEY POINTS",  "Key Points")
-    NAV_HINT        = ("» 继续 →",               "» continue →")
-    FIG_EYEBROW     = ("深度观察 · KEY OBSERVATIONS", "Key Observations")
-    COMBINED_KW     = ("要  点",                 "Key Points")
-    CLOSING_TITLE   = ("结论 · Conclusion",      "Conclusion")
-    CHAPTER_FOOTER  = ("Chapter: ",              "Chapter: ")
-    BYLINE_LABEL    = ("PRESENTER  ·  AFFILIATION  ·  DATE", "PRESENTER  ·  AFFILIATION  ·  DATE")
+    """Localized UI string pairs — (zh, en).
+
+    v13: zh values are PURE Chinese; en values are PURE English. No mixed strings.
+    """
+    OUTLINE_TITLE   = ("目录",          "Contents")
+    SECTION_EYEBROW = ("本节要点",       "Key Points")
+    NAV_HINT        = ("» 继续 →",      "» continue →")
+    FIG_EYEBROW     = ("深度观察",       "Key Observations")
+    COMBINED_KW     = ("要点",          "Key Points")
+    CLOSING_TITLE   = ("结论",          "Conclusion")
+    CHAPTER_FOOTER  = ("章节：",        "Chapter: ")
+    BYLINE_LABEL    = ("演讲者  ·  单位  ·  日期", "PRESENTER  ·  AFFILIATION  ·  DATE")
 
     @staticmethod
     def pick(pair: tuple[str, str], lang: str) -> str:
@@ -153,6 +156,7 @@ class PptxRenderer(Renderer):
     # ── slide builders ─────────────────────────────────────────────────────────
 
     def _title(self, prs, slide, *, idx, total, doc):
+        """Title slide — v13: tighter vertical centering, pure-language byline."""
         s = prs.slides.add_slide(self._lay(prs, _IDX_TITLE))
         _bg(s)
         T = _T
@@ -162,9 +166,9 @@ class PptxRenderer(Renderer):
         ph = s.shapes.title
         if ph is not None:
             ph.left   = Inches(1.2)
-            ph.top    = Inches(1.0)
+            ph.top    = Inches(1.5)      # v13: was 1.0, move up by raising relative position
             ph.width  = Inches(10.9)
-            ph.height = Inches(2.8)
+            ph.height = Inches(2.5)      # v13: was 2.8, tighter
             ph.text_frame.word_wrap = True
             ph.text_frame.text = slide.title
             p = ph.text_frame.paragraphs[0]
@@ -178,34 +182,41 @@ class PptxRenderer(Renderer):
 
         rule_w = Inches(3.5)
         rule_x = (_T.W - rule_w) / 2
-        _line(s, rule_x, Inches(3.95), rule_x + rule_w, Inches(3.95), T.RULE, Pt(0.75))
+        _line(s, rule_x, Inches(4.1), rule_x + rule_w, Inches(4.1), T.RULE, Pt(0.75))
 
-        subtitle_text = self.subtitle or f"· {doc.lang.upper()} · A PAPER MOMENT ·"
-        _tb1(s, subtitle_text,
-             Inches(1.5), Inches(4.1), Inches(10.333), Inches(0.5),
-             Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, align=PP_ALIGN.CENTER)
+        subtitle_text = self.subtitle or ""
+        if subtitle_text:
+            _tb1(s, subtitle_text,
+                 Inches(1.5), Inches(4.25), Inches(10.333), Inches(0.45),
+                 Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, align=PP_ALIGN.CENTER)
+            meta_top = Inches(4.75)
+        else:
+            meta_top = Inches(4.3)
 
         today = datetime.date.today()
         date_str = f"{today.year}-{today.month:02d}-{today.day:02d}"
         byline_x = Inches(1.5)
         byline_w = Inches(10.333)
 
-        _tb1(s, _S.BYLINE_LABEL[0],
-             byline_x, Inches(4.85), byline_w, Inches(0.28),
+        # v13: pure-language byline label
+        byline_label = _S.pick(_S.BYLINE_LABEL, doc.lang)
+        _tb1(s, byline_label,
+             byline_x, meta_top, byline_w, Inches(0.28),
              Pt(8), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS, align=PP_ALIGN.CENTER)
 
         _tb1(s, f"{self.presenter}  ·  {self.affiliation}  ·  {date_str}",
-             byline_x, Inches(5.15), byline_w, Inches(0.45),
+             byline_x, meta_top + Inches(0.28), byline_w, Inches(0.42),
              Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False, align=PP_ALIGN.CENTER)
 
-        _footer(s, idx, total, chapter="")
+        _footer(s, idx, total, chapter="", lang=doc.lang)
         _notes(s, slide.notes)
 
     def _outline(self, prs, slide, *, idx, total, doc):
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
-        _tb1(s, _S.OUTLINE_TITLE[0],
+        # v13: pure-language outline title
+        _tb1(s, _S.pick(_S.OUTLINE_TITLE, doc.lang),
              Inches(0), Inches(0.35), Inches(13.333), Inches(0.6),
              Pt(22), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True, align=PP_ALIGN.CENTER)
         _line(s, Inches(0.8), Inches(1.0), Inches(12.5), Inches(1.0), T.RULE, Pt(1))
@@ -234,7 +245,7 @@ class PptxRenderer(Renderer):
                 sep_y = y + row_h - Inches(0.04)
                 _line(s, Inches(2.0), sep_y, Inches(11.3), sep_y, T.RULE, Pt(0.3))
 
-        _footer(s, idx, total, chapter="")
+        _footer(s, idx, total, chapter="", lang=doc.lang)
         _notes(s, slide.notes)
 
     def _divider(self, prs, slide, *, idx, total, doc):
@@ -272,15 +283,17 @@ class PptxRenderer(Renderer):
              Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True,
              align=PP_ALIGN.CENTER)
 
-        _footer(s, idx, total, chapter=slide.title)
+        _footer(s, idx, total, chapter=slide.title, lang=doc.lang)
         _notes(s, slide.notes)
 
     def _outline_grouped(self, prs, slide, *, idx, total, doc):
-        """Outline slide with 4-5 high-level sections (v7)."""
+        """Outline slide with 4-5 high-level sections (v7). v13: pure-lang title, fixed number column."""
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
-        _tb1(s, _S.OUTLINE_TITLE[0],
+        # v13: pick pure-language outline title
+        outline_title = _S.pick(_S.OUTLINE_TITLE, doc.lang)
+        _tb1(s, outline_title,
              Inches(0), Inches(0.25), Inches(13.333), Inches(0.6),
              Pt(22), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True, align=PP_ALIGN.CENTER)
         _line(s, Inches(0.8), Inches(0.9), Inches(12.5), Inches(0.9), T.RULE, Pt(1))
@@ -296,23 +309,24 @@ class PptxRenderer(Renderer):
             y = content_start_y + i * row_h
             takeaway = takeaways[i] if i < len(takeaways) else ""
 
-            # Number: bold gray serif
-            _tb1(s, f"{i+1:02d}", Inches(2.2), y, Inches(0.5), Inches(0.5),
-                 Pt(20), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
-            # Section name: bold sans
-            _tb1(s, name, Inches(2.8), y, Inches(8.5), Inches(0.45),
+            # v13: number column wider (0.8") so "01" fits on one line; use single digit format
+            num_str = f"{i+1:02d}"
+            _tb1(s, num_str, Inches(2.0), y, Inches(0.8), Inches(0.55),
+                 Pt(18), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
+            # Section name: bold sans, shifted right to accommodate wider number column
+            _tb1(s, name, Inches(2.9), y, Inches(8.4), Inches(0.48),
                  Pt(20), T.TEXT, T.LAT_SANS, T.EA_SANS, bold=True, wrap=True)
             # Takeaway: italic gray, smaller
             if takeaway:
-                _tb1(s, takeaway, Inches(2.8), y + Inches(0.45), Inches(8.5), Inches(0.38),
+                _tb1(s, takeaway, Inches(2.9), y + Inches(0.48), Inches(8.4), Inches(0.36),
                      Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
             # Separator (not after last item)
             if i < n - 1:
                 sep_y = y + row_h - Inches(0.04)
-                _line(s, Inches(2.2), sep_y, Inches(11.3), sep_y, T.RULE, Pt(0.3))
+                _line(s, Inches(2.0), sep_y, Inches(11.3), sep_y, T.RULE, Pt(0.3))
 
-        _footer(s, idx, total, chapter="")
+        _footer(s, idx, total, chapter="", lang=doc.lang)
         _notes(s, slide.notes)
 
     def _section_divider(self, prs, slide, *, idx, total, doc):
@@ -358,6 +372,7 @@ class PptxRenderer(Renderer):
 
         # ── RIGHT BLOCK ─────────────────────────────────────────────────────────
 
+        # v13: pure-language eyebrow label
         eyebrow = _S.pick(_S.SECTION_EYEBROW, doc.lang)
         _tb1(s, eyebrow,
              Inches(5.0), Inches(1.0), Inches(7.5), Inches(0.38),
@@ -375,7 +390,7 @@ class PptxRenderer(Renderer):
         card.line.width = Pt(1)
         card.text_frame.text = ""
 
-        bullets = slide.bullets[:5] if slide.bullets else []
+        bullets = slide.bullets[:7] if slide.bullets else []   # v13: was 5
         n_bullets = len(bullets)
 
         if n_bullets > 0:
@@ -405,15 +420,16 @@ class PptxRenderer(Renderer):
              italic=True, align=PP_ALIGN.RIGHT)
 
         # Chapter label for footer (use parent section name)
-        _footer(s, idx, total, chapter=slide.title)
+        _footer(s, idx, total, chapter=slide.title, lang=doc.lang)
         _notes(s, slide.notes)
 
     def _closing_rich(self, prs, slide, *, idx, total, doc):
-        """Rich closing slide with 5-7 bullets + takeaway (v7)."""
+        """Rich closing slide with 5-7 bullets + takeaway (v7). v13: pure-language title."""
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
 
+        # v13: pure-language closing title
         _tb1(s, _S.pick(_S.CLOSING_TITLE, doc.lang),
              Inches(0.7), Inches(0.15), Inches(12.0), Inches(0.45),
              Pt(12), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, wrap=True)
@@ -440,7 +456,7 @@ class PptxRenderer(Renderer):
                  Inches(0.7), sep_y + Inches(0.12), Inches(11.6), Inches(0.6),
                  Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True, italic=True, wrap=True)
 
-        _footer(s, idx, total, chapter="")
+        _footer(s, idx, total, chapter="", lang=doc.lang)
         _notes(s, slide.notes)
 
     def _bullets(self, prs, slide, *, idx, total, doc):
@@ -452,7 +468,8 @@ class PptxRenderer(Renderer):
         is_closing = slide.kind == "closing"
 
         if is_closing:
-            sec_label = "总结 · Conclusion"
+            # v13: pure-language closing label
+            sec_label = _S.pick(_S.CLOSING_TITLE, doc.lang)
         else:
             kw = "要点" if doc.lang == "zh" else "Key Insights"
             # v12: use hierarchical §group.chapter label when available
@@ -478,7 +495,7 @@ class PptxRenderer(Renderer):
                 _tb1(s, bul, Inches(1.2), by, Inches(11.6), row_h,
                      Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
 
-        _footer(s, idx, total, chapter=self._cur_chapter)
+        _footer(s, idx, total, chapter=self._cur_chapter, lang=doc.lang)
         _notes(s, slide.notes)
 
     def _figure(self, prs, slide, *, idx, total, doc):
@@ -563,7 +580,7 @@ class PptxRenderer(Renderer):
             _tb1(s, obs_pt, tx + Inches(0.28), oy, tw - Inches(0.28), obs_row_h,
                  Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
-        _footer(s, idx, total, chapter=self._cur_chapter)
+        _footer(s, idx, total, chapter=self._cur_chapter, lang=doc.lang)
         _notes(s, slide.notes)
 
     def _combined(self, prs, slide, *, idx, total, doc):
@@ -588,13 +605,14 @@ class PptxRenderer(Renderer):
 
         fig_num = _parse_fig_num(slide.caption or "") or str(self._fig_idx + 1)
         fig_label = f"Fig. {fig_num}"
-        caption_short = _short_title(slide.caption or slide.title, 50)
+        caption_short = _short_title(slide.caption or slide.title, 55)
         # v12: use hierarchical §group.chapter label when available
         if slide.group_idx > 0 and slide.chapter_in_group > 0:
             sec_label = f"§{slide.group_idx}.{slide.chapter_in_group}"
         else:
             sec_label = f"§{chi + 1}"
-        header_text = f"{sec_label}  ·  {slide.title}  ·  {fig_label}  ·  {caption_short}"
+        # v13: reduced header breadcrumbs (sec_label + fig_label + caption) — removed chapter title
+        header_text = f"{sec_label}  ·  {fig_label}  ·  {caption_short}"
         _tb1(s, header_text,
              Inches(0.7), Inches(0.15), Inches(12.0), Inches(0.45),
              Pt(12), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, wrap=True)
@@ -683,7 +701,7 @@ class PptxRenderer(Renderer):
                 _tb1(s, obs_pt, tx + Inches(0.28), oy, tw - Inches(0.28), obs_row_h,
                      Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
-        _footer(s, idx, total, chapter=self._cur_chapter)
+        _footer(s, idx, total, chapter=self._cur_chapter, lang=doc.lang)
         _notes(s, slide.notes)
 
     @staticmethod
@@ -708,10 +726,11 @@ def _line(s, x1, y1, x2, y2, color, width):
     ln.line.color.rgb = color; ln.line.width = width
 
 
-def _footer(s, slide_idx, total, *, chapter: str = "") -> None:
+def _footer(s, slide_idx, total, *, chapter: str = "", lang: str = "zh") -> None:
     T = _T
     if chapter:
-        _tb1(s, _S.CHAPTER_FOOTER[0] + chapter,
+        footer_prefix = _S.CHAPTER_FOOTER[0] if lang == "zh" else _S.CHAPTER_FOOTER[1]
+        _tb1(s, footer_prefix + chapter,
              Inches(0.7), Inches(7.1), Inches(8.0), Inches(0.3),
              Pt(9), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS, italic=True)
     _tb1(s, f"{slide_idx} of {total}",

@@ -44,7 +44,7 @@ class SlideDeck:
 
 
 class SlidePlanner:
-    MAX_BULLETS_PER_SLIDE: ClassVar[int] = 5
+    MAX_BULLETS_PER_SLIDE: ClassVar[int] = 7   # v13: was 5; allows more content per slide
     MIN_PARAGRAPHS_FOR_DIVIDER: ClassVar[int] = 2
 
     def __init__(self, lang: str):
@@ -275,7 +275,7 @@ class SlidePlanner:
             else:
                 pure_bullets.extend(bs)
 
-        bullets = pure_bullets[:5] if pure_bullets else figure_bullets[:5]
+        bullets = pure_bullets[:7] if pure_bullets else figure_bullets[:7]  # v13: was 5
         return bullets
 
     def _get_bullets(self, chapter: Chapter, paragraphs: list[Paragraph],
