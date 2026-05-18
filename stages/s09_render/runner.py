@@ -37,7 +37,9 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         formats: Iterable[str] | None = None,
         pptx_bullets: str = "llm",
         context_dir: Path | None = None,
-        pptx_template: Path | None = None) -> dict:
+        pptx_template: Path | None = None,
+        presenter: str | None = None,
+        affiliation: str | None = None) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -58,7 +60,9 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         try:
             if fmt == "pptx":
                 renderer = RENDERERS[fmt](summaries=summaries,
-                                         template_path=pptx_template)
+                                         template_path=pptx_template,
+                                         presenter=presenter,
+                                         affiliation=affiliation)
             else:
                 renderer = RENDERERS[fmt]()
             renderer.render(doc, out_path)
