@@ -1,8 +1,7 @@
-"""Render a SlideDeck to .pptx — poster-inspired design.
+"""Render a SlideDeck to .pptx — academic defense style (v3).
 
-Design: warm cream bg (#FAF6EE), serif titles (#2A2520), sans-serif body,
-white card containers on cream, large gray numerical accents, section accent
-color rotation, 16:9 widescreen (13.333 × 7.5 in).
+Design: monochrome cream bg (#FBFAF7), near-black text, no accent colors,
+formal graduation-defense aesthetic, compact layout, no brand tag.
 Template-swap: caller may supply a .pptx master via `template_path`.
 """
 from __future__ import annotations
@@ -25,26 +24,17 @@ from stages.s09_render.slide_planner import Slide, SlideDeck, SlidePlanner
 
 
 class _T:
-    """Design token namespace."""
+    """Design token namespace — monochrome academic palette."""
     W, H         = Inches(13.333), Inches(7.5)
-    BG_CREAM     = RGBColor(0xFA, 0xF6, 0xEE)
-    CARD_WHITE   = RGBColor(0xFF, 0xFF, 0xFF)
-    CARD_BORDER  = RGBColor(0xE5, 0xDF, 0xD3)
-    TEXT_DARK    = RGBColor(0x2A, 0x25, 0x20)
-    TEXT_NAVY    = RGBColor(0x3D, 0x50, 0x60)
-    TEXT_GRAY    = RGBColor(0xA8, 0xA1, 0x9A)
-    NUM_ACCENT   = RGBColor(0xD8, 0xCF, 0xC0)
-    WHITE        = RGBColor(0xFF, 0xFF, 0xFF)
-    ACCENTS = [
-        RGBColor(0x7B, 0xA6, 0x7A),   # sage green
-        RGBColor(0xD4, 0x9F, 0x5A),   # warm amber
-        RGBColor(0xA8, 0x7C, 0x5A),   # terracotta
-        RGBColor(0x5B, 0x7A, 0x99),   # slate blue
-    ]
-    EA_SERIF = "Source Han Serif SC"
-    EA_SANS  = "PingFang SC"
-    LAT_SERIF = "Cambria"
-    LAT_SANS  = "Calibri"
+    BG           = RGBColor(0xFB, 0xFA, 0xF7)   # very light cream
+    TEXT         = RGBColor(0x1A, 0x1A, 0x1A)   # near-black body
+    TEXT_DIM     = RGBColor(0x66, 0x66, 0x66)   # subtitle / metadata
+    TEXT_FAINT   = RGBColor(0xA8, 0xA8, 0xA8)   # footer / fine rules
+    RULE         = RGBColor(0xD0, 0xD0, 0xD0)   # thin separator lines
+    EA_SERIF     = "Source Han Serif SC"
+    EA_SANS      = "PingFang SC"
+    LAT_SERIF    = "Cambria"
+    LAT_SANS     = "Calibri"
 
 
 _IDX_TITLE = 0   # "Title Slide" layout — has shapes.title placeholder
@@ -87,115 +77,105 @@ class PptxRenderer(Renderer):
         s = prs.slides.add_slide(self._lay(prs, _IDX_TITLE))
         _bg(s)
         T = _T
-        # Bug 2 fix: shrink-to-fit font based on title length
+        # Academic-style font sizing: more conservative than magazine
         title_len = len(slide.title)
-        title_pt = 40 if title_len < 60 else (32 if title_len < 100 else 26)
+        title_pt = 30 if title_len < 60 else (26 if title_len < 100 else 22)
         # Reposition & style the title placeholder (keeps shapes.title for tests)
         ph = s.shapes.title
         if ph is not None:
             ph.left, ph.top, ph.width, ph.height = (
-                Inches(1.0), Inches(2.0), Inches(11.0), Inches(3.0))
+                Inches(1.2), Inches(1.6), Inches(10.9), Inches(3.2))
             ph.text_frame.word_wrap = True
             ph.text_frame.text = slide.title
             p = ph.text_frame.paragraphs[0]
             if p.runs:
-                _run_style(p.runs[0], Pt(title_pt), True, T.TEXT_DARK, T.LAT_SERIF, T.EA_SERIF)
+                _run_style(p.runs[0], Pt(title_pt), True, T.TEXT, T.LAT_SERIF, T.EA_SERIF)
             p.alignment = 1
         # Remove subtitle placeholder
         for ph2 in list(s.placeholders):
             if ph2.placeholder_format.idx == 1:
                 ph2._element.getparent().remove(ph2._element); break
-        # Decorative lines
-        _line(s, Inches(1.0), Inches(1.85), Inches(9.5), Inches(1.85), T.TEXT_GRAY, Pt(0.75))
-        _line(s, Inches(1.0), Inches(5.1),  Inches(9.5), Inches(5.1),  T.TEXT_GRAY, Pt(0.75))
-        # Eyebrow
-        _tb1(s, "MOMENT  ·  论文摘要分析",
-             Inches(1.0), Inches(1.4), Inches(8.5), Inches(0.45),
-             Pt(11), T.TEXT_GRAY, T.LAT_SANS, T.EA_SANS, align=1)
-        # Bug 3 fix: subtitle line below title
-        _tb1(s, f"· {doc.lang.upper()} · A PAPER MOMENT ·",
-             Inches(1.0), Inches(5.2), Inches(11.0), Inches(0.4),
-             Pt(16), T.TEXT_GRAY, T.LAT_SANS, T.EA_SANS, align=1, italic=True)
-        # Bug 5 fix: issue card with rounded rect frame behind text boxes
+        # Thin decorative rule below title area
+        _line(s, Inches(1.5), Inches(4.95), Inches(11.8), Inches(4.95), T.RULE, Pt(0.75))
+        # Subtitle metadata line (formal info, not slogan)
+        n_ch = len(doc.chapters)
+        n_bl = sum(len(c.blocks) for c in doc.chapters)
+        sub = f"{doc.lang.upper()}  ·  {n_ch} chapters  ·  {n_bl} blocks"
+        _tb1(s, sub,
+             Inches(1.5), Inches(5.1), Inches(9.0), Inches(0.5),
+             Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, align=1)
+        # Bottom-right metadata line
         today = datetime.date.today()
         pid = _pid(doc.paper_title)
-        card_left, card_top = Inches(10.4), Inches(0.5)
-        card_w, card_h = Inches(2.5), Inches(1.6)
-        _rrect(s, card_left, card_top, card_w, card_h, T.CARD_WHITE, T.CARD_BORDER, 0.05)
-        rh = card_h / 3
-        card_lines = ["ISSUE 01",
-                      f"{today.year}·{today.month:02d}·{today.day:02d}",
-                      f"{total} SLIDES"]
-        for i, txt in enumerate(card_lines):
-            _tb1(s, txt,
-                 card_left + Inches(0.15), card_top + i * rh + Inches(0.05),
-                 card_w - Inches(0.3), rh,
-                 Pt(11), T.TEXT_NAVY, T.LAT_SANS, T.EA_SANS, align=1)
-        _footer(s, pid, idx, total)
+        meta = f"{pid}  ·  {today.year}-{today.month:02d}-{today.day:02d}"
+        _tb1(s, meta,
+             Inches(7.5), Inches(6.9), Inches(5.5), Inches(0.35),
+             Pt(10), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS, align=2)
+        _footer(s, idx, total)
         _notes(s, slide.notes)
 
     def _outline(self, prs, slide, *, idx, total, doc):
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
-        _num_accent(s, "00", Inches(0.4), Inches(0.3), Pt(72))
-        _tb1(s, "目  录  ·  CONTENTS",
-             Inches(1.5), Inches(0.55), Inches(10.0), Inches(0.7),
-             Pt(28), T.TEXT_NAVY, T.LAT_SERIF, T.EA_SERIF, bold=True)
-        _line(s, Inches(1.5), Inches(1.2), Inches(12.0), Inches(1.2), T.CARD_BORDER, Pt(1))
-        # Bug 1 fix: reduce row spacing to 0.5" and start higher so all chapters fit
-        # With row_h=0.5" starting at y=1.2", 11 rows → last row ends at 1.2+11×0.5=6.7" ≤ 7.0"
-        row_h = Inches(0.5)
+        # Header
+        _tb1(s, "目  录  ·  Contents",
+             Inches(0.8), Inches(0.45), Inches(11.7), Inches(0.65),
+             Pt(24), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True)
+        _line(s, Inches(0.8), Inches(1.1), Inches(12.5), Inches(1.1), T.RULE, Pt(1))
+        # Compact row spacing — more information per slide
+        row_h = Inches(0.4)
         n = len(slide.bullets)
-        if n > 10:
-            # Two-column layout: col1 = first half, col2 = second half
+        if n > 12:
+            # Two-column layout for large chapter counts
             half = (n + 1) // 2
             for i, bul in enumerate(slide.bullets):
                 col = i // half
                 row = i % half
-                x_num = Inches(1.5) + col * Inches(6.5)
-                x_txt = Inches(2.2) + col * Inches(6.5)
-                txt_w = Inches(5.0)
-                y = Inches(1.3) + row * row_h
-                _tb1(s, f"{i+1:02d}", x_num, y, Inches(0.6), row_h,
-                     Pt(13), T.ACCENTS[i % 4], T.LAT_SERIF, T.EA_SERIF, bold=True)
+                x_num = Inches(0.8) + col * Inches(6.3)
+                x_txt = Inches(1.55) + col * Inches(6.3)
+                txt_w = Inches(5.2)
+                y = Inches(1.2) + row * row_h
+                _tb1(s, f"{i+1:02d}", x_num, y, Inches(0.65), row_h,
+                     Pt(13), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
                 _tb1(s, bul, x_txt, y, txt_w, row_h,
-                     Pt(14), T.TEXT_DARK, T.LAT_SANS, T.EA_SANS, wrap=True)
-                if row < half - 1 or (col == 0 and i < n - 1):
-                    _line(s, x_num, y + row_h - Inches(0.04),
-                          x_num + Inches(5.6), y + row_h - Inches(0.04), T.CARD_BORDER, Pt(0.5))
+                     Pt(14), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
+                _line(s, x_num, y + row_h - Inches(0.03),
+                      x_num + Inches(5.8), y + row_h - Inches(0.03), T.RULE, Pt(0.4))
         else:
             for i, bul in enumerate(slide.bullets):
-                y = Inches(1.3) + i * row_h
-                _tb1(s, f"{i+1:02d}", Inches(1.5), y, Inches(0.6), row_h,
-                     Pt(14), T.ACCENTS[i % 4], T.LAT_SERIF, T.EA_SERIF, bold=True)
-                _tb1(s, bul, Inches(2.2), y, Inches(9.5), row_h,
-                     Pt(16), T.TEXT_DARK, T.LAT_SANS, T.EA_SANS, wrap=True)
+                y = Inches(1.2) + i * row_h
+                _tb1(s, f"{i+1:02d}", Inches(0.8), y, Inches(0.65), row_h,
+                     Pt(14), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
+                _tb1(s, bul, Inches(1.55), y, Inches(10.8), row_h,
+                     Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
                 if i < n - 1:
-                    _line(s, Inches(1.5), y + row_h - Inches(0.04),
-                          Inches(11.8), y + row_h - Inches(0.04), T.CARD_BORDER, Pt(0.5))
-        _footer(s, _pid(doc.paper_title), idx, total)
+                    _line(s, Inches(0.8), y + row_h - Inches(0.03),
+                          Inches(12.5), y + row_h - Inches(0.03), T.RULE, Pt(0.4))
+        _footer(s, idx, total)
         _notes(s, slide.notes)
 
     def _divider(self, prs, slide, *, idx, total, doc):
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
-        acc = T.ACCENTS[self._ch % 4]
-        num = f"{self._ch+1:02d}"
-        _num_accent(s, num, Inches(0.5), Inches(0.4), Pt(96))
-        # Card
-        cx, cy, cw, ch = Inches(3.5), Inches(2.3), Inches(6.5), Inches(2.8)
-        _rrect(s, cx, cy, cw, ch, T.CARD_WHITE, T.CARD_BORDER, 0.05)
-        _tb1(s, slide.title, cx + Inches(0.4), cy + Inches(0.35),
-             cw - Inches(0.8), Inches(1.0),
-             Pt(30), T.TEXT_DARK, T.LAT_SERIF, T.EA_SERIF, bold=True, align=1)
-        ly = cy + Inches(1.5)
-        _line(s, cx + Inches(0.4), ly, cx + cw - Inches(0.4), ly, acc, Pt(2))
-        _tb1(s, f"CHAPTER {num}", cx + Inches(0.4), ly + Inches(0.15),
-             cw - Inches(0.8), Inches(0.6),
-             Pt(11), T.TEXT_GRAY, T.LAT_SANS, T.EA_SANS, align=1)
-        _footer(s, _pid(doc.paper_title), idx, total)
+        num = f"§{self._ch+1}"
+        # Section number — small, centered, gray
+        _tb1(s, num,
+             Inches(0), Inches(2.2), Inches(13.333), Inches(0.55),
+             Pt(18), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, align=1)
+        # Chapter title — large serif bold, centered
+        _tb1(s, slide.title,
+             Inches(1.5), Inches(2.85), Inches(10.333), Inches(1.3),
+             Pt(32), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True, align=1, wrap=True)
+        # Thin rule — narrow, centered
+        _line(s, Inches(4.5), Inches(4.25), Inches(8.833), Inches(4.25), T.RULE, Pt(1))
+        # Localized subtitle
+        subtitle = f"引言 / {slide.title}" if slide.title and slide.title != "Introduction" else slide.title
+        _tb1(s, subtitle,
+             Inches(1.5), Inches(4.4), Inches(10.333), Inches(0.5),
+             Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, align=1)
+        _footer(s, idx, total)
         _notes(s, slide.notes)
 
     def _bullets(self, prs, slide, *, idx, total, doc):
@@ -203,22 +183,42 @@ class PptxRenderer(Renderer):
         _bg(s)
         T = _T
         chi = max(self._ch, 0)
-        acc = T.ACCENTS[chi % 4]
-        _section_bar(s, chi, slide.title, acc)
-        title = "总结 · CONCLUSION" if slide.kind == "closing" else slide.title
-        _tb1(s, title, Inches(1.0), Inches(1.3), Inches(11.0), Inches(0.75),
-             Pt(22), T.TEXT_DARK, T.LAT_SERIF, T.EA_SERIF, bold=True, wrap=True)
+        is_closing = slide.kind == "closing"
+        # Section header text
+        sec_label = "总结 · Conclusion" if is_closing else f"§{chi+1}  ·  {slide.title}"
+        _tb1(s, sec_label,
+             Inches(0.7), Inches(0.4), Inches(12.0), Inches(0.45),
+             Pt(14), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, wrap=True)
+        _line(s, Inches(0.7), Inches(0.88), Inches(12.6), Inches(0.88), T.RULE, Pt(0.75))
+        # Slide title (only when not closing, to avoid repetition)
+        if not is_closing:
+            _tb1(s, slide.title,
+                 Inches(0.7), Inches(1.0), Inches(12.0), Inches(0.7),
+                 Pt(22), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True, wrap=True)
+        # Bullet markers (Unicode numbered dingbats for up to 5; else ▸)
+        MARKERS = ["❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾", "❿"]
         if slide.bullets:
-            cx, cy, cw, row_h = Inches(0.8), Inches(2.15), Inches(11.7), Inches(0.6)
-            ch = Inches(0.35) + len(slide.bullets) * row_h + Inches(0.25)
-            _rrect(s, cx, cy, cw, ch, T.CARD_WHITE, T.CARD_BORDER, 0.03)
+            body_top = Inches(1.8) if not is_closing else Inches(1.1)
+            row_h = Inches(0.62)
             for i, bul in enumerate(slide.bullets):
-                by = cy + Inches(0.3) + i * row_h
-                _tb1(s, "▸", cx + Inches(0.25), by, Inches(0.35), row_h,
-                     Pt(14), acc, T.LAT_SANS, T.EA_SANS)
-                _tb1(s, bul, cx + Inches(0.65), by, cw - Inches(0.9), row_h,
-                     Pt(16), T.TEXT_DARK, T.LAT_SANS, T.EA_SANS, wrap=True)
-        _footer(s, _pid(doc.paper_title), idx, total)
+                by = body_top + i * row_h
+                marker = MARKERS[i] if i < len(MARKERS) else "▸"
+                _tb1(s, marker, Inches(0.7), by, Inches(0.45), row_h,
+                     Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS)
+                _tb1(s, bul, Inches(1.2), by, Inches(11.6), row_h,
+                     Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
+        # Key takeaway from summaries (italic, centered, below bullets)
+        heading = slide.title
+        summ = (self.summaries or {}).get(heading, {})
+        takeaway = summ.get("key_takeaway", "")
+        if takeaway:
+            n_b = len(slide.bullets)
+            body_top = Inches(1.8) if not is_closing else Inches(1.1)
+            ty = body_top + n_b * Inches(0.62) + Inches(0.2)
+            _tb1(s, f"Key takeaway: {takeaway}",
+                 Inches(0.7), ty, Inches(12.0), Inches(0.5),
+                 Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, align=1)
+        _footer(s, idx, total)
         _notes(s, slide.notes)
 
     def _figure(self, prs, slide, *, idx, total, doc):
@@ -226,33 +226,36 @@ class PptxRenderer(Renderer):
         _bg(s)
         T = _T
         chi = max(self._ch, 0)
-        acc = T.ACCENTS[chi % 4]
-        _section_bar(s, chi, slide.title, acc)
-        # Bug 4 fix: drop the large "01" accent from figure slides — the section
-        # bar already provides chapter context and the accent overlapped the bar.
-        _tb1(s, slide.title, Inches(1.0), Inches(1.2), Inches(11.5), Inches(0.6),
-             Pt(16), T.TEXT_DARK, T.LAT_SERIF, T.EA_SERIF, bold=True, wrap=True)
-        img_max_h = Inches(4.2)
+        # Section header
+        _tb1(s, f"§{chi+1}  ·  Fig.",
+             Inches(0.7), Inches(0.4), Inches(12.0), Inches(0.45),
+             Pt(14), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF)
+        _line(s, Inches(0.7), Inches(0.88), Inches(12.6), Inches(0.88), T.RULE, Pt(0.75))
+        # Caption above image
+        _tb1(s, slide.title,
+             Inches(0.7), Inches(1.0), Inches(12.0), Inches(0.55),
+             Pt(16), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True, wrap=True)
+        # Image — larger, centered
+        img_top = Inches(1.65)
+        img_max_h = Inches(5.0)
+        img_max_w = Inches(10.5)
         for ip in slide.image_paths:
             if not ip.exists(): continue
-            pic = s.shapes.add_picture(str(ip), Inches(0.9), Inches(1.95), Inches(11.5))
+            pic = s.shapes.add_picture(str(ip), Inches(0.9), img_top, img_max_w)
             if pic.height > img_max_h:
                 r = img_max_h / pic.height
                 pic.height, pic.width = img_max_h, int(pic.width * r)
-            pic.left = int((T.W - pic.width) / 2)
+            if pic.width > img_max_w:
+                r = img_max_w / pic.width
+                pic.width, pic.height = img_max_w, int(pic.height * r)
+            pic.left = int((_T.W - pic.width) / 2)
             break
+        # Deep observation below image — italic, narrow
         if slide.deep_observation:
-            oy, oh = Inches(6.3), Inches(0.9)
-            _rrect(s, Inches(0.8), oy, Inches(11.7), oh, T.CARD_WHITE, T.CARD_BORDER, 0.03)
-            tb = s.shapes.add_textbox(Inches(1.1), oy + Inches(0.12),
-                                      Inches(11.1), oh - Inches(0.2))
-            tf = tb.text_frame; tf.word_wrap = True
-            p = tf.paragraphs[0]
-            r1 = p.add_run(); r1.text = "深度观察 · "
-            _run_style(r1, Pt(10), True, acc, T.LAT_SANS, T.EA_SANS)
-            r2 = p.add_run(); r2.text = slide.deep_observation
-            _run_style(r2, Pt(12), False, T.TEXT_DARK, T.LAT_SANS, T.EA_SANS, italic=True)
-        _footer(s, _pid(doc.paper_title), idx, total)
+            _tb1(s, f"深度观察  ·  {slide.deep_observation}",
+                 Inches(0.7), Inches(6.75), Inches(12.0), Inches(0.5),
+                 Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True)
+        _footer(s, idx, total)
         _notes(s, slide.notes)
 
     @staticmethod
@@ -275,17 +278,10 @@ class PptxRenderer(Renderer):
 def _bg(s) -> None:
     """Cream full-slide rectangle pushed to back of z-order."""
     bg = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(0), Emu(0), _T.W, _T.H)
-    bg.fill.solid(); bg.fill.fore_color.rgb = _T.BG_CREAM
+    bg.fill.solid(); bg.fill.fore_color.rgb = _T.BG
     bg.line.fill.background()
     tree = s.shapes._spTree; el = bg._element
     tree.remove(el); tree.insert(2, el)
-
-
-def _rrect(s, left, top, w, h, fill, border, adj=0.04):
-    sh = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, w, h)
-    sh.fill.solid(); sh.fill.fore_color.rgb = fill
-    sh.line.color.rgb = border; sh.line.width = Pt(1)
-    sh.adjustments[0] = adj
 
 
 def _line(s, x1, y1, x2, y2, color, width):
@@ -293,36 +289,11 @@ def _line(s, x1, y1, x2, y2, color, width):
     ln.line.color.rgb = color; ln.line.width = width
 
 
-def _num_accent(s, num, left, top, size=Pt(96)):
-    tb = s.shapes.add_textbox(left, top, Inches(2.5), Inches(1.8))
-    p = tb.text_frame.paragraphs[0]; r = p.add_run(); r.text = num
-    _run_style(r, size, False, _T.NUM_ACCENT, _T.LAT_SERIF, _T.EA_SERIF)
-
-
-def _section_bar(s, ch_idx, heading, accent):
-    bar = s.shapes.add_shape(MSO_SHAPE.RECTANGLE,
-                             Inches(0), Inches(0), Inches(13.333), Inches(0.55))
-    bar.fill.solid(); bar.fill.fore_color.rgb = accent; bar.line.fill.background()
-    _tb1(s, f"{ch_idx+1:02d}  ·  {heading.upper()}",
-         Inches(0.4), Inches(0.08), Inches(12.0), Inches(0.4),
-         Pt(11), _T.WHITE, _T.LAT_SANS, _T.EA_SANS, bold=True)
-
-
-def _card(s, left, top, w, h, lines, fsize, fcolor, align=1):
-    _rrect(s, left, top, w, h, _T.CARD_WHITE, _T.CARD_BORDER, 0.04)
-    rh = h / max(len(lines), 1)
-    for i, txt in enumerate(lines):
-        _tb1(s, txt, left + Inches(0.15), top + i * rh + Inches(0.05),
-             w - Inches(0.3), rh, fsize, fcolor, _T.LAT_SANS, _T.EA_SANS, align=align)
-
-
-def _footer(s, paper_id, slide_idx, total):
-    _tb1(s, f"PAPER2MD  ·  {paper_id}",
-         Inches(0.4), Inches(7.1), Inches(6.0), Inches(0.3),
-         Pt(9), _T.TEXT_GRAY, _T.LAT_SANS, _T.EA_SANS)
+def _footer(s, slide_idx, total):
+    """Page number only — bottom-right, formal 'N of N' wording."""
     _tb1(s, f"{slide_idx} / {total}",
          Inches(11.5), Inches(7.1), Inches(1.5), Inches(0.3),
-         Pt(9), _T.TEXT_GRAY, _T.LAT_SANS, _T.EA_SANS)
+         Pt(10), _T.TEXT_FAINT, _T.LAT_SANS, _T.EA_SANS)
 
 
 def _notes(s, text):
