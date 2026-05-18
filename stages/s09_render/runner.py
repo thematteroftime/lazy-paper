@@ -32,11 +32,42 @@ The README of mypaper has the full template-swap instructions.
 DEFAULT_FORMATS = ("docx", "pdf", "html")
 
 
+def _resolve_pptx_subtitle(context_dir: Path | None, pptx_subtitle: str | None) -> str | None:
+    """Compute PPTX subtitle from keywords if not explicitly provided.
+
+    If pptx_subtitle is provided, use it directly.
+    Otherwise, try to load context.yaml and extract top 3 keywords.
+    Returns None if no subtitle can be derived.
+    """
+    if pptx_subtitle:
+        return pptx_subtitle
+    if context_dir is None:
+        return None
+    path = Path(context_dir) / "context.yaml"
+    if not path.exists():
+        return None
+    try:
+        ctx = load_yaml(path) or {}
+    except Exception:
+        return None
+    keywords = ctx.get("keywords") or []
+    if not isinstance(keywords, list) or not keywords:
+        return None
+    top = [str(k).strip() for k in keywords[:3] if k]
+    if not top:
+        return None
+    return "·  " + "  ·  ".join(top) + "  ·"
+
+
 def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         paper_title: str = "Paper Preview", lang: str = "zh",
         formats: Iterable[str] | None = None,
         pptx_bullets: str = "llm",
-        context_dir: Path | None = None) -> dict:
+        context_dir: Path | None = None,
+        pptx_template: Path | None = None,
+        presenter: str | None = None,
+        affiliation: str | None = None,
+        pptx_subtitle: str | None = None) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -46,17 +77,24 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
     doc = DocumentBuilder(lang=lang, paper_title=resolved_title).build(chapters_md, fig_notes)
 
     requested = list(formats) if formats is not None else list(DEFAULT_FORMATS)
-    summaries = _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir)
+    summaries, outline, paper_brief = _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir)
 
     results: dict[str, object] = {}
     partial = False
+    resolved_subtitle = _resolve_pptx_subtitle(context_dir, pptx_subtitle)
     for fmt in requested:
         if fmt not in RENDERERS:
             raise ValueError(f"unknown format {fmt!r}; available: {sorted(RENDERERS)}")
         out_path = out_dir / f"preview.{fmt}"
         try:
             if fmt == "pptx":
-                renderer = RENDERERS[fmt](summaries=summaries)
+                renderer = RENDERERS[fmt](summaries=summaries,
+                                         outline=outline,
+                                         paper_brief=paper_brief,
+                                         template_path=pptx_template,
+                                         presenter=presenter,
+                                         affiliation=affiliation,
+                                         subtitle=resolved_subtitle)
             else:
                 renderer = RENDERERS[fmt]()
             renderer.render(doc, out_path)
@@ -74,7 +112,7 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         raise RuntimeError(f"All requested formats failed: {errors}")
 
     bundle = _write_bundle(Path(compose_dir), fig_notes, out_dir)
-    pptx_state = _pptx_state(summaries, requested, pptx_bullets)
+    pptx_state = _pptx_state(summaries, outline, paper_brief, requested, pptx_bullets)
 
     mark_done(out_dir, {
         "formats": results,
@@ -93,15 +131,18 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
 
 def _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir):
     if "pptx" not in requested or pptx_bullets != "llm":
-        return None
+        return None, None, None
     from llm.client import LLM
     from stages.s09_render.pptx_summarizer import PptxSummarizer
     llm = LLM("text")
     summarizer = PptxSummarizer(llm=llm, cache_dir=out_dir / "llm_cache", lang=doc.lang)
-    return summarizer.summarize(doc)
+    summaries = summarizer.summarize(doc)
+    outline = summarizer.summarize_outline(doc)
+    paper_brief = summarizer.summarize_paper(doc)
+    return summaries, outline, paper_brief
 
 
-def _pptx_state(summaries, requested, pptx_bullets) -> str:
+def _pptx_state(summaries, outline, paper_brief, requested, pptx_bullets) -> str:
     if "pptx" not in requested:
         return "not_requested"
     if pptx_bullets != "llm":
