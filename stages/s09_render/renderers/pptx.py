@@ -1,17 +1,14 @@
-"""Render a SlideDeck to .pptx — academic defense style (v4).
+"""Render a SlideDeck to .pptx — academic defense style (v6).
 
 Design: monochrome cream bg (#FBFAF7), near-black text, no accent colors,
 formal graduation-defense aesthetic, compact layout, no brand tag.
 Template-swap: caller may supply a .pptx master via `template_path`.
 
-v4 changes vs v3:
-- Title: academic defense pattern (big title centered, rule, subtitle, presenter/affiliation/date box)
-- Outline: 2-column for >=5 chapters, smaller font
-- Divider: everything fully centered, localized "第N章" subtitle
-- Bullets: no duplicate chapter heading, "Key Insights" in header, no takeaway line, proper body clearance
-- Figure: side-by-side layout (image left/right alternating), header includes fig number
-- Footer: chapter name left + page right, "N of total" format
-- Header/body: 0.3" minimum clearance guaranteed
+v6 changes vs v5:
+- Title: horizontal one-line byline (presenter · affiliation · date) with small-caps labels
+- Outline: vertical SINGLE column always (no more 2-column layout)
+- Combined slide: bullets + figure merged into one two-pane slide (NEW)
+- _dispatch handles "combined" kind
 """
 from __future__ import annotations
 
@@ -94,14 +91,17 @@ class PptxRenderer(Renderer):
 
     def _dispatch(self, prs, slide, idx, total, doc):
         kw = dict(idx=idx, total=total, doc=doc)
-        if   slide.kind == "title":   self._title(prs, slide, **kw)
-        elif slide.kind == "outline": self._outline(prs, slide, **kw)
+        if   slide.kind == "title":    self._title(prs, slide, **kw)
+        elif slide.kind == "outline":  self._outline(prs, slide, **kw)
         elif slide.kind == "divider":
             self._ch += 1
             self._cur_chapter = slide.title
             self._divider(prs, slide, **kw)
         elif slide.kind == "figure":
             self._figure(prs, slide, **kw)
+            self._fig_idx += 1
+        elif slide.kind == "combined":
+            self._combined(prs, slide, **kw)
             self._fig_idx += 1
         else:
             if slide.kind == "bullets":
@@ -147,38 +147,24 @@ class PptxRenderer(Renderer):
              Inches(1.5), Inches(4.1), Inches(10.333), Inches(0.5),
              Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, align=PP_ALIGN.CENTER)
 
-        # --- Metadata block: centered in lower half ---
+        # --- Horizontal byline — ONE line: presenter · affiliation · date ---
+        # Small-caps label line above
         today = datetime.date.today()
-        meta_x = Inches(3.5)
-        meta_w = Inches(6.333)
-        meta_top = Inches(4.75)
-
-        # PRESENTER row
-        _tb1(s, "演讲者  PRESENTER",
-             meta_x, meta_top, meta_w, Inches(0.3),
-             Pt(10), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS, align=PP_ALIGN.LEFT)
-        _tb1(s, self.presenter,
-             meta_x, meta_top + Inches(0.28), meta_w, Inches(0.4),
-             Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS, bold=False, align=PP_ALIGN.LEFT)
-
-        # AFFILIATION row
-        aff_top = meta_top + Inches(0.75)
-        _tb1(s, "单 位  AFFILIATION",
-             meta_x, aff_top, meta_w, Inches(0.3),
-             Pt(10), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS, align=PP_ALIGN.LEFT)
-        _tb1(s, self.affiliation,
-             meta_x, aff_top + Inches(0.28), meta_w, Inches(0.4),
-             Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS, align=PP_ALIGN.LEFT)
-
-        # DATE row
-        date_top = aff_top + Inches(0.75)
-        _tb1(s, "日 期  DATE",
-             meta_x, date_top, meta_w, Inches(0.3),
-             Pt(10), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS, align=PP_ALIGN.LEFT)
         date_str = f"{today.year}-{today.month:02d}-{today.day:02d}"
-        _tb1(s, date_str,
-             meta_x, date_top + Inches(0.28), meta_w, Inches(0.4),
-             Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS, align=PP_ALIGN.LEFT)
+
+        label_y = Inches(4.85)
+        byline_y = Inches(5.15)
+        byline_x = Inches(1.5)
+        byline_w = Inches(10.333)
+
+        _tb1(s, "PRESENTER  ·  AFFILIATION  ·  DATE",
+             byline_x, label_y, byline_w, Inches(0.28),
+             Pt(8), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS, align=PP_ALIGN.CENTER)
+
+        byline_text = f"{self.presenter}  ·  {self.affiliation}  ·  {date_str}"
+        _tb1(s, byline_text,
+             byline_x, byline_y, byline_w, Inches(0.45),
+             Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False, align=PP_ALIGN.CENTER)
 
         # Footer page number only on title slide (no chapter label)
         _footer(s, idx, total, chapter="")
@@ -188,41 +174,37 @@ class PptxRenderer(Renderer):
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
-        # Title: 22pt serif
+        # Title: 22pt serif centered
         _tb1(s, "目  录  ·  Contents",
-             Inches(0.8), Inches(0.45), Inches(11.7), Inches(0.6),
-             Pt(22), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True)
-        _line(s, Inches(0.8), Inches(1.05), Inches(12.5), Inches(1.05), T.RULE, Pt(1))
+             Inches(0), Inches(0.35), Inches(13.333), Inches(0.6),
+             Pt(22), T.TEXT, T.LAT_SERIF, T.EA_SERIF, bold=True, align=PP_ALIGN.CENTER)
+        _line(s, Inches(0.8), Inches(1.0), Inches(12.5), Inches(1.0), T.RULE, Pt(1))
 
-        row_h = Inches(0.35)  # tighter spacing
         n = len(slide.bullets)
-
-        if n >= 5:
-            # Dense 2-column layout: col1 = first ceil(n/2) items, col2 = rest
-            half = (n + 1) // 2
-            for i, bul in enumerate(slide.bullets):
-                col = 0 if i < half else 1
-                row = i if i < half else i - half
-                x_num = Inches(0.8) + col * Inches(6.3)
-                x_txt = Inches(1.4) + col * Inches(6.3)
-                txt_w = Inches(5.4)
-                y = Inches(1.15) + row * row_h
-                _tb1(s, f"{i+1:02d}", x_num, y, Inches(0.55), row_h,
-                     Pt(11), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
-                _tb1(s, bul, x_txt, y, txt_w, row_h,
-                     Pt(11), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
-                _line(s, x_num, y + row_h - Inches(0.02),
-                      x_num + Inches(5.8), y + row_h - Inches(0.02), T.RULE, Pt(0.3))
+        # Vertical single column always (v6 spec)
+        # Scale font by chapter count to avoid overflow
+        if n <= 8:
+            row_h = Inches(0.50)
+            font_pt = 16
+        elif n <= 12:
+            row_h = Inches(0.42)
+            font_pt = 14
         else:
-            for i, bul in enumerate(slide.bullets):
-                y = Inches(1.15) + i * row_h
-                _tb1(s, f"{i+1:02d}", Inches(0.8), y, Inches(0.55), row_h,
-                     Pt(13), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
-                _tb1(s, bul, Inches(1.4), y, Inches(10.8), row_h,
-                     Pt(13), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
-                if i < n - 1:
-                    _line(s, Inches(0.8), y + row_h - Inches(0.02),
-                          Inches(12.5), y + row_h - Inches(0.02), T.RULE, Pt(0.3))
+            row_h = Inches(0.35)
+            font_pt = 12
+
+        content_start_y = Inches(1.1)
+        for i, bul in enumerate(slide.bullets):
+            y = content_start_y + i * row_h
+            # Number: bold dim serif, left-aligned at 2.0" from left
+            _tb1(s, f"{i+1:02d}", Inches(2.0), y, Inches(0.6), row_h,
+                 Pt(font_pt), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
+            # Chapter name: sans body, ~8" wide
+            _tb1(s, bul, Inches(2.65), y, Inches(8.7), row_h,
+                 Pt(font_pt), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
+            if i < n - 1:
+                sep_y = y + row_h - Inches(0.04)
+                _line(s, Inches(2.0), sep_y, Inches(11.3), sep_y, T.RULE, Pt(0.3))
 
         _footer(s, idx, total, chapter="")
         _notes(s, slide.notes)
@@ -298,8 +280,6 @@ class PptxRenderer(Renderer):
                      Pt(14), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS)
                 _tb1(s, bul, Inches(1.2), by, Inches(11.6), row_h,
                      Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
-
-        # No key takeaway line (removed per v4 spec)
 
         _footer(s, idx, total, chapter=self._cur_chapter)
         _notes(s, slide.notes)
@@ -380,6 +360,123 @@ class PptxRenderer(Renderer):
             _tb1(s, slide.deep_observation,
                  tx, Inches(body_top + 1.4), tw, Inches(body_h - 1.5),
                  Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
+
+        _footer(s, idx, total, chapter=self._cur_chapter)
+        _notes(s, slide.notes)
+
+    def _combined(self, prs, slide, *, idx, total, doc):
+        """Combined slide: image on one side, bullets + deep observation on other.
+
+        Alternates image-left / image-right by fig_idx for visual variety.
+        Layout (image-left example):
+          ┌────────────┐  ┌──────────────────────────────────────┐
+          │            │  │  要 点 (small-caps 12pt gray)          │
+          │  [IMAGE]   │  │  ❶ bullet 1                          │
+          │            │  │  ❷ bullet 2                          │
+          │            │  │  ❸ bullet 3                          │
+          │            │  │                                      │
+          │            │  │  深 度 观 察 (small-caps 12pt gray)   │
+          │            │  │  italic one-liner                    │
+          └────────────┘  └──────────────────────────────────────┘
+        """
+        s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
+        _bg(s)
+        T = _T
+        chi = self._ch_idx.get(slide.title, max(self._ch, 0))
+
+        # ── header ───────────────────────────────────────────────────────────
+        # Derive a fig label from caption or fall back to generic
+        fig_num = _parse_fig_num(slide.caption or "")
+        if not fig_num:
+            # Increment our own counter based on fig_idx
+            fig_num = str(self._fig_idx + 1)
+        fig_label = f"Fig. {fig_num}"
+        caption_short = _short_title(slide.caption or slide.title, 50)
+        header_text = f"§{chi + 1}  ·  {slide.title}  ·  {fig_label}  ·  {caption_short}"
+        _tb1(s, header_text,
+             Inches(0.7), Inches(0.15), Inches(12.0), Inches(0.45),
+             Pt(12), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, wrap=True)
+        _line(s, Inches(0.7), Inches(0.63), Inches(12.6), Inches(0.63), T.RULE, Pt(0.75))
+
+        # ── layout geometry ───────────────────────────────────────────────────
+        img_on_left = (self._fig_idx % 2 == 0)
+
+        slide_w  = 13.333
+        margin   = 0.4
+        gap      = 0.3        # gap between image and text panes
+        body_top = 0.82       # top of body area (below rule + small clearance)
+        body_h   = 7.5 - body_top - 0.45  # ≈ 6.23"
+
+        # Image pane: 5.5" wide; text pane: remainder
+        img_pane_w  = 5.8
+        text_pane_w = slide_w - 2 * margin - img_pane_w - gap   # ≈ 6.033"
+
+        if img_on_left:
+            img_x  = margin
+            text_x = margin + img_pane_w + gap
+        else:
+            text_x = margin
+            img_x  = margin + text_pane_w + gap
+
+        # ── image pane ────────────────────────────────────────────────────────
+        img_max_w = Inches(img_pane_w)
+        img_max_h = Inches(body_h - 0.1)
+        img_top   = Inches(body_top + 0.05)
+
+        for ip in slide.image_paths:
+            if not ip.exists():
+                continue
+            pic = s.shapes.add_picture(str(ip), Inches(img_x), img_top, img_max_w)
+            if pic.height > img_max_h:
+                r = img_max_h / pic.height
+                pic.height = img_max_h
+                pic.width  = int(pic.width * r)
+            if pic.width > img_max_w:
+                r = img_max_w / pic.width
+                pic.width  = img_max_w
+                pic.height = int(pic.height * r)
+            # Center within pane
+            pic.left = int(Inches(img_x) + (img_max_w - pic.width) // 2)
+            pic.top  = int(img_top + (img_max_h - pic.height) // 2)
+            break
+
+        # ── text pane ─────────────────────────────────────────────────────────
+        tx = Inches(text_x)
+        tw = Inches(text_pane_w - 0.1)
+        ty = Inches(body_top + 0.1)
+
+        MARKERS = ["❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾", "❿"]
+
+        # "要 点" label
+        kw_label = "要  点" if doc.lang == "zh" else "Key Points"
+        _tb1(s, kw_label, tx, ty, tw, Inches(0.35),
+             Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
+
+        # Bullets
+        bullet_row_h = Inches(0.55)
+        bullets_top = ty + Inches(0.38)
+        for i, bul in enumerate(slide.bullets):
+            by = bullets_top + i * bullet_row_h
+            marker = MARKERS[i] if i < len(MARKERS) else "▸"
+            _tb1(s, marker, tx, by, Inches(0.35), bullet_row_h,
+                 Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS)
+            _tb1(s, bul, tx + Inches(0.38), by, tw - Inches(0.38), bullet_row_h,
+                 Pt(14), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
+
+        # "深 度 观 察" section below bullets
+        n_bullets = len(slide.bullets)
+        obs_top = bullets_top + n_bullets * bullet_row_h + Inches(0.15)
+
+        if obs_top < Inches(body_top + body_h - 1.0):
+            obs_label = "深  度  观  察" if doc.lang == "zh" else "Deep Observation"
+            _tb1(s, obs_label, tx, obs_top, tw, Inches(0.32),
+                 Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
+            obs_text_top = obs_top + Inches(0.35)
+            remaining_h = Inches(body_top + body_h) - obs_text_top - Inches(0.1)
+            if slide.deep_observation and remaining_h > Inches(0.3):
+                _tb1(s, slide.deep_observation,
+                     tx, obs_text_top, tw, remaining_h,
+                     Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
         _footer(s, idx, total, chapter=self._cur_chapter)
         _notes(s, slide.notes)
