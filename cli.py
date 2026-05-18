@@ -56,9 +56,24 @@ def _parse_formats(raw: str | None) -> list[str] | None:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
+def _resolve_formats_for_s09(args, out: Path) -> list[str] | None:
+    """If --retry-failed: extract failed formats from prior done.yaml.
+    Otherwise pass through --formats as-is."""
+    if getattr(args, "retry_failed", False):
+        done_path = out / "done.yaml"
+        if done_path.exists():
+            import yaml as _y
+            done = _y.safe_load(done_path.read_text(encoding="utf-8")) or {}
+            failed = [k for k, v in (done.get("formats") or {}).items()
+                      if isinstance(v, dict) and "error" in v]
+            if failed:
+                return failed
+    return _parse_formats(args.formats)
+
+
 def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
     out = stage_dir(run_root, paper_id, name)
-    if is_done(out) and not args.force:
+    if is_done(out) and not args.force and not getattr(args, "retry_failed", False):
         print(f"[skip] {name} (already done)")
         return
     print(f"[run]  {name}")
@@ -113,7 +128,7 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             lang=args.lang,
         )
     elif name == "s09_render":
-        formats = _parse_formats(args.formats)
+        formats = _resolve_formats_for_s09(args, out)
         _s09.run(
             compose_dir=stage_dir(run_root, paper_id, "s08_section_compose"),
             fig_notes_dir=stage_dir(run_root, paper_id, "s07_figure_analyze"),
@@ -138,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="Assume s01_ocr outputs already exist in the run dir")
     r.add_argument("--force", action="store_true",
                    help="Re-run stages even if done.yaml is present")
+    r.add_argument("--only", default=None,
+                   help="Run only this single stage (e.g. s09_render) instead of all 9")
     r.add_argument("--lang", choices=("en", "zh"), default="zh",
                    help="Output language for LLM stages and render")
     r.add_argument("--formats", default=None,
@@ -159,7 +176,8 @@ def main(argv: list[str] | None = None) -> int:
     run_root.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
-    for name in STAGE_ORDER:
+    stage_list = [args.only] if args.only else STAGE_ORDER
+    for name in stage_list:
         _run_one(args, name, run_root, paper_id)
 
     meta = {
