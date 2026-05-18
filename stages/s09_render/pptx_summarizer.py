@@ -169,73 +169,52 @@ class PptxSummarizer:
 
     # ---------- cache I/O ----------
 
-    def _input_hash(self, chapter: Chapter) -> str:
-        # Hash the chapter content + lang so a language switch invalidates.
-        # _CHAPTER_PROMPT_VERSION included so prompt changes invalidate old caches.
+    @staticmethod
+    def _make_hash(version: str, lang: str, *parts: bytes) -> str:
         h = hashlib.sha256()
-        h.update(_CHAPTER_PROMPT_VERSION.encode("utf-8"))
+        h.update(version.encode("utf-8"))
         h.update(b"\x00")
-        h.update(self.lang.encode("utf-8"))
+        h.update(lang.encode("utf-8"))
         h.update(b"\x00")
-        h.update(chapter.heading.encode("utf-8"))
-        h.update(b"\x00")
+        for p in parts:
+            h.update(p)
+        return h.hexdigest()
+
+    def _input_hash(self, chapter: Chapter) -> str:
+        chunks: list[bytes] = [chapter.heading.encode("utf-8"), b"\x00"]
         for block in chapter.blocks:
             if isinstance(block, Paragraph):
-                h.update(b"P:")
-                h.update(block.text.encode("utf-8"))
-                h.update(b"\x00")
+                chunks += [b"P:", block.text.encode("utf-8"), b"\x00"]
             elif isinstance(block, FigureBlock):
-                h.update(b"F:")
-                h.update(block.fig_id.encode("utf-8"))
-                h.update(b"|")
-                h.update(block.caption.encode("utf-8"))
-                h.update(b"|")
-                h.update(block.deep_observation.encode("utf-8"))
-                h.update(b"\x00")
-        return h.hexdigest()
+                chunks += [
+                    b"F:", block.fig_id.encode("utf-8"), b"|",
+                    block.caption.encode("utf-8"), b"|",
+                    block.deep_observation.encode("utf-8"), b"\x00",
+                ]
+        return self._make_hash(_CHAPTER_PROMPT_VERSION, self.lang, *chunks)
 
     def _outline_input_hash(self, doc: Document) -> str:
-        """sha256 of (version + lang + all chapter headings + first 200 chars of each chapter's first paragraph)."""
-        h = hashlib.sha256()
-        h.update(_OUTLINE_PROMPT_VERSION.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(self.lang.encode("utf-8"))
-        h.update(b"\x00")
+        chunks: list[bytes] = []
         for ch in doc.chapters:
-            h.update(ch.heading.encode("utf-8"))
-            h.update(b"\x00")
-            # First paragraph preview
-            first_para = next(
-                (b for b in ch.blocks if isinstance(b, Paragraph)), None
-            )
-            preview = (first_para.text[:200] if first_para else "")
-            h.update(preview.encode("utf-8"))
-            h.update(b"\x00")
-        return h.hexdigest()
+            first_para = next((b for b in ch.blocks if isinstance(b, Paragraph)), None)
+            preview = first_para.text[:200] if first_para else ""
+            chunks += [ch.heading.encode("utf-8"), b"\x00",
+                       preview.encode("utf-8"), b"\x00"]
+        return self._make_hash(_OUTLINE_PROMPT_VERSION, self.lang, *chunks)
 
     def _paper_input_hash(self, doc: Document) -> str:
-        """sha256 of (version + lang + all chapter headings + last chapter's full text + first 500 chars of each chapter)."""
-        h = hashlib.sha256()
-        h.update(_PAPER_PROMPT_VERSION.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(self.lang.encode("utf-8"))
-        h.update(b"\x00")
+        chunks: list[bytes] = []
         for ch in doc.chapters:
-            h.update(ch.heading.encode("utf-8"))
-            h.update(b"\x00")
-        # First 500 chars of each chapter
+            chunks += [ch.heading.encode("utf-8"), b"\x00"]
         for ch in doc.chapters:
             paras = [b for b in ch.blocks if isinstance(b, Paragraph)]
             text = " ".join(p.text for p in paras)
-            h.update(text[:500].encode("utf-8"))
-            h.update(b"\x00")
-        # Last chapter's full text
+            chunks += [text[:500].encode("utf-8"), b"\x00"]
         if doc.chapters:
             last_ch = doc.chapters[-1]
             paras = [b for b in last_ch.blocks if isinstance(b, Paragraph)]
-            full_text = " ".join(p.text for p in paras)
-            h.update(full_text.encode("utf-8"))
-        return h.hexdigest()
+            chunks.append(" ".join(p.text for p in paras).encode("utf-8"))
+        return self._make_hash(_PAPER_PROMPT_VERSION, self.lang, *chunks)
 
     def _try_cache(self, slug: str, input_hash: str) -> dict | None:
         hash_file = self.cache_dir / f"{slug}.input_hash.json"

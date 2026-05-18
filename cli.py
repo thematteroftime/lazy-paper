@@ -31,7 +31,7 @@ _augment_dyld_for_macos_brew()
 
 from dotenv import load_dotenv
 
-from stages._common import dump_yaml, slugify, stage_dir, is_done
+from stages._common import dump_yaml, load_yaml, slugify, stage_dir, is_done
 
 import stages.s01_ocr.runner as _s01
 import stages.s02_clean.runner as _s02
@@ -56,51 +56,44 @@ def _parse_formats(raw: str | None) -> list[str] | None:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
-def _is_partial_done(out: Path) -> bool:
-    """True if the stage's done.yaml exists and records partial=True."""
-    done = out / "done.yaml"
-    if not done.exists():
-        return False
+def _load_done(path: Path) -> dict:
     try:
-        import yaml as _y
-        payload = _y.safe_load(done.read_text(encoding="utf-8")) or {}
-        return bool(payload.get("partial"))
+        result = load_yaml(path)
+        return result if isinstance(result, dict) else {}
     except Exception:
-        return False
+        return {}
+
+
+def _is_partial_done(out: Path) -> bool:
+    done = out / "done.yaml"
+    return done.exists() and bool(_load_done(done).get("partial"))
 
 
 def _print_done_summary(paper_id: str, duration_s: float, s09_dir: Path) -> None:
     done = s09_dir / "done.yaml"
     formats_str = "preview.docx (legacy fallback)"
     if done.exists():
-        try:
-            import yaml as _y
-            payload = _y.safe_load(done.read_text(encoding="utf-8")) or {}
-            formats = payload.get("formats") or {}
-            produced = [k for k, v in formats.items() if isinstance(v, str)]
-            failed = [k for k, v in formats.items() if isinstance(v, dict) and "error" in v]
-            parts = []
-            if produced:
-                parts.append("produced: " + ", ".join(sorted(produced)))
-            if failed:
-                parts.append("failed: " + ", ".join(sorted(failed)))
-            if parts:
-                formats_str = " | ".join(parts)
-            if payload.get("partial"):
-                formats_str = "[partial] " + formats_str
-        except Exception:
-            pass
+        payload = _load_done(done)
+        formats = payload.get("formats") or {}
+        produced = [k for k, v in formats.items() if isinstance(v, str)]
+        failed = [k for k, v in formats.items() if isinstance(v, dict) and "error" in v]
+        parts = []
+        if produced:
+            parts.append("produced: " + ", ".join(sorted(produced)))
+        if failed:
+            parts.append("failed: " + ", ".join(sorted(failed)))
+        if parts:
+            formats_str = " | ".join(parts)
+        if payload.get("partial"):
+            formats_str = "[partial] " + formats_str
     print(f"[done] {paper_id} in {duration_s:.1f}s → {s09_dir} ({formats_str})")
 
 
 def _resolve_formats_for_s09(args, out: Path) -> list[str] | None:
-    """If --retry-failed: extract failed formats from prior done.yaml.
-    Otherwise pass through --formats as-is."""
     if getattr(args, "retry_failed", False):
         done_path = out / "done.yaml"
         if done_path.exists():
-            import yaml as _y
-            done = _y.safe_load(done_path.read_text(encoding="utf-8")) or {}
+            done = _load_done(done_path)
             failed = [k for k, v in (done.get("formats") or {}).items()
                       if isinstance(v, dict) and "error" in v]
             if failed:

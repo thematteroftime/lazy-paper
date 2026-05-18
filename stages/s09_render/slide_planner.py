@@ -256,42 +256,6 @@ class SlidePlanner:
             return list(summary["bullets"])
         return self._paragraph_bullets(paragraphs)
 
-    # ---------- legacy helpers (kept for closing slide + backward compat) ----------
-
-    def _bullets_slides(self, chapter: Chapter, paragraphs: list[Paragraph],
-                        summary: dict | None) -> list[Slide]:
-        """Kept for backward compat; not used by _chapter_slides in v6+."""
-        if not paragraphs:
-            return []
-        notes_full = "\n\n".join(p.text for p in paragraphs)
-        source = self._get_bullets(chapter, paragraphs, summary)
-        slides: list[Slide] = []
-        for chunk in _chunked(source, self.MAX_BULLETS_PER_SLIDE):
-            slides.append(Slide(
-                kind="bullets",
-                title=chapter.heading,
-                bullets=tuple(chunk),
-                notes=notes_full,
-            ))
-        return slides
-
-    def _figure_slides(self, chapter: Chapter, figures: list[FigureBlock],
-                       summary: dict | None) -> list[Slide]:
-        """Kept for backward compat; not used by _chapter_slides in v6+."""
-        one_liners = (summary or {}).get("figure_one_liners", {})
-        slides: list[Slide] = []
-        for fb in figures:
-            obs = one_liners.get(fb.fig_id) or fb.deep_observation
-            slides.append(Slide(
-                kind="figure",
-                title=f"{fb.label}: {fb.caption}",
-                image_paths=fb.image_paths,
-                caption=fb.caption,
-                deep_observation=obs,
-                notes=f"Full deep observation:\n{fb.deep_observation}",
-            ))
-        return slides
-
     # ---------- helpers ----------
 
     def _localize(self, en: str, zh: str) -> str:

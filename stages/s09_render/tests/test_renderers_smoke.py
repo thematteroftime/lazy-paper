@@ -110,7 +110,7 @@ def test_pptx_renderer_layout_fallback_when_template_has_few_layouts(
     from stages.s09_render.renderers.pptx import PptxRenderer
     from pptx import Presentation
     prs = Presentation()
-    layout = PptxRenderer._layout(prs, 999)  # out of range
+    layout = PptxRenderer._lay(prs, 999)  # out of range
     assert layout is prs.slide_layouts[0]
 
 

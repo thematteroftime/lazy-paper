@@ -32,31 +32,33 @@ The README of mypaper has the full template-swap instructions.
 DEFAULT_FORMATS = ("docx", "pdf", "html")
 
 
-def _resolve_pptx_subtitle(context_dir: Path | None, pptx_subtitle: str | None) -> str | None:
-    """Compute PPTX subtitle from keywords if not explicitly provided.
+class _ContextResolver:
+    def __init__(self, context_dir: Path | None):
+        self._ctx: dict = {}
+        if context_dir is not None:
+            path = Path(context_dir) / "context.yaml"
+            if path.exists():
+                try:
+                    self._ctx = load_yaml(path) or {}
+                except Exception:
+                    pass
 
-    If pptx_subtitle is provided, use it directly.
-    Otherwise, try to load context.yaml and extract top 3 keywords.
-    Returns None if no subtitle can be derived.
-    """
-    if pptx_subtitle:
-        return pptx_subtitle
-    if context_dir is None:
-        return None
-    path = Path(context_dir) / "context.yaml"
-    if not path.exists():
-        return None
-    try:
-        ctx = load_yaml(path) or {}
-    except Exception:
-        return None
-    keywords = ctx.get("keywords") or []
-    if not isinstance(keywords, list) or not keywords:
-        return None
-    top = [str(k).strip() for k in keywords[:3] if k]
-    if not top:
-        return None
-    return "·  " + "  ·  ".join(top) + "  ·"
+    def title(self, fallback: str) -> str:
+        t = self._ctx.get("title")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+        return fallback
+
+    def subtitle(self, override: str | None) -> str | None:
+        if override:
+            return override
+        keywords = self._ctx.get("keywords") or []
+        if not isinstance(keywords, list) or not keywords:
+            return None
+        top = [str(k).strip() for k in keywords[:3] if k]
+        if not top:
+            return None
+        return "·  " + "  ·  ".join(top) + "  ·"
 
 
 def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
@@ -73,15 +75,15 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
 
     chapters_md = _read_chapters(Path(compose_dir))
     fig_notes = _read_fig_notes(Path(fig_notes_dir))
-    resolved_title = _resolve_paper_title(context_dir, paper_title)
-    doc = DocumentBuilder(lang=lang, paper_title=resolved_title).build(chapters_md, fig_notes)
+    ctx = _ContextResolver(context_dir)
+    doc = DocumentBuilder(lang=lang, paper_title=ctx.title(paper_title)).build(chapters_md, fig_notes)
 
     requested = list(formats) if formats is not None else list(DEFAULT_FORMATS)
     summaries, outline, paper_brief = _maybe_summarize_for_pptx(doc, requested, pptx_bullets, out_dir)
 
     results: dict[str, object] = {}
     partial = False
-    resolved_subtitle = _resolve_pptx_subtitle(context_dir, pptx_subtitle)
+    resolved_subtitle = ctx.subtitle(pptx_subtitle)
     for fmt in requested:
         if fmt not in RENDERERS:
             raise ValueError(f"unknown format {fmt!r}; available: {sorted(RENDERERS)}")
@@ -148,24 +150,6 @@ def _pptx_state(summaries, outline, paper_brief, requested, pptx_bullets) -> str
     if pptx_bullets != "llm":
         return "rule"
     return "ok" if summaries is not None else "degraded"
-
-
-def _resolve_paper_title(context_dir: Path | None, fallback: str) -> str:
-    """Prefer the LLM-extracted title from s06_context/context.yaml; fall back
-    to the caller-supplied title (typically the paper_id or PDF stem)."""
-    if context_dir is None:
-        return fallback
-    path = Path(context_dir) / "context.yaml"
-    if not path.exists():
-        return fallback
-    try:
-        ctx = load_yaml(path) or {}
-    except Exception:
-        return fallback
-    title = ctx.get("title")
-    if isinstance(title, str) and title.strip():
-        return title.strip()
-    return fallback
 
 
 def _read_chapters(compose_dir: Path) -> dict[str, str]:
