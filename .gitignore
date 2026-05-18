@@ -28,3 +28,4 @@ mypaper/
 参考文献/
 *.pdf
 *.docx
+.worktrees/
