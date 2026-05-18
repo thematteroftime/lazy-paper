@@ -87,39 +87,50 @@ class PptxRenderer(Renderer):
         s = prs.slides.add_slide(self._lay(prs, _IDX_TITLE))
         _bg(s)
         T = _T
+        # Bug 2 fix: shrink-to-fit font based on title length
+        title_len = len(slide.title)
+        title_pt = 40 if title_len < 60 else (32 if title_len < 100 else 26)
         # Reposition & style the title placeholder (keeps shapes.title for tests)
         ph = s.shapes.title
         if ph is not None:
             ph.left, ph.top, ph.width, ph.height = (
-                Inches(1.0), Inches(2.5), Inches(8.5), Inches(2.2))
+                Inches(1.0), Inches(2.0), Inches(11.0), Inches(3.0))
             ph.text_frame.word_wrap = True
             ph.text_frame.text = slide.title
             p = ph.text_frame.paragraphs[0]
             if p.runs:
-                _run_style(p.runs[0], Pt(36), True, T.TEXT_DARK, T.LAT_SERIF, T.EA_SERIF)
+                _run_style(p.runs[0], Pt(title_pt), True, T.TEXT_DARK, T.LAT_SERIF, T.EA_SERIF)
             p.alignment = 1
         # Remove subtitle placeholder
         for ph2 in list(s.placeholders):
             if ph2.placeholder_format.idx == 1:
                 ph2._element.getparent().remove(ph2._element); break
         # Decorative lines
-        _line(s, Inches(1.0), Inches(2.35), Inches(9.5), Inches(2.35), T.TEXT_GRAY, Pt(0.75))
-        _line(s, Inches(1.0), Inches(4.9),  Inches(9.5), Inches(4.9),  T.TEXT_GRAY, Pt(0.75))
+        _line(s, Inches(1.0), Inches(1.85), Inches(9.5), Inches(1.85), T.TEXT_GRAY, Pt(0.75))
+        _line(s, Inches(1.0), Inches(5.1),  Inches(9.5), Inches(5.1),  T.TEXT_GRAY, Pt(0.75))
         # Eyebrow
         _tb1(s, "MOMENT  ·  论文摘要分析",
-             Inches(1.0), Inches(1.8), Inches(8.5), Inches(0.45),
+             Inches(1.0), Inches(1.4), Inches(8.5), Inches(0.45),
              Pt(11), T.TEXT_GRAY, T.LAT_SANS, T.EA_SANS, align=1)
-        # Sub-label
-        kws = getattr(doc, "keywords", None) or []
-        sub = "  ·  ".join(([kws[0]] if kws else []) + [doc.lang.upper()])
-        _tb1(s, sub, Inches(1.0), Inches(5.0), Inches(8.5), Inches(0.4),
-             Pt(12), T.TEXT_GRAY, T.LAT_SANS, T.EA_SANS, align=1, italic=True)
-        # Issue card
+        # Bug 3 fix: subtitle line below title
+        _tb1(s, f"· {doc.lang.upper()} · A PAPER MOMENT ·",
+             Inches(1.0), Inches(5.2), Inches(11.0), Inches(0.4),
+             Pt(16), T.TEXT_GRAY, T.LAT_SANS, T.EA_SANS, align=1, italic=True)
+        # Bug 5 fix: issue card with rounded rect frame behind text boxes
         today = datetime.date.today()
         pid = _pid(doc.paper_title)
-        _card(s, Inches(10.0), Inches(1.0), Inches(2.9), Inches(1.65),
-              ["ISSUE 01", f"{today.year}·{today.month:02d}·{today.day:02d}", f"{total} SLIDES"],
-              Pt(11), T.TEXT_NAVY, align=1)
+        card_left, card_top = Inches(10.4), Inches(0.5)
+        card_w, card_h = Inches(2.5), Inches(1.6)
+        _rrect(s, card_left, card_top, card_w, card_h, T.CARD_WHITE, T.CARD_BORDER, 0.05)
+        rh = card_h / 3
+        card_lines = ["ISSUE 01",
+                      f"{today.year}·{today.month:02d}·{today.day:02d}",
+                      f"{total} SLIDES"]
+        for i, txt in enumerate(card_lines):
+            _tb1(s, txt,
+                 card_left + Inches(0.15), card_top + i * rh + Inches(0.05),
+                 card_w - Inches(0.3), rh,
+                 Pt(11), T.TEXT_NAVY, T.LAT_SANS, T.EA_SANS, align=1)
         _footer(s, pid, idx, total)
         _notes(s, slide.notes)
 
@@ -131,17 +142,38 @@ class PptxRenderer(Renderer):
         _tb1(s, "目  录  ·  CONTENTS",
              Inches(1.5), Inches(0.55), Inches(10.0), Inches(0.7),
              Pt(28), T.TEXT_NAVY, T.LAT_SERIF, T.EA_SERIF, bold=True)
-        _line(s, Inches(1.5), Inches(1.35), Inches(12.0), Inches(1.35), T.CARD_BORDER, Pt(1))
-        row_h = Inches(0.6)
-        for i, bul in enumerate(slide.bullets):
-            y = Inches(1.5) + i * row_h
-            _tb1(s, f"{i+1:02d}", Inches(1.5), y, Inches(0.6), row_h,
-                 Pt(14), T.ACCENTS[i % 4], T.LAT_SERIF, T.EA_SERIF, bold=True)
-            _tb1(s, bul, Inches(2.2), y, Inches(9.5), row_h,
-                 Pt(16), T.TEXT_DARK, T.LAT_SANS, T.EA_SANS, wrap=True)
-            if i < len(slide.bullets) - 1:
-                _line(s, Inches(1.5), y + row_h - Inches(0.05),
-                      Inches(11.8), y + row_h - Inches(0.05), T.CARD_BORDER, Pt(0.5))
+        _line(s, Inches(1.5), Inches(1.2), Inches(12.0), Inches(1.2), T.CARD_BORDER, Pt(1))
+        # Bug 1 fix: reduce row spacing to 0.5" and start higher so all chapters fit
+        # With row_h=0.5" starting at y=1.2", 11 rows → last row ends at 1.2+11×0.5=6.7" ≤ 7.0"
+        row_h = Inches(0.5)
+        n = len(slide.bullets)
+        if n > 10:
+            # Two-column layout: col1 = first half, col2 = second half
+            half = (n + 1) // 2
+            for i, bul in enumerate(slide.bullets):
+                col = i // half
+                row = i % half
+                x_num = Inches(1.5) + col * Inches(6.5)
+                x_txt = Inches(2.2) + col * Inches(6.5)
+                txt_w = Inches(5.0)
+                y = Inches(1.3) + row * row_h
+                _tb1(s, f"{i+1:02d}", x_num, y, Inches(0.6), row_h,
+                     Pt(13), T.ACCENTS[i % 4], T.LAT_SERIF, T.EA_SERIF, bold=True)
+                _tb1(s, bul, x_txt, y, txt_w, row_h,
+                     Pt(14), T.TEXT_DARK, T.LAT_SANS, T.EA_SANS, wrap=True)
+                if row < half - 1 or (col == 0 and i < n - 1):
+                    _line(s, x_num, y + row_h - Inches(0.04),
+                          x_num + Inches(5.6), y + row_h - Inches(0.04), T.CARD_BORDER, Pt(0.5))
+        else:
+            for i, bul in enumerate(slide.bullets):
+                y = Inches(1.3) + i * row_h
+                _tb1(s, f"{i+1:02d}", Inches(1.5), y, Inches(0.6), row_h,
+                     Pt(14), T.ACCENTS[i % 4], T.LAT_SERIF, T.EA_SERIF, bold=True)
+                _tb1(s, bul, Inches(2.2), y, Inches(9.5), row_h,
+                     Pt(16), T.TEXT_DARK, T.LAT_SANS, T.EA_SANS, wrap=True)
+                if i < n - 1:
+                    _line(s, Inches(1.5), y + row_h - Inches(0.04),
+                          Inches(11.8), y + row_h - Inches(0.04), T.CARD_BORDER, Pt(0.5))
         _footer(s, _pid(doc.paper_title), idx, total)
         _notes(s, slide.notes)
 
@@ -196,7 +228,8 @@ class PptxRenderer(Renderer):
         chi = max(self._ch, 0)
         acc = T.ACCENTS[chi % 4]
         _section_bar(s, chi, slide.title, acc)
-        _num_accent(s, f"{chi+1:02d}", Inches(0.4), Inches(0.3), Pt(72))
+        # Bug 4 fix: drop the large "01" accent from figure slides — the section
+        # bar already provides chapter context and the accent overlapped the bar.
         _tb1(s, slide.title, Inches(1.0), Inches(1.2), Inches(11.5), Inches(0.6),
              Pt(16), T.TEXT_DARK, T.LAT_SERIF, T.EA_SERIF, bold=True, wrap=True)
         img_max_h = Inches(4.2)
