@@ -15,6 +15,7 @@ from stages.s09_render.renderers import RENDERERS
 # Import side-effect: each renderer module registers itself in RENDERERS.
 # Import here (not in __init__.py) to keep the module graph explicit.
 import stages.s09_render.renderers.docx  # noqa: F401
+import stages.s09_render.renderers.html  # noqa: F401
 
 
 BUNDLE_README = """\

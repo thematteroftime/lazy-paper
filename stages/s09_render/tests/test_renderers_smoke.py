@@ -7,6 +7,7 @@ from PIL import Image
 from stages.s09_render.model import Document, Chapter, Paragraph, FigureBlock
 from stages.s09_render.renderers import RENDERERS
 import stages.s09_render.renderers.docx  # noqa: F401 — triggers RENDERERS["docx"] registration
+import stages.s09_render.renderers.html  # noqa: F401 — triggers RENDERERS["html"] registration
 
 
 @pytest.fixture
@@ -43,3 +44,17 @@ def test_docx_renderer_produces_readable_file(tmp_path: Path, one_image: Path):
     assert "引言" in text
     assert "图 1. 第一张图" in text
     assert len(d.inline_shapes) == 1
+
+
+def test_html_renderer_self_contained_base64(tmp_path: Path, one_image: Path):
+    doc = _make_doc(one_image)
+    out = tmp_path / "preview.html"
+    RENDERERS["html"]().render(doc, out)
+    assert out.exists()
+    html = out.read_text(encoding="utf-8")
+    assert "Smoke Test Paper" in html
+    assert "引言" in html
+    assert "图 1. 第一张图" in html
+    # Base64 embedded image — no external file refs
+    assert 'src="data:image/' in html
+    assert 'src="/tmp' not in html  # absolute paths must NOT leak
