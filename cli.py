@@ -224,6 +224,9 @@ def main(argv: list[str] | None = None) -> int:
 
     t0 = time.time()
     stage_list = [s.strip() for s in args.only.split(",")] if args.only else STAGE_ORDER
+    unknown = [s for s in stage_list if s not in STAGE_ORDER]
+    if unknown:
+        raise SystemExit(f"Unknown stage(s) in --only: {unknown}. Valid: {STAGE_ORDER}")
     for name in stage_list:
         _run_one(args, name, run_root, paper_id)
 

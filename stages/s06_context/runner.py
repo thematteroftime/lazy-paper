@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from llm.client import LLM
+from llm.client import LLM, max_tokens
 from stages._common import dump_yaml, mark_done, safe_parse_yaml
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "paper_context.md"
@@ -60,7 +60,7 @@ def run(*, chapters_dir: Path, out_dir: Path) -> dict:
     )
 
     llm = LLM(role="text")
-    response = llm.chat(system=system, user=user, max_tokens=1500)
+    response = llm.chat(system=system, user=user, max_tokens=max_tokens(4000))
     (out_dir / "paper_context.response.json").write_text(
         json.dumps({"model": response.model, "latency_ms": response.latency_ms,
                     "usage": response.usage, "content": response.content},

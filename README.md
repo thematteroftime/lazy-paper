@@ -149,11 +149,13 @@ Options:
 
 For OCR, set `OCR_BACKEND=mineru` (recommended for figure-heavy papers) or `OCR_BACKEND=paddleocr` (default in `.env.example`).
 
+`LLM_MAX_TOKENS_CEILING` (default 40000) caps every LLM call. Per-stage defaults are intentionally generous (8K–16K) so DeepSeek-Reasoner's chain-of-thought tokens don't starve the final JSON content. Lower this ceiling to constrain spend or fit a stricter quota.
+
 ## Development
 
 ```bash
 uv pip install -e ".[dev]"
-uv run pytest             # 134 tests
+uv run pytest             # 153 tests
 uv run pytest -m live     # live LLM smoke tests (requires real keys)
 ```
 

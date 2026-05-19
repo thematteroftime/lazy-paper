@@ -13,9 +13,23 @@ from openai import OpenAI
 
 _MODELS_YAML = Path(__file__).resolve().parent / "models.yaml"
 
+_MAX_TOKENS_CEILING_DEFAULT = 40000
+
 
 def _load_roles() -> dict:
     return yaml.safe_load(_MODELS_YAML.read_text(encoding="utf-8"))
+
+
+def max_tokens(default: int) -> int:
+    """Clamp a requested max_tokens to the env-configured ceiling.
+
+    Output quality and information density are favored: per-stage defaults are
+    generous (multiple-K each). Set LLM_MAX_TOKENS_CEILING to constrain (e.g.
+    to control cost or stay under a stricter API quota). Default ceiling 40000.
+    """
+    raw = os.environ.get("LLM_MAX_TOKENS_CEILING")
+    ceiling = int(raw) if raw and raw.strip().isdigit() else _MAX_TOKENS_CEILING_DEFAULT
+    return min(default, max(1, ceiling))
 
 
 def image_to_data_url(path: Path) -> str:

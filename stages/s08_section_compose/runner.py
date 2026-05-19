@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from llm.client import LLM
+from llm.client import LLM, max_tokens
 from stages._common import dump_yaml, mark_done, slugify
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "section_compose.md"
@@ -241,7 +241,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         (out_dir / f"{basename}.prompt.md").write_text(
             f"# SYSTEM\n{system_tpl}\n\n# USER\n{user_msg}", encoding="utf-8"
         )
-        response = llm.chat(system=system_tpl, user=user_msg, max_tokens=3000)
+        response = llm.chat(system=system_tpl, user=user_msg, max_tokens=max_tokens(12000))
         (out_dir / f"{basename}.response.json").write_text(
             json.dumps({"model": response.model, "latency_ms": response.latency_ms,
                         "usage": response.usage, "content": response.content},

@@ -29,6 +29,7 @@ import json
 import re
 from pathlib import Path
 
+from llm.client import max_tokens
 from stages._common import load_yaml
 from stages._common.paths import slugify
 from stages.s09_render.model import (
@@ -213,7 +214,7 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=user_prompt,
                     temperature=temp,
-                    max_tokens=8000,
+                    max_tokens=max_tokens(16000),
                 )
                 if not response.content.strip():
                     raise ValueError("Empty LLM response (likely reasoning-token budget exhausted)")
@@ -259,8 +260,10 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=prompt,
                     temperature=0.2,
-                    max_tokens=2000,
+                    max_tokens=max_tokens(8000),
                 )
+                if not response.content.strip():
+                    raise ValueError("Empty LLM response (reasoning-token budget exhausted)")
                 payload = json.loads(response.content)
                 if "bullets" not in payload or "takeaway" not in payload:
                     raise ValueError("Missing 'bullets' or 'takeaway' in LLM response")
@@ -313,8 +316,10 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=prompt,
                     temperature=0.2,
-                    max_tokens=2000,
+                    max_tokens=max_tokens(8000),
                 )
+                if not response.content.strip():
+                    raise ValueError("Empty LLM response (reasoning-token budget exhausted)")
                 payload = json.loads(response.content)
                 payload = _normalize_chapter_summary(payload)
                 self._write_cache(slug, input_hash, payload, prompt, response)

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from llm.client import LLM
+from llm.client import LLM, max_tokens
 from stages._common import dump_yaml, mark_done, safe_parse_yaml
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "figure_analyze.md"
@@ -116,7 +116,7 @@ def run(*, figures_dir: Path, chapters_dir: Path, context_dir: Path, out_dir: Pa
         response = llm.chat(
             system=system_tpl, user=user_msg,
             images=img_paths if img_paths else [],
-            max_tokens=2000,
+            max_tokens=max_tokens(4000),
         )
         (out_dir / f"{fname}.response.json").write_text(
             json.dumps({"model": response.model, "latency_ms": response.latency_ms,

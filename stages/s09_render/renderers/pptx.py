@@ -562,23 +562,23 @@ class PptxRenderer(Renderer):
         _line(s, tx, Inches(body_top + 0.85), tx + tw, Inches(body_top + 0.85), T.RULE, Pt(0.5))
 
         _tb1(s, _S.pick(_S.FIG_EYEBROW, doc.lang),
-             tx, Inches(body_top + 1.0), tw, Inches(0.32),
-             Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False)
-        _line(s, tx, Inches(body_top + 1.35), tx + tw, Inches(body_top + 1.35),
+             tx, Inches(body_top + 1.0), tw, Inches(0.34),
+             Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
+        _line(s, tx, Inches(body_top + 1.40), tx + tw, Inches(body_top + 1.40),
               T.RULE, Pt(0.3))
 
         observations = slide.observations or ((slide.deep_observation,) if slide.deep_observation else ())
-        obs_row_h = Inches(0.52)   # v15: was 0.48 — slightly taller for readability
-        obs_area_top = Inches(body_top + 1.45)
-        obs_area_h = Inches(body_h - 1.55)
+        obs_row_h = Inches(0.70)
+        obs_area_top = Inches(body_top + 1.52)
+        obs_area_h = Inches(body_h - 1.62)
         for j, obs_pt in enumerate(observations[:3]):
             oy = obs_area_top + j * obs_row_h
             if oy + obs_row_h > obs_area_top + obs_area_h:
                 break
-            _tb1(s, "◇", tx, oy, Inches(0.28), obs_row_h,
-                 Pt(11), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
-            _tb1(s, obs_pt, tx + Inches(0.28), oy, tw - Inches(0.28), obs_row_h,
-                 Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
+            _tb1(s, "◇", tx, oy, Inches(0.30), obs_row_h,
+                 Pt(13), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
+            _tb1(s, obs_pt, tx + Inches(0.30), oy, tw - Inches(0.30), obs_row_h,
+                 Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
         _footer(s, idx, total, chapter=self._cur_chapter, lang=doc.lang)
         _notes(s, slide.notes)
@@ -692,27 +692,26 @@ class PptxRenderer(Renderer):
             obs_top = ty
 
         if has_obs:
-            # v15: clamp obs_top to ensure observations don't start too far down
-            obs_top = min(obs_top, slide_bottom - Inches(1.6))  # need room for ≥1 obs
+            # Clamp obs_top so observations leave room for at least one row.
+            obs_top = min(obs_top, slide_bottom - Inches(1.9))
 
-            _tb1(s, _S.pick(_S.FIG_EYEBROW, doc.lang), tx, obs_top, tw, Inches(0.30),
-                 Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=False)
-            _line(s, tx, obs_top + Inches(0.32), tx + tw, obs_top + Inches(0.32),
+            _tb1(s, _S.pick(_S.FIG_EYEBROW, doc.lang), tx, obs_top, tw, Inches(0.32),
+                 Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
+            _line(s, tx, obs_top + Inches(0.36), tx + tw, obs_top + Inches(0.36),
                   T.RULE, Pt(0.3))
 
-            # Observation bullets — adaptive row height based on available space
-            obs_item_top = obs_top + Inches(0.38)
+            obs_item_top = obs_top + Inches(0.44)
             obs_area_h   = slide_bottom - obs_item_top - Inches(0.05)
             n_obs = min(len(observations), 3)
-            obs_row_h = min(Inches(0.52), int(obs_area_h / max(n_obs, 1)))
+            obs_row_h = min(Inches(0.70), int(obs_area_h / max(n_obs, 1)))
             for j, obs_pt in enumerate(observations[:n_obs]):
                 oy = obs_item_top + j * obs_row_h
                 if oy + obs_row_h > slide_bottom - Inches(0.05):
                     break
-                _tb1(s, "◇", tx, oy, Inches(0.28), obs_row_h,
-                     Pt(11), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
-                _tb1(s, obs_pt, tx + Inches(0.28), oy, tw - Inches(0.28), obs_row_h,
-                     Pt(11), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
+                _tb1(s, "◇", tx, oy, Inches(0.30), obs_row_h,
+                     Pt(13), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
+                _tb1(s, obs_pt, tx + Inches(0.30), oy, tw - Inches(0.30), obs_row_h,
+                     Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
         _footer(s, idx, total, chapter=self._cur_chapter, lang=doc.lang)
         _notes(s, slide.notes)
