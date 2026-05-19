@@ -5,8 +5,8 @@
 <p>
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.2.0-blue"></a>
-  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-164%20passing-22c55e"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.2.1-blue"></a>
+  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-167%20passing-22c55e"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
@@ -58,7 +58,7 @@
 | 渲染器 | `python-docx`、`python-pptx`、`weasyprint`、`jinja2` | 每种输出格式一个 renderer |
 | 配置 | `pyyaml`、`python-dotenv` | YAML 工件 + `.env` 凭证 |
 | HTTP | `requests` | OCR API 调用 |
-| 开发 | `pytest>=8` | 164 个测试 |
+| 开发 | `pytest>=8` | 167 个测试 |
 
 ## 快速开始
 
@@ -177,13 +177,13 @@ OCR 选择：`OCR_BACKEND=mineru`（推荐识图密集的论文）或 `OCR_BACKE
 ## 测试
 
 ```bash
-uv run pytest -q          # 164 个测试
+uv run pytest -q          # 167 个测试
 uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 ```
 
 ## 已知问题
 
-当前无。[`docs/PPT_KNOWN_ISSUES.md`](docs/PPT_KNOWN_ISSUES.md) 中分诊的两个 PPT 视觉问题（数学下标字体回退、≥6 条要点卡片重叠）均在 v1.2.0 修复完成 — 详见 [`CHANGELOG.md`](CHANGELOG.md)。
+当前无。[`docs/PPT_KNOWN_ISSUES.md`](docs/PPT_KNOWN_ISSUES.md) 中分诊的两个 PPT 视觉问题（数学下标字体回退、≥6 条要点卡片重叠）均在 v1.2.1 修复完成 — 详见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 引用
 

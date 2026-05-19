@@ -5,8 +5,8 @@
 <p>
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.2.0-blue"></a>
-  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-164%20passing-22c55e"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.2.1-blue"></a>
+  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-167%20passing-22c55e"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
@@ -58,7 +58,7 @@ If you want a tool to read each paper *for* you, this isn't it. `lazy-paper` pro
 | Renderers | `python-docx`, `python-pptx`, `weasyprint`, `jinja2` | one renderer per output format |
 | Config | `pyyaml`, `python-dotenv` | YAML artifacts + `.env` credentials |
 | HTTP | `requests` | OCR API calls |
-| Dev | `pytest>=8` | 164 tests |
+| Dev | `pytest>=8` | 167 tests |
 
 ## Quick start
 
@@ -177,13 +177,13 @@ For OCR, set `OCR_BACKEND=mineru` (recommended for figure-heavy papers) or `OCR_
 ## Tests
 
 ```bash
-uv run pytest -q          # 164 tests
+uv run pytest -q          # 167 tests
 uv run pytest -m live     # live LLM smoke tests (requires real keys)
 ```
 
 ## Known issues
 
-None at this time. The two PPT visual issues triaged in [`docs/PPT_KNOWN_ISSUES.md`](docs/PPT_KNOWN_ISSUES.md) (math subscript font fallback, KEY POINTS card overlap on ≥6-bullet sections) were both fixed in v1.2.0 — see [`CHANGELOG.md`](CHANGELOG.md).
+None at this time. The two PPT visual issues triaged in [`docs/PPT_KNOWN_ISSUES.md`](docs/PPT_KNOWN_ISSUES.md) (math subscript font fallback, KEY POINTS card overlap on ≥6-bullet sections) were both fixed in v1.2.1 — see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Citation
 

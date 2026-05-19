@@ -33,12 +33,21 @@ Not useful:
 
 ### Cache invalidation gotchas
 
-Three layers:
+Four layers:
 1. **Stage `done.yaml`**: bypassed with `--force`.
-2. **PPTX summarizer LLM cache** (`s09_render/llm_cache/`): keyed on SHA-256 of `_PROMPT_VERSION` + lang + input content. Bump the version constant when prompt semantics change.
-3. **`s06`/`s07`/`s08` audit files**: written every run but the stage's `done.yaml` causes the whole stage to skip. Use `--force` or delete the stage dir.
+2. **`s05_template` content hash**: since v1.2.1, `done.yaml` records `template_sha256_16` and the CLI auto-invalidates s05 when the source docx changes — no `--force` needed. **However**, downstream stages (s08, s09) don't auto-invalidate when s05 refreshes; they still need `--force` (or directory removal) to pick up the new chapter titles.
+3. **PPTX summarizer LLM cache** (`s09_render/llm_cache/`): keyed on SHA-256 of `_PROMPT_VERSION` + lang + input content. Bump the version constant when prompt semantics change.
+4. **`s06`/`s07`/`s08` audit files**: written every run but the stage's `done.yaml` causes the whole stage to skip. Use `--force` or delete the stage dir.
 
-If a paper produces wrong output and you suspect cache staleness, the bluntest fix is `rm -rf runs/<paper_id>/{s08_section_compose,s09_render}` then re-run.
+If a paper produces wrong output and you suspect cache staleness, the bluntest fix is `rm -rf runs/<paper_id>/{s05_template,s08_section_compose,s09_render}` then re-run.
+
+**Common gotcha**: editing `Table of Contents-*.docx` after a paper was already rendered. v1.2.1+ auto-invalidates s05, but you still need to wipe s08/s09 to propagate the new titles. The cleanest reset for one paper is:
+
+```bash
+rm -rf runs/<paper_id>/{s05_template,s08_section_compose,s09_render}
+uv run python -m cli run --pdf <pdf> --template <docx> --paper-id <pid> \
+  --only s05_template,s08_section_compose,s09_render --force --formats docx,pdf,html,pptx
+```
 
 ### Common failure modes seen in development
 

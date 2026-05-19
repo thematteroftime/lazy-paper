@@ -103,7 +103,16 @@ def _resolve_formats_for_s09(args, out: Path) -> list[str] | None:
 
 def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
     out = stage_dir(run_root, paper_id, name)
-    if is_done(out) and not args.force and not getattr(args, "retry_failed", False) \
+    # s05_template: auto-invalidate cache when the source docx changes so an
+    # edited template doesn't silently propagate as stale title text.
+    stale_template = (
+        name == "s05_template" and is_done(out) and not args.force
+        and _s05.is_cache_stale(out, Path(args.template))
+    )
+    if stale_template:
+        print(f"[s05_template] template content changed — invalidating cache", flush=True)
+    if is_done(out) and not args.force and not stale_template \
+            and not getattr(args, "retry_failed", False) \
             and not _is_partial_done(out):
         print(f"[skip] {name} (already done)")
         return

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-19
+
+### Fixed
+
+- **Stale s05_template cache propagated obsolete Chinese-prefixed chapter titles into the final output** (`liu2022`, `pan2025` HTML/DOCX showed e.g. `合成与制备方法 · Synthesis and Preparation` for chapters 10–15 because their s05 cache predated the v15 template English-ification). Affected papers re-rendered from s05 forward; all chapter headings now align with the English-only template.
+
+### Added
+
+- `s05_template` `done.yaml` now records `template_sha256_16` — a 16-hex prefix of the source docx's SHA-256.
+- `stages.s05_template.runner.is_cache_stale()` checks the cached hash against the current docx.
+- CLI auto-invalidates s05 when the template content changed (no `--force` needed); a one-line `[s05_template] template content changed — invalidating cache` is logged. Legacy `done.yaml` (without the hash field) counts as stale defensively.
+- 3 unit tests covering hash recording, stale detection, and legacy-done.yaml handling. Test count 164 → 167.
+
 ## [1.2.0] - 2026-05-19
 
 ### Fixed
@@ -72,7 +85,8 @@ Initial public release of lazy-paper.
 - `SlidePlanner`: deterministic slide layout logic, no IO, accepts optional LLM summaries and outline
 - `LLM` client: OpenAI-compatible; two roles (`vision`, `text`) configured via `models.yaml` and env vars
 
-[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.1
 [1.2.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.0
 [1.1.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.1.0
 [1.0.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.0.0

@@ -75,3 +75,38 @@ def test_parse_template_real_afe_template(tmp_path: Path, repo_root: Path):
     joined = "|".join(titles).lower()
     assert "introduction" in joined
     assert "conclusion" in joined or "structures" in joined or "discussion" in joined
+
+
+def test_done_yaml_records_template_hash(tmp_path: Path):
+    fx = tmp_path / "tpl.docx"
+    _make_fixture(fx)
+    out_dir = tmp_path / "out"
+    run(template_docx=fx, out_dir=out_dir)
+    done = yaml.safe_load((out_dir / "done.yaml").read_text(encoding="utf-8"))
+    assert "template_sha256_16" in done
+    assert len(done["template_sha256_16"]) == 16
+
+
+def test_is_cache_stale_detects_changed_template(tmp_path: Path):
+    from stages.s05_template.runner import is_cache_stale
+    fx = tmp_path / "tpl.docx"
+    _make_fixture(fx)
+    out_dir = tmp_path / "out"
+    run(template_docx=fx, out_dir=out_dir)
+    assert not is_cache_stale(out_dir, fx)
+    # Mutate the template: a new paragraph changes its bytes.
+    doc = Document(fx)
+    doc.add_paragraph("New section", style="List Paragraph")
+    doc.save(fx)
+    assert is_cache_stale(out_dir, fx)
+
+
+def test_is_cache_stale_handles_legacy_done(tmp_path: Path):
+    """A done.yaml without the hash field counts as stale (defensive)."""
+    from stages.s05_template.runner import is_cache_stale
+    fx = tmp_path / "tpl.docx"
+    _make_fixture(fx)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "done.yaml").write_text("top_level_nodes: 5\n", encoding="utf-8")
+    assert is_cache_stale(out_dir, fx)

@@ -1,13 +1,14 @@
 """Stage 05: parse a user-provided outline docx into a hierarchical structure."""
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
 from docx import Document
 from docx.oxml.ns import qn as _qn
 
-from stages._common import dump_yaml, mark_done
+from stages._common import dump_yaml, load_yaml, mark_done
 
 _NEEDS_TABLE_RE = re.compile(r"\b(?:provide|include|tabulate|tables?)\b.*\btable", re.IGNORECASE)
 _NEEDS_FIGURE_RE = re.compile(r"\b(?:figure|illustration|diagram|chart)\b", re.IGNORECASE)
@@ -146,5 +147,33 @@ def run(*, template_docx: Path, out_dir: Path) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     tree = parse_template(template_docx)
     dump_yaml(out_dir / "template.yaml", tree)
-    mark_done(out_dir, {"top_level_nodes": len(tree)})
-    return {"top_level_nodes": len(tree)}
+    # Track the template fingerprint so a stale cache is detectable.
+    src_bytes = Path(template_docx).read_bytes()
+    src_hash = hashlib.sha256(src_bytes).hexdigest()[:16]
+    mark_done(out_dir, {
+        "top_level_nodes": len(tree),
+        "template_sha256_16": src_hash,
+        "template_path": str(template_docx),
+    })
+    return {"top_level_nodes": len(tree), "template_sha256_16": src_hash}
+
+
+def is_cache_stale(out_dir: Path, template_docx: Path) -> bool:
+    """Return True when the cached `template.yaml` does NOT match the current docx.
+
+    Called by the CLI dispatcher so an edited template auto-invalidates s05
+    (and forces downstream s08/s09 reruns) without `--force`.
+    """
+    done = out_dir / "done.yaml"
+    if not done.exists():
+        return False
+    try:
+        cached = load_yaml(done)
+        cached_hash = cached.get("template_sha256_16") if isinstance(cached, dict) else None
+    except Exception:
+        return False
+    if not cached_hash:
+        # Legacy done.yaml from before the hash field existed → treat as stale.
+        return True
+    current_hash = hashlib.sha256(Path(template_docx).read_bytes()).hexdigest()[:16]
+    return current_hash != cached_hash
