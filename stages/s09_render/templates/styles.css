@@ -9,3 +9,28 @@ figure.figure-block img { max-width: 13cm; height: auto; }
 body[data-lang="en"] figure.figure-block img { max-width: 14cm; }
 figcaption.caption { font-size: 9pt; font-weight: bold; margin-top: 0.3em; }
 p.deep-observation { font-size: 9pt; color: #333366; margin: 0.3em 0 0 0; }
+
+/* v1.3 T9: cross-renderer table styling consistency.
+   Matches the DOCX "Light Grid" look — bold header row, light-gray
+   row banding, thin gray borders. Same intent as DocxRenderer. */
+table.md-table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 10pt;
+  width: 100%;
+}
+table.md-table th,
+table.md-table td {
+  border: 0.5pt solid #b5b5b5;
+  padding: 4pt 8pt;
+  text-align: left;
+  vertical-align: top;
+}
+table.md-table thead th {
+  background-color: #ececec;
+  font-weight: bold;
+  border-bottom: 1pt solid #888;
+}
+table.md-table tbody tr:nth-child(even) {
+  background-color: #f7f7f7;
+}

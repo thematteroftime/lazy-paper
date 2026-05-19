@@ -27,10 +27,21 @@ def test_second_run_with_same_input_makes_zero_llm_calls(tmp_path: Path):
     outline_payload = json.dumps({
         "groups": [{"name": "All", "chapter_headings": ["Intro"], "takeaway": "Context."}]
     })
-    chapter_payload = json.dumps({"bullets": ["a", "b"], "figure_one_liners": {}})
+    # v1.3 T3: chapter bullet must carry quantitative content; paper summary
+    # needs ≥3 quantitative bullets + a quantitative takeaway.
+    chapter_payload = json.dumps({
+        "bullets": ["Energy density reaches 8.6 J/cm³", "Efficiency hits 91%"],
+        "figure_one_liners": {},
+    })
     paper_payload = json.dumps({
-        "bullets": ["Key finding 1", "Key finding 2"],
-        "takeaway": "Important work.",
+        "bullets": [
+            "Achieved 8.6 J/cm³ energy density",
+            "Efficiency reaches 91%",
+            "Withstands 350 kV/cm electric field",
+            "Operates at 25°C",
+            "Withstands 800 kHz frequency",
+        ],
+        "takeaway": "Outperforms prior work by 30% in energy density.",
     })
 
     _responses = iter([outline_payload, chapter_payload, paper_payload])

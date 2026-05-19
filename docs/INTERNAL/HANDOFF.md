@@ -1,6 +1,6 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 172/172 pass · **End-to-end verified on 5 papers** (he2023, ali2025_flash, yang2025, liu2022, pan2025) · **Last release:** v1.2.2 (2026-05-19)
+> **Status:** shipped · **Tests:** 178/178 pass · **End-to-end verified on 5 papers** (he2023, ali2025_flash, yang2025, liu2022, pan2025) · **Last release:** v1.3.0 (2026-05-19)
 
 This is the doc to read first if you are picking the project up cold — whether you are a human maintainer or an AI agent. It tells you what exists, what works, what's been verified, and where to make changes.
 
@@ -99,7 +99,7 @@ template.docx ── s05_template ───────────────�
 
 All five also produce DOCX/PDF/HTML cleanly (verified up to v15). Output paths: `runs/<paper_id>/s09_render/preview.pptx`.
 
-**Tests**: 172 unit + integration (2 deselected `-m live`). Run with `uv run pytest -q`.
+**Tests**: 178 unit + integration (2 deselected `-m live`). Run with `uv run pytest -q`.
 
 ---
 
@@ -163,7 +163,8 @@ If you are an LLM-driven coding agent picking up this repo:
 
 ## 10. Release history
 
-- **v1.2.2** (2026-05-19): PPT outline now honors `--lang en` (was producing Chinese group names regardless). `_lang_directive` injected into `pptx_outline.md`; `_OUTLINE_PROMPT_VERSION` v12→v13. `_is_low_diversity` refactored to per-language regimes (CJK substrings vs English word tokens) with stricter "appears in every group" threshold — eliminates English false-positives. 172 tests. Verified on 3 EN papers (yang2025, randall2021, yao2022; topics: neuromorphic / AFE review / ferrielectric PbZrO₃ — all non-thin-film).
+- **v1.3.0** (2026-05-19): quality release. Post-LLM **quantitative-content validation** (chapter ≥1 quant bullet; paper ≥3 + comparative takeaway; figure observations rejected if all-descriptive). **Adaptive PPT layout**: outline rows auto-fit by wrap count, KEY POINTS card density-adaptive (16→13pt), figure-obs vertical guard. **Loud failure logging** at all 3 summarizer methods. s08 sees more context: figure-obs 100→400 chars, caption 120→300, chapter excerpts 8000→15000 (full text for ≤8-chapter papers). Cross-renderer table styling unified. README + README.zh redesigned with real PPT showcase images. 178 tests. Verified end-to-end on 4 papers covering EN+ZH, single-crystal/review/theoretical/thin-film topics.
+- **v1.2.2** (2026-05-19): PPT outline now honors `--lang en` (was producing Chinese group names regardless). `_lang_directive` injected into `pptx_outline.md`; `_OUTLINE_PROMPT_VERSION` v12→v13. `_is_low_diversity` refactored to per-language regimes (CJK substrings vs English word tokens) with stricter "appears in every group" threshold — eliminates English false-positives.
 - **v1.2.1** (2026-05-19): s05_template auto-invalidates when source docx changes (SHA-256 of docx in `done.yaml`); CLI logs "[s05_template] template content changed — invalidating cache" on auto-rerun. Fixes a class of bugs where pre-v15 stale Chinese-prefixed titles propagated into output for papers OCR'd before the template was English-ified.
 - **v1.2.0** (2026-05-19): two PPT visual bugs (Unicode subscript font fallback, KEY POINTS card overlap on ≥6 bullets) — resolved. `_math.py` collapses Latin Unicode subscripts to `_<plain>`; `_section_divider` scales font down at n_bullets≥6; `SlidePlanner._truncate_bullet` caps length. 164 tests.
 - **v1.1.0** (2026-05-19): outline LLM call max_tokens raised + env ceiling; chapter heading numbering unified; deep-observation font 11→13pt; CLI `--only` comma-split + unknown-stage validation; image-data-url helper consolidated; 158 tests.

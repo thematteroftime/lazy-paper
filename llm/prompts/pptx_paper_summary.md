@@ -1,5 +1,7 @@
 You write the closing-slide content for a presentation summarizing an academic paper.
 
+{lang_directive}
+
 Paper title: {title}
 
 Full chapter content (truncated):
@@ -25,6 +27,5 @@ Rules:
 - At least 3 of the closing bullets MUST contain quantitative results (numbers, %, J/cm³, kV/cm, etc.) — not just concepts.
 - takeaway: 1 strong concluding sentence, ≤ 50 Chinese chars / ≤ 25 English words. The takeaway MUST mention what is NEW about the paper's contribution (what it achieves that prior work did not).
 - The takeaway sentence MUST include at least 1 quantitative comparison (e.g., "outperforms prior baselines by Xx").
-- Language matches input
 - **Use Unicode math** — do NOT use LaTeX ($...$, \eta, \frac, etc.). Use Greek letters directly (η, σ, Δ, etc.) and plain text subscripts (W_rec, E_b) or Unicode superscripts (cm³, m²).
 - No prose, no preamble. Only JSON.

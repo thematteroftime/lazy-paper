@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 
 from llm.client import max_tokens
@@ -43,9 +44,68 @@ _OUTLINE_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" /
 _PAPER_SUMMARY_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "pptx_paper_summary.md"
 
 # Bump these constants to invalidate old caches when prompts change.
-_CHAPTER_PROMPT_VERSION = "v12-quantitative-preservation"
+_CHAPTER_PROMPT_VERSION = "v13-quant-validation"
 _OUTLINE_PROMPT_VERSION = "v13-lang-directive"
-_PAPER_PROMPT_VERSION = "v12-quantitative-takeaway"
+_PAPER_PROMPT_VERSION = "v13-lang-directive-quant"
+
+
+# v1.3 T3: regex for detecting quantitative content in LLM-generated bullets.
+# Matches numbers paired with science units, percentages, comparative ratios,
+# or comparison verbs. Conservative — never false-positive (some signal always
+# passes), occasional false-negative is fine (validator only triggers retry).
+_QUANT_RE = re.compile(
+    r"\d+(?:\.\d+)?(?:"
+    r"\s*%|"                                          # 91%
+    r"\s*[×x]|\s*-?fold|"                             # 2×, 3-fold
+    r"\s*[JV]/?cm[²³]?|"                              # J/cm³, V/cm
+    r"\s*kV[/·]?cm|"                                  # kV/cm
+    r"\s*[GMk]?Hz|"                                   # GHz, MHz, kHz
+    r"\s*°?\s*[CKF]\b|"                              # 25°C, 300K
+    r"\s*[nμµm]m\b|"                                  # nm, μm, mm
+    r"\s*[mμµ]?[VA]\b|"                              # mV, μA
+    r"\s*[Pp]a\b|"                                    # Pa
+    r"\s*Ω|"                                          # Ω
+    r"\s*eV"                                          # eV
+    r")",
+    re.IGNORECASE,
+)
+# Or a comparison phrase that implies quantitative ordering.
+_COMPARISON_RE = re.compile(
+    r"\b(higher|lower|increase[ds]?|decrease[ds]?|reduce[ds]?|improve[ds]?|"
+    r"outperform[s]?|surpass(?:es)?|exceed[s]?|times|超|高于|低于|提升|降低)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_quant(text: str) -> bool:
+    return bool(_QUANT_RE.search(text or ""))
+
+
+# v1.3 T7: detect descriptive (vs critical) observations. Reject runs that use
+# only descriptive verbs without any critique markers.
+_DESCRIPTIVE_VERBS_RE = re.compile(
+    r"\b(shows?|depicts?|displays?|illustrates?|presents?|demonstrates?|exhibits?)\b",
+    re.IGNORECASE,
+)
+_CRITIQUE_MARKERS_RE = re.compile(
+    r"\b(limitation|caveat|missing|absent|alternative|should|would|could|"
+    r"insufficient|lacks?|fails? to|unclear|ambiguous|不足|缺失|应当|应该|遗漏|未)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_descriptive_only(text: str) -> bool:
+    """True iff text uses description verbs without any critique marker."""
+    return bool(_DESCRIPTIVE_VERBS_RE.search(text)) and not _CRITIQUE_MARKERS_RE.search(text)
+
+
+def _log_failure(method: str, label: str, error: Exception) -> None:
+    """v1.3 T4: stderr log when a summarizer method exhausts retries."""
+    print(
+        f"[pptx_summarizer] {method} failed for {label!r} after {_MAX_RETRIES} retries: "
+        f"{type(error).__name__}: {str(error)[:200]}",
+        file=sys.stderr, flush=True,
+    )
 
 
 def _lang_directive(lang: str) -> str:
@@ -290,6 +350,7 @@ class PptxSummarizer:
             except Exception as exc:
                 last_error = exc
                 continue
+        _log_failure("summarize_outline", "paper outline", last_error or RuntimeError("unknown"))
         return None
 
     def summarize_paper(self, doc: Document) -> dict | None:
@@ -318,11 +379,25 @@ class PptxSummarizer:
                 payload = json.loads(response.content)
                 if "bullets" not in payload or "takeaway" not in payload:
                     raise ValueError("Missing 'bullets' or 'takeaway' in LLM response")
+                # v1.3 T3: enforce quantitative-content rules from
+                # llm/prompts/pptx_paper_summary.md (≥3 quant bullets + quant
+                # comparison in takeaway). Best-effort: violation triggers
+                # retry; final fallback uses last payload.
+                bullets = payload.get("bullets") or []
+                n_quant = sum(1 for b in bullets if _has_quant(b))
+                if n_quant < 3:
+                    raise ValueError(
+                        f"Only {n_quant}/{len(bullets)} bullets are quantitative (≥3 required)"
+                    )
+                takeaway = payload.get("takeaway", "")
+                if not (_has_quant(takeaway) or _COMPARISON_RE.search(takeaway)):
+                    raise ValueError("Takeaway lacks any quantitative comparison")
                 self._write_cache("_paper", input_hash, payload, prompt, response)
                 return payload
             except Exception as exc:
                 last_error = exc
                 continue
+        _log_failure("summarize_paper", "paper summary", last_error or RuntimeError("unknown"))
         return None
 
     # ---------- per-chapter ----------
@@ -373,12 +448,29 @@ class PptxSummarizer:
                     raise ValueError("Empty LLM response (reasoning-token budget exhausted)")
                 payload = json.loads(response.content)
                 payload = _normalize_chapter_summary(payload)
+                # v1.3 T3: at least one bullet must carry a quantitative anchor.
+                bullets = payload.get("bullets") or []
+                if bullets and not any(_has_quant(b) for b in bullets):
+                    raise ValueError(
+                        f"No bullet contains quantitative content (≥1 required) for chapter {chapter.heading!r}"
+                    )
+                # v1.3 T7: figure observations must be analytical critique, not
+                # plain description. Reject only when ALL observations for a
+                # figure are descriptive-only — single descriptive line is OK
+                # if accompanied by critical ones.
+                fobs = payload.get("figure_observations") or {}
+                for fid, obs_list in fobs.items():
+                    if obs_list and all(_is_descriptive_only(o) for o in obs_list):
+                        raise ValueError(
+                            f"Figure {fid} observations are all descriptive (no critique markers)"
+                        )
                 self._write_cache(slug, input_hash, payload, prompt, response)
                 return payload
             except Exception as exc:
                 last_error = exc
                 continue
         # All retries exhausted
+        _log_failure("summarize_chapter", chapter.heading, last_error or RuntimeError("unknown"))
         return None
 
     # ---------- cache I/O ----------
@@ -585,6 +677,7 @@ class PptxSummarizer:
         chapters_block = "\n\n".join(lines)
         return (
             self._paper_summary_template
+            .replace("{lang_directive}", _lang_directive(self.lang))
             .replace("{title}", doc.paper_title)
             .replace("{chapters_block}", chapters_block)
         )

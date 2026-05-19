@@ -37,20 +37,20 @@ def _fake_llm(payload: dict) -> MagicMock:
 def test_summarize_calls_llm_once_per_chapter(tmp_path: Path):
     """v9: LLM returns figure_observations (2-3 points per figure)."""
     llm = _fake_llm({
-        "bullets": ["a", "b"],
+        "bullets": ["Reached 8.6 J/cm³", "Efficiency 91%"],
         "figure_observations": {"Fig. 1": ["obs point 1", "obs point 2"]},
     })
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
 
     result = summarizer.summarize(_doc())
     assert llm.chat.call_count == 1
-    assert result["Intro"]["bullets"] == ["a", "b"]
+    assert result["Intro"]["bullets"] == ["Reached 8.6 J/cm³", "Efficiency 91%"]
     assert result["Intro"]["figure_observations"] == {"Fig. 1": ["obs point 1", "obs point 2"]}
 
 
 def test_summarize_legacy_figure_one_liners_normalized(tmp_path: Path):
     """v9 backward compat: old figure_one_liners response is auto-normalized to figure_observations."""
-    llm = _fake_llm({"bullets": ["a", "b"], "figure_one_liners": {"Fig. 1": "old one-liner"}})
+    llm = _fake_llm({"bullets": ["Reached 8.6 J/cm³", "Efficiency 91%"], "figure_one_liners": {"Fig. 1": "old one-liner"}})
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
 
     result = summarizer.summarize(_doc())
@@ -61,7 +61,7 @@ def test_summarize_legacy_figure_one_liners_normalized(tmp_path: Path):
 
 
 def test_summarize_writes_audit_files(tmp_path: Path):
-    llm = _fake_llm({"bullets": ["a"], "figure_observations": {}})
+    llm = _fake_llm({"bullets": ["Reached 8.6 J/cm³"], "figure_observations": {}})
     PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en").summarize(_doc())
     slug = "Intro"
     assert (tmp_path / f"{slug}.input_hash.json").exists()
@@ -71,7 +71,7 @@ def test_summarize_writes_audit_files(tmp_path: Path):
 
 
 def test_summarize_reuses_cache_when_input_hash_matches(tmp_path: Path):
-    llm = _fake_llm({"bullets": ["a"], "figure_observations": {}})
+    llm = _fake_llm({"bullets": ["Reached 8.6 J/cm³"], "figure_observations": {}})
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
     summarizer.summarize(_doc())
     assert llm.chat.call_count == 1
@@ -82,7 +82,7 @@ def test_summarize_reuses_cache_when_input_hash_matches(tmp_path: Path):
 
 
 def test_summarize_reruns_when_chapter_text_changes(tmp_path: Path):
-    llm = _fake_llm({"bullets": ["a"], "figure_observations": {}})
+    llm = _fake_llm({"bullets": ["Reached 8.6 J/cm³"], "figure_observations": {}})
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
     summarizer.summarize(_doc())
 
@@ -180,25 +180,37 @@ def test_pptx_summarizer_summarize_outline_returns_none_on_failure(tmp_path: Pat
 
 
 def test_pptx_summarizer_summarize_paper_returns_bullets_and_takeaway(tmp_path: Path):
-    """summarize_paper returns dict with bullets and takeaway."""
+    """summarize_paper returns dict with bullets and takeaway.
+
+    v1.3 T3: requires ≥3 quantitative bullets + a comparative/quant takeaway."""
     paper_payload = {
-        "bullets": ["Finding 1", "Finding 2", "Finding 3", "Finding 4", "Finding 5"],
-        "takeaway": "This paper advances the field significantly.",
+        "bullets": [
+            "Energy density reaches 8.6 J/cm³",
+            "Efficiency hits 91%",
+            "Breakdown field 350 kV/cm",
+            "Tested at 25°C",
+            "Frequency span 2-800 kHz",
+        ],
+        "takeaway": "Improves prior work energy density by 30%.",
     }
     llm = _fake_llm(paper_payload)
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
     result = summarizer.summarize_paper(_multi_doc())
 
     assert result is not None
-    assert result["bullets"] == ["Finding 1", "Finding 2", "Finding 3", "Finding 4", "Finding 5"]
-    assert result["takeaway"] == "This paper advances the field significantly."
+    assert len(result["bullets"]) == 5
+    assert "8.6" in result["bullets"][0]
 
 
 def test_pptx_summarizer_summarize_paper_caches_correctly(tmp_path: Path):
     """summarize_paper caches result and avoids second LLM call."""
     paper_payload = {
-        "bullets": ["B1", "B2", "B3"],
-        "takeaway": "Important work.",
+        "bullets": [
+            "Energy density 8.6 J/cm³",
+            "Efficiency 91%",
+            "Breakdown 350 kV/cm",
+        ],
+        "takeaway": "Outperforms baselines by 30% efficiency.",
     }
     llm = _fake_llm(paper_payload)
     summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
@@ -236,7 +248,7 @@ class TestNormalizeChapterSummary:
     def test_new_format_passthrough(self):
         """Payload with figure_observations is returned unchanged."""
         payload = {
-            "bullets": ["a"],
+            "bullets": ["Reached 8.6 J/cm³"],
             "figure_observations": {"Fig. 1": ["obs 1", "obs 2"]},
         }
         result = _normalize_chapter_summary(payload)
@@ -245,7 +257,7 @@ class TestNormalizeChapterSummary:
     def test_legacy_one_liners_converted(self):
         """Old figure_one_liners dict is converted to list-of-one per figure."""
         payload = {
-            "bullets": ["a"],
+            "bullets": ["Reached 8.6 J/cm³"],
             "figure_one_liners": {"Fig. 1": "old one-liner", "Fig. 2": "another"},
         }
         result = _normalize_chapter_summary(payload)
@@ -255,14 +267,14 @@ class TestNormalizeChapterSummary:
 
     def test_missing_both_keys_adds_empty_dict(self):
         """Payload with neither key gets an empty figure_observations."""
-        payload = {"bullets": ["a"]}
+        payload = {"bullets": ["Reached 8.6 J/cm³"]}
         result = _normalize_chapter_summary(payload)
         assert result["figure_observations"] == {}
 
     def test_both_keys_new_takes_precedence(self):
         """When both keys present, figure_observations wins (no conversion)."""
         payload = {
-            "bullets": ["a"],
+            "bullets": ["Reached 8.6 J/cm³"],
             "figure_one_liners": {"Fig. 1": "old"},
             "figure_observations": {"Fig. 1": ["new obs"]},
         }
@@ -374,3 +386,72 @@ class TestIsLowDiversity:
     def test_few_groups_never_triggers(self):
         from stages.s09_render.pptx_summarizer import _is_low_diversity
         assert _is_low_diversity([{"name": "A"}, {"name": "A"}, {"name": "A"}]) is False
+
+
+class TestV1_3_Validators:
+    """v1.3 T3/T7: post-LLM content validators."""
+
+    def test_has_quant_matches_units(self):
+        from stages.s09_render.pptx_summarizer import _has_quant
+        assert _has_quant("Achieved 8.6 J/cm³")
+        assert _has_quant("Efficiency reaches 91%")
+        assert _has_quant("Frequency 800 kHz")
+        assert _has_quant("Field 350 kV/cm")
+        assert _has_quant("Temperature 25°C")
+        assert not _has_quant("This is a qualitative statement.")
+        assert not _has_quant("")
+
+    def test_is_descriptive_only_rejects_pure_description(self):
+        from stages.s09_render.pptx_summarizer import _is_descriptive_only
+        assert _is_descriptive_only("Panel (a) shows the dielectric peak.")
+        assert _is_descriptive_only("Figure illustrates the trend.")
+
+    def test_is_descriptive_only_accepts_critique(self):
+        from stages.s09_render.pptx_summarizer import _is_descriptive_only
+        # 'shows' + critique marker → not pure description
+        assert not _is_descriptive_only(
+            "Panel (a) shows W_rec vs x but lacks error bars — limitation."
+        )
+        assert not _is_descriptive_only("Missing control: figure should add x=0 reference.")
+        assert not _is_descriptive_only("")  # empty is not descriptive-only
+
+
+class TestV1_3_QuantValidation:
+    """v1.3 T3: paper-summary rejects payloads lacking quantitative content."""
+
+    def test_summarize_paper_retries_on_low_quant_count(self, tmp_path: Path):
+        # First payload: 2/3 quant — should be rejected.
+        bad = {
+            "bullets": ["Energy density 8.6 J/cm³", "Efficiency 91%", "Improved markedly"],
+            "takeaway": "Outperforms baselines by 30%.",
+        }
+        good = {
+            "bullets": ["8.6 J/cm³", "91%", "350 kV/cm"],
+            "takeaway": "Outperforms by 30%.",
+        }
+        llm = MagicMock()
+        llm.chat.side_effect = [
+            MagicMock(content=json.dumps(bad), model="m", usage={}, latency_ms=1),
+            MagicMock(content=json.dumps(good), model="m", usage={}, latency_ms=1),
+        ]
+        summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+        result = summarizer.summarize_paper(_multi_doc())
+        assert result is not None
+        assert llm.chat.call_count == 2  # 1 reject + 1 accept
+
+    def test_summarize_paper_logs_failure_to_stderr(self, tmp_path: Path, capsys):
+        # All 3 retries return a payload missing quant.
+        payload = {
+            "bullets": ["A", "B", "C"],
+            "takeaway": "Good work.",
+        }
+        llm = MagicMock()
+        llm.chat.return_value = MagicMock(
+            content=json.dumps(payload), model="m", usage={}, latency_ms=1,
+        )
+        summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+        result = summarizer.summarize_paper(_multi_doc())
+        assert result is None
+        captured = capsys.readouterr()
+        assert "summarize_paper failed" in captured.err
+        assert "quantitative" in captured.err.lower() or "takeaway" in captured.err.lower()

@@ -1,14 +1,101 @@
-# lazy-paper
+<h1 align="center">lazy-paper</h1>
 
-> 一条命令，把科研 PDF 转成结构化的多格式深度分析：**DOCX · PDF · HTML · PPTX**。
+<p align="center">
+  <em>一条命令，把科研 PDF 转成结构化的多格式深度分析。</em>
+</p>
 
-<p>
+<p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.2.2-blue"></a>
-  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-172%20passing-22c55e"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.3.0-blue"></a>
+  <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-178%20passing-22c55e"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
+
+<p align="center"><strong><a href="README.md">English</a> · <a href="README.zh.md">简体中文</a></strong></p>
+
+<p align="center">
+  <img src="docs/assets/showcase-outline.png" alt="LLM 分组目录" width="640">
+  <br>
+  <em>一份 PDF · 9 阶段（确定性+LLM 混合）· 四种精修产物。</em>
+</p>
+
+---
+
+## 它做什么
+
+喂入一篇科研 PDF + 一份 `.docx` 章节大纲模板，得到 **DOCX · PDF · HTML · PPTX** —— 中英双语深度分析，图表、量化锚点完整保留。
+
+```
+PDF  +  outline.docx                    ┌─▶ preview.docx
+        │                               │
+        ▼                               │
+  OCR ▶ 清洗 ▶ 切章 ▶ 抠图 ▶ ───────────┼─▶ preview.pdf
+  模板 ▶ 上下文 ▶ 图分析 LLM ▶ ─────────┼─▶ preview.html
+  章节 LLM ▶ 渲染 ────────────────────┼─▶ preview.pptx
+                                        │   （学术答辩风格）
+                                        ▼
+                                  runs/<paper-id>/s09_render/
+```
+
+每个阶段写 `done.yaml`、可断点续跑；每次 LLM 调用持久化 prompt 与 response 供追溯。
+
+## 快速开始
+
+```bash
+# 安装
+curl -LsSf https://astral.sh/uv/install.sh | sh
+git clone https://github.com/thematteroftime/lazy-paper && cd lazy-paper
+uv python install 3.11 && uv venv --python 3.11
+uv pip install -e ".[dev]"
+brew install pango gdk-pixbuf libffi cairo   # macOS 必装（WeasyPrint）
+
+# 配置
+cp .env.example .env   # 填 MINERU_TOKEN + LLM_*_API_KEY
+
+# 运行
+uv run python -m cli run \
+  --pdf "papers/your-paper.pdf" \
+  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \
+  --paper-id mypaper --lang zh --formats docx,pdf,html,pptx
+```
+
+产物：`runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`。
+
+> **Windows 用户**：建议走 Docker（`docker compose build && docker compose run --rm lazy-paper run …`） —— WeasyPrint 依赖 GTK runtime，Docker 已预装。
+
+## 输出格式
+
+<table>
+  <tr>
+    <th width="80">格式</th>
+    <th>你拿到什么</th>
+  </tr>
+  <tr>
+    <td><code>docx</code></td>
+    <td>自包含 Word 文档；西文 Times New Roman、中文宋体</td>
+  </tr>
+  <tr>
+    <td><code>pdf</code></td>
+    <td>与 DOCX 同内容，通过 WeasyPrint 渲染共享 HTML 模板</td>
+  </tr>
+  <tr>
+    <td><code>html</code></td>
+    <td>单文件、图像 base64 内嵌——可邮件、可浏览器直接打开</td>
+  </tr>
+  <tr>
+    <td><code>pptx</code></td>
+    <td>学术答辩风：奶白+炭黑配色、LLM 分组的 4–5 大节目录、图左/右文混排、含定量结论的收尾页</td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/assets/showcase-divider.png" alt="节分隔片 + KEY POINTS 卡" width="640">
+  <br>
+  <em>节分隔片。字号随要点密度自适应，autofit 兜底确保长 bullet 不溢出。</em>
+</p>
+
+## 技术栈
 
 <p>
   <img alt="DeepSeek" src="https://img.shields.io/badge/LLM-DeepSeek--Reasoner-1f6feb">
@@ -20,206 +107,88 @@
   <img alt="Jinja2" src="https://img.shields.io/badge/HTML-Jinja2-b91c1c">
 </p>
 
-**[English](README.md) · [简体中文](README.zh.md)**
-
----
-
-`lazy-paper` 是一条 9 阶段的 CLI 流水线。喂给它一篇科研 PDF + 一个章节大纲模板，得到一套中英双语深度分析文档。每个阶段独立、可审计、可断点续跑。
-
-## 亮点
-
-- **一个源，四种输出**：DOCX、PDF（WeasyPrint）、HTML（base64 内嵌图像，单文件可邮）、PPTX（学术答辩风，LLM 分组的 4–5 大节）
-- **可插拔 OCR**：MinerU（默认，识图友好）或 PaddleOCR-VL
-- **可插拔 LLM**：任意 OpenAI 兼容端点 — 默认视觉 Qwen-VL、文本 DeepSeek-Reasoner
-- **可断点 + 可追溯**：每个阶段写 `done.yaml`，每个 LLM 调用持久化 prompt / response
-- **软失败 + 精准重试**：单个 renderer 崩溃不会阻断其他格式；`--retry-failed` 只重跑失败的格式
-- **一个 env 旋钮控制 LLM 花费**：`LLM_MAX_TOKENS_CEILING`
-- **Docker 友好**：基于 Python 3.11 的精简镜像，Pango / Cairo / gdk-pixbuf 已预装
-
-## 适用人群
-
-- **科研人员**：做文献综述时，从 PDF 一次拿到讲稿 + 演讲稿
-- **实验室管理者**：搭一条共享队列的论文摘要流水线
-- **AI agent**：被指派维护或扩展此项目时 — 请先读 [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md)
-
-如果你期望一个能"代你阅读"的工具，这不是它。`lazy-paper` 产出的是高质量初稿，你仍需复核。流水线对此诚实：所有 LLM 推断都留在 `*.response.json` 中可追溯，其余阶段是确定性算法。
-
-## 技术栈
-
 | 层 | 库 / 服务 | 用途 |
 |---|---|---|
 | 运行时 | **Python 3.11+** | 推荐 uv 管理虚拟环境 |
 | PDF I/O | `pdfplumber`、`pypdfium2`、`Pillow` | 抽文本、栅格化、图像处理 |
-| OCR | [MinerU](https://mineru.net/)（默认）或 [PaddleOCR-VL](https://ai.baidu.com/ai-doc/AISTUDIO) | 云端 OCR |
-| LLM 客户端 | `openai>=1.50`（OpenAI 兼容协议） | 文本 + 视觉调用统一接口 |
+| OCR | [MinerU](https://mineru.net/) · [PaddleOCR-VL](https://ai.baidu.com/ai-doc/AISTUDIO) | 云端 OCR（识图友好） |
+| LLM 客户端 | `openai>=1.50` | OpenAI 兼容协议 —— 一份配置，任意提供方 |
 | 默认文本 LLM | [DeepSeek-Reasoner](https://api-docs.deepseek.com/) | 思维链推理质量 |
-| 默认视觉 LLM | [Qwen-VL-Max](https://help.aliyun.com/zh/dashscope/)（阿里云 DashScope） | 图像理解 |
+| 默认视觉 LLM | [Qwen-VL-Max](https://help.aliyun.com/zh/dashscope/) | 图像理解 |
 | 模板 | `python-docx`、`jinja2` | 解析 `.docx` 大纲、渲染 HTML |
-| 渲染器 | `python-docx`、`python-pptx`、`weasyprint`、`jinja2` | 每种输出格式一个 renderer |
+| 渲染器 | `python-docx`、`python-pptx`、`weasyprint`、`jinja2` | 每种格式一个无状态渲染器 |
 | 配置 | `pyyaml`、`python-dotenv` | YAML 工件 + `.env` 凭证 |
 | HTTP | `requests` | OCR API 调用 |
-| 开发 | `pytest>=8` | 172 个测试 |
+| 开发 | `pytest>=8` | 178 个测试 |
 
-## 快速开始
+## 质量守护（v1.3）
 
-### 本地安装（Python 3.11+，使用 uv）
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-git clone https://github.com/thematteroftime/lazy-paper && cd lazy-paper
-uv python install 3.11
-uv venv --python 3.11
-uv pip install -e ".[dev]"
-
-# WeasyPrint 在 macOS 需要系统图形库：
-brew install pango gdk-pixbuf libffi cairo
-```
-
-### Docker（推荐 Windows 用户或共享服务器）
-
-```bash
-git clone https://github.com/thematteroftime/lazy-paper && cd lazy-paper
-docker compose build
-```
-
-### 配置
-
-```bash
-cp .env.example .env
-# 编辑 .env：
-#   OCR_BACKEND + MINERU_TOKEN 或 PADDLEOCR_TOKEN
-#   LLM_VISION_API_KEY（DashScope 的 Qwen-VL）
-#   LLM_TEXT_API_KEY（DeepSeek）
-```
-
-### 运行
-
-```bash
-uv run python -m cli run \
-  --pdf "papers/your-paper.pdf" \
-  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \
-  --paper-id mypaper \
-  --formats docx,pdf,html,pptx \
-  --lang zh
-```
-
-产物：`runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`。
-
-## 输出格式
-
-| 格式 | 说明 |
-|---|---|
-| `docx` | 自包含 Word 文档；西文 Times New Roman，中文宋体 |
-| `pdf` | 与 DOCX 同内容，通过 WeasyPrint 渲染同一 HTML 模板 |
-| `html` | 单文件，图像 base64 内嵌 — 可邮件、可浏览器直接打开 |
-| `pptx` | 学术答辩风：奶白 + 炭黑配色、衬线标题、LLM 分组的 4–5 大节目录、图左/右文混排、含定量结论的收尾页 |
-
-`--formats docx,pptx` 选子集（默认 `docx,pdf,html`）。
-
-### PPTX 定制
-
-```bash
-uv run python -m cli run --pdf x.pdf --template t.docx \
-  --presenter "张博士" --affiliation "某大学" \
-  --pptx-subtitle "能量存储材料" \
-  --pptx-template "my-slide-master.pptx"
-```
-
-## 流水线
-
-```
-PDF ──┬─ s01_ocr（MinerU | PaddleOCR-VL）
-      │  ↓
-      │  s02_clean → s03_chapter → s04_figures
-template.docx → s05_template
-                 ↓
-              s06_context        （文本 LLM：标题、体系、关键词）
-              s07_figure_analyze （视觉 LLM，逐图）
-              s08_section_compose（文本 LLM，逐节）
-              s09_render → preview.{docx,pdf,html,pptx}
-```
-
-详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+- **量化内容校验**：PPT 每条章节 bullet 必含 ≥1 个数字锚点；收尾页 ≥3 条量化 bullet + 含比较的 takeaway。LLM 后正则强制，违规触发重试。
+- **批判 vs 描述**：figure 观察若全为描述性动词（"shows / depicts"）且无批判标记（"limitation / missing / should"）则拒绝。
+- **布局鲁棒**：目录行高按 takeaway 换行数动态计算；KEY POINTS 字号与截断阈值随密度变化（16pt ↔ 13pt）；figure 观察块超界时缩字号而非溢出。
+- **一个 env 旋钮控 LLM 花费**：`LLM_MAX_TOKENS_CEILING`（默认 40000）给所有调用点上限。
 
 ## CLI 参考
 
 ```
 lazy-paper run --pdf PATH --template PATH [options]
 
-必填
-  --pdf PATH                源 PDF
-  --template PATH           章节大纲 .docx
-
 可选
-  --paper-id ID             每篇的运行目录 slug（默认从 PDF 文件名推断）
+  --paper-id ID             运行目录 slug（默认从 PDF 推断）
   --runs-dir PATH           产物根目录（默认 ./runs）
   --lang {zh,en}            输出语言（默认 zh）
   --skip-ocr                假定 s01_ocr 产物已存在
   --force                   即使 done.yaml 存在也强制重跑
-  --only STAGE[,STAGE...]   只跑指定阶段（逗号分隔；必须是 STAGE_ORDER 中的名字）
-  --formats LIST            逗号列表：docx,pdf,html,pptx（默认 docx,pdf,html）
-  --pptx-bullets {llm,rule} PPT 要点生成策略（默认 llm）
-  --pptx-template PATH      自定义 .pptx 母版（可选）
+  --only STAGE[,STAGE...]   只跑指定阶段（逗号分隔）
+  --formats LIST            docx,pdf,html,pptx（默认 docx,pdf,html）
+  --pptx-bullets {llm,rule} PPT 要点策略（默认 llm）
+  --pptx-template PATH      自定义 .pptx 母版
   --pptx-subtitle TEXT      覆盖 PPT 副标题
   --presenter TEXT          PPT 标题页演讲人
   --affiliation TEXT        PPT 标题页所属机构
-  --retry-failed            配合 --only s09_render，只重跑 done.yaml 中标记为 partial 的格式
+  --retry-failed            配合 --only s09_render，只重跑 done.yaml 中 partial 的格式
 ```
 
-## 切换 LLM 提供方
+## 切换 LLM / OCR 提供方
 
-任意 OpenAI 兼容的视觉 / 文本端点都可用。改 `LLM_*_BASE_URL`、`LLM_*_API_KEY`、`LLM_*_MODEL` 三组环境变量即可。已实测：Qwen-VL（DashScope）+ DeepSeek-Reasoner。理论上 OpenAI、Anthropic 兼容网关、自托管 vLLM / Ollama 都能跑。
+任意 OpenAI 兼容的视觉 / 文本端点都可用。改 `.env` 中 `LLM_*_BASE_URL`、`LLM_*_API_KEY`、`LLM_*_MODEL`。已实测：Qwen-VL（DashScope）+ DeepSeek-Reasoner。OpenAI、Anthropic 兼容网关、vLLM / Ollama 都能跑。
 
-OCR 选择：`OCR_BACKEND=mineru`（推荐识图密集的论文）或 `OCR_BACKEND=paddleocr`。
-
-`LLM_MAX_TOKENS_CEILING`（默认 `40000`）通过共享 helper 给所有 LLM 调用点上限。各阶段默认值已经放得比较宽（8K–16K），让 DeepSeek-Reasoner 的思维链 token 不至于把最终 JSON 内容挤掉。要省钱或贴合更严格的配额，把这个值调低即可。
+OCR：`OCR_BACKEND=mineru`（推荐识图密集）或 `OCR_BACKEND=paddleocr`。
 
 ## 测试
 
 ```bash
-uv run pytest -q          # 172 个测试
+uv run pytest -q          # 178 个测试
 uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 ```
 
-## 已知问题
-
-当前无。[`docs/PPT_KNOWN_ISSUES.md`](docs/PPT_KNOWN_ISSUES.md) 中分诊的两个 PPT 视觉问题（数学下标字体回退、≥6 条要点卡片重叠）均在 v1.2.2 修复完成 — 详见 [`CHANGELOG.md`](CHANGELOG.md)。
-
 ## 引用
-
-学术工作中使用本项目时：
 
 ```bibtex
 @software{lazy_paper,
   author  = {thematteroftime},
   title   = {lazy-paper: PDF research papers to multi-format deep analysis},
   url     = {https://github.com/thematteroftime/lazy-paper},
-  version = {1.1.0},
+  version = {1.3.0},
   year    = {2026}
 }
 ```
 
 ## 致谢
 
-- [MinerU](https://github.com/opendatalab/MinerU) — 识图友好的 PDF 版面分析
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) — 备选 OCR
-- [DeepSeek](https://www.deepseek.com/) — 文本推理 LLM
-- [Qwen](https://github.com/QwenLM/Qwen) — 视觉 LLM
-- [WeasyPrint](https://github.com/Kozea/WeasyPrint)、[python-pptx](https://github.com/scanny/python-pptx)、[python-docx](https://github.com/python-openxml/python-docx) — 渲染栈
+[MinerU](https://github.com/opendatalab/MinerU) · [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) · [DeepSeek](https://www.deepseek.com/) · [Qwen](https://github.com/QwenLM/Qwen) · [WeasyPrint](https://github.com/Kozea/WeasyPrint) · [python-pptx](https://github.com/scanny/python-pptx) · [python-docx](https://github.com/python-openxml/python-docx)
 
 ## 文档地图
 
-| 文件 | 受众 | 用途 |
-|---|---|---|
-| [`README.md`](README.md) | 英文用户 | 安装 + 运行 + 格式选择 |
-| [`README.zh.md`](README.zh.md) | 中文用户（你在这里） | 安装 + 运行 + 格式选择 |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 维护者 / 扩展者 | 9 阶段数据契约、如何加阶段或格式 |
-| [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) | AI 编程 agent | 工作流模式、缓存陷阱、反模式 |
-| [`docs/PPT_KNOWN_ISSUES.md`](docs/PPT_KNOWN_ISSUES.md) | v1.2 实施者 | 已分诊的 PPT 缺陷与修法 |
-| [`docs/INTERNAL/HANDOFF.md`](docs/INTERNAL/HANDOFF.md) | 下一任维护者 | 已验证状态、改动入口表、已知局限 |
-| [`CHANGELOG.md`](CHANGELOG.md) | 任何人 | 版本之间的差异 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 外部贡献者 | 分支 / 测试 / PR 约定 |
+| 文件 | 受众 |
+|---|---|
+| [`README.md`](README.md) · [`README.zh.md`](README.zh.md) | 一手用户（英 / 中） |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 |
+| [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) | AI 编程 agent —— 工作流与反模式 |
+| [`docs/INTERNAL/HANDOFF.md`](docs/INTERNAL/HANDOFF.md) | 下一任维护者 —— 验证态 + 改动入口 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本差异 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 外部贡献者约定 |
 
 ## 许可证
 
-MIT — 见 [`LICENSE`](LICENSE)。
+MIT —— 见 [`LICENSE`](LICENSE)。

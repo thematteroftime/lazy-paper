@@ -25,7 +25,7 @@ from lxml import etree
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Inches, Pt, Emu
 
@@ -287,11 +287,16 @@ class PptxRenderer(Renderer):
         _notes(s, slide.notes)
 
     def _outline_grouped(self, prs, slide, *, idx, total, doc):
-        """Outline slide with 4-5 high-level sections (v7). v13: pure-lang title, fixed number column."""
+        """Outline slide with 4-5 high-level sections.
+
+        v1.3: adaptive row layout. Each row's height is computed from the takeaway's
+        estimated wrap count (chars / per-line capacity at 13pt italic in the
+        9.6"-wide takeaway box). If total content exceeds the available 5.6", we
+        first tighten takeaway line-spacing to 1.05; only then trim with `…`.
+        """
         s = prs.slides.add_slide(self._lay(prs, _IDX_BLANK))
         _bg(s)
         T = _T
-        # v13: pick pure-language outline title
         outline_title = _S.pick(_S.OUTLINE_TITLE, doc.lang)
         _tb1(s, outline_title,
              Inches(0), Inches(0.25), Inches(13.333), Inches(0.6),
@@ -299,32 +304,75 @@ class PptxRenderer(Renderer):
         _line(s, Inches(0.8), Inches(0.9), Inches(12.5), Inches(0.9), T.RULE, Pt(1))
 
         n = len(slide.bullets)
-        row_h = Inches(0.9)
-        content_start_y = Inches(1.05)
-
-        # Parse takeaways from caption field (newline-separated)
         takeaways = slide.caption.split("\n") if slide.caption else []
 
+        # ── adaptive layout math ────────────────────────────────────────────
+        header_h = 0.55  # section-name row (inches)
+        line_h_base = 0.26  # one wrapped line of 13pt italic body
+        gap_h = 0.18  # bottom padding between rows
+        content_top = 1.05
+        content_bottom = 6.65  # leaves room for footer
+        avail = content_bottom - content_top
+
+        def _est_lines(text: str, chars_per_line: int) -> int:
+            if not text:
+                return 0
+            # Mixed-script approximation: treat CJK char as 2 column-widths.
+            cjk_count = sum(1 for c in text if "一" <= c <= "鿿")
+            display_width = len(text) + cjk_count  # CJK doubles
+            return max(1, -(-display_width // chars_per_line))  # ceil-div
+
+        def _row_heights(line_h: float, cap_chars: int) -> list[float]:
+            heights = []
+            for i in range(n):
+                t = takeaways[i] if i < len(takeaways) else ""
+                lines = _est_lines(t, cap_chars)
+                heights.append(header_h + lines * line_h + gap_h)
+            return heights
+
+        # Try progressively tighter layouts.
+        chars_per_line = 95  # 13pt italic in 8.4" takeaway box
+        line_h = line_h_base
+        heights = _row_heights(line_h, chars_per_line)
+        if sum(heights) > avail:
+            # Tier 1: tighter line-spacing.
+            line_h = line_h_base * 0.88  # ~1.05 instead of 1.2
+            heights = _row_heights(line_h, chars_per_line)
+        if sum(heights) > avail:
+            # Tier 2: trim takeaways with ellipsis, longest first, until fits.
+            takeaways = list(takeaways) + [""] * max(0, n - len(takeaways))
+            # Compute char budget per row from remaining slack.
+            scale = avail / sum(heights)
+            budget_chars = int(chars_per_line * 1.5 * scale)
+            for i in range(n):
+                if takeaways[i] and len(takeaways[i]) > budget_chars:
+                    takeaways[i] = takeaways[i][: budget_chars - 1].rstrip() + "…"
+            heights = _row_heights(line_h, chars_per_line)
+
+        # ── place rows ──────────────────────────────────────────────────────
+        cur_y = content_top
         for i, name in enumerate(slide.bullets):
-            y = content_start_y + i * row_h
+            y_top = cur_y
+            row_h = heights[i]
             takeaway = takeaways[i] if i < len(takeaways) else ""
 
-            # v13: number column wider (0.8") so "01" fits on one line; use single digit format
             num_str = f"{i+1:02d}"
-            _tb1(s, num_str, Inches(2.0), y, Inches(0.8), Inches(0.55),
+            _tb1(s, num_str, Inches(2.0), Inches(y_top), Inches(0.8), Inches(0.55),
                  Pt(18), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, bold=True)
-            # Section name: bold sans, shifted right to accommodate wider number column
-            _tb1(s, name, Inches(2.9), y, Inches(8.4), Inches(0.48),
+            _tb1(s, name, Inches(2.9), Inches(y_top), Inches(8.4), Inches(0.50),
                  Pt(20), T.TEXT, T.LAT_SANS, T.EA_SANS, bold=True, wrap=True)
-            # Takeaway: italic gray, smaller
             if takeaway:
-                _tb1(s, takeaway, Inches(2.9), y + Inches(0.48), Inches(8.4), Inches(0.36),
+                t_lines = _est_lines(takeaway, chars_per_line)
+                t_height = max(0.34, t_lines * line_h + 0.10)
+                _tb1(s, takeaway,
+                     Inches(2.9), Inches(y_top + header_h), Inches(8.4), Inches(t_height),
                      Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
-            # Separator (not after last item)
+            cur_y += row_h
             if i < n - 1:
-                sep_y = y + row_h - Inches(0.04)
-                _line(s, Inches(2.0), sep_y, Inches(11.3), sep_y, T.RULE, Pt(0.3))
+                sep_y = cur_y - 0.06
+                _line(s, Inches(2.0), Inches(sep_y), Inches(11.3), Inches(sep_y),
+                      T.RULE, Pt(0.3))
 
         _footer(s, idx, total, chapter="", lang=doc.lang)
         _notes(s, slide.notes)
@@ -401,14 +449,14 @@ class PptxRenderer(Renderer):
             usable_h    = card_h - 2 * padding
             row_h       = usable_h / max(n_bullets, 1)
 
-            # v1.2 Issue B: scale font down when many bullets so that 2-line
-            # wraps don't visually collide with the next bullet. Use the full
-            # row_h for the text box (no 0.7 clamp) so wrapped content lives
-            # inside its own row instead of bleeding downward.
-            dense   = n_bullets >= 6
-            txt_pt  = 13 if dense else 16
-            mark_pt = 12 if dense else 14
-            tb_h    = Inches(row_h)
+            # v1.3 Issue T2: density-adaptive font + autofit safety net.
+            #   - n≤4: 16pt; n=5: 15pt; n=6: 14pt; n=7: 13pt.
+            #   - Each bullet box uses TEXT_TO_FIT_SHAPE so any overlong
+            #     bullet (rare after _truncate_bullet) auto-shrinks rather
+            #     than overflowing the row.
+            _density_font = {4: (16, 14), 5: (15, 13), 6: (14, 13), 7: (13, 12)}
+            txt_pt, mark_pt = _density_font[max(4, min(7, n_bullets))]
+            tb_h = Inches(row_h)
 
             for i, bul in enumerate(bullets):
                 by = Inches(card_top + padding + i * row_h)
@@ -417,10 +465,15 @@ class PptxRenderer(Renderer):
                      Inches(5.4), by, Inches(0.45), tb_h,
                      Pt(mark_pt), _GRAY88, T.LAT_SANS, T.EA_SANS,
                      align=PP_ALIGN.LEFT)
-                _tb1(s, bul,
-                     Inches(5.9), by, Inches(6.35), tb_h,
-                     Pt(txt_pt), T.TEXT, T.LAT_SANS, T.EA_SANS,
-                     align=PP_ALIGN.LEFT, wrap=True)
+                tb = _tb1(s, bul,
+                          Inches(5.9), by, Inches(6.35), tb_h,
+                          Pt(txt_pt), T.TEXT, T.LAT_SANS, T.EA_SANS,
+                          align=PP_ALIGN.LEFT, wrap=True)
+                # Autofit safety net — shrink font if text still overflows.
+                try:
+                    tb.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+                except Exception:
+                    pass
 
         nav_text = _S.pick(_S.NAV_HINT, doc.lang)
         _tb1(s, nav_text,
@@ -577,17 +630,28 @@ class PptxRenderer(Renderer):
               T.RULE, Pt(0.3))
 
         observations = slide.observations or ((slide.deep_observation,) if slide.deep_observation else ())
-        obs_row_h = Inches(0.70)
+        # v1.3 T6: vertical guard — when 3 observations would push past the
+        # available area, drop font 13→12pt and row height 0.70→0.60" so the
+        # three fit cleanly above the footer.
+        n_obs = min(len(observations), 3)
         obs_area_top = Inches(body_top + 1.52)
-        obs_area_h = Inches(body_h - 1.62)
-        for j, obs_pt in enumerate(observations[:3]):
+        obs_area_h_available = body_h - 1.62  # in inches
+        needed_at_default = n_obs * 0.70
+        if needed_at_default > obs_area_h_available - 0.1:
+            obs_row_h = Inches(0.60)
+            obs_pt = 12
+        else:
+            obs_row_h = Inches(0.70)
+            obs_pt = 13
+        obs_area_h = Inches(obs_area_h_available)
+        for j, obs_text in enumerate(observations[:n_obs]):
             oy = obs_area_top + j * obs_row_h
             if oy + obs_row_h > obs_area_top + obs_area_h:
                 break
             _tb1(s, "◇", tx, oy, Inches(0.30), obs_row_h,
-                 Pt(13), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
-            _tb1(s, obs_pt, tx + Inches(0.30), oy, tw - Inches(0.30), obs_row_h,
-                 Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
+                 Pt(obs_pt), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
+            _tb1(s, obs_text, tx + Inches(0.30), oy, tw - Inches(0.30), obs_row_h,
+                 Pt(obs_pt), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
         _footer(s, idx, total, chapter=self._cur_chapter, lang=doc.lang)
         _notes(s, slide.notes)
@@ -712,15 +776,23 @@ class PptxRenderer(Renderer):
             obs_item_top = obs_top + Inches(0.44)
             obs_area_h   = slide_bottom - obs_item_top - Inches(0.05)
             n_obs = min(len(observations), 3)
-            obs_row_h = min(Inches(0.70), int(obs_area_h / max(n_obs, 1)))
-            for j, obs_pt in enumerate(observations[:n_obs]):
+            # v1.3 T6: prefer 0.70" / 13pt; if that doesn't fit, shrink to
+            # 0.60" / 12pt so the third obs doesn't crash into the footer.
+            needed = n_obs * Inches(0.70)
+            if needed > obs_area_h:
+                obs_row_h = min(Inches(0.60), int(obs_area_h / max(n_obs, 1)))
+                obs_font_pt = 12
+            else:
+                obs_row_h = Inches(0.70)
+                obs_font_pt = 13
+            for j, obs_text in enumerate(observations[:n_obs]):
                 oy = obs_item_top + j * obs_row_h
                 if oy + obs_row_h > slide_bottom - Inches(0.05):
                     break
                 _tb1(s, "◇", tx, oy, Inches(0.30), obs_row_h,
-                     Pt(13), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
-                _tb1(s, obs_pt, tx + Inches(0.30), oy, tw - Inches(0.30), obs_row_h,
-                     Pt(13), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
+                     Pt(obs_font_pt), T.TEXT_FAINT, T.LAT_SANS, T.EA_SANS)
+                _tb1(s, obs_text, tx + Inches(0.30), oy, tw - Inches(0.30), obs_row_h,
+                     Pt(obs_font_pt), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, italic=True, wrap=True)
 
         _footer(s, idx, total, chapter=self._cur_chapter, lang=doc.lang)
         _notes(s, slide.notes)
@@ -766,7 +838,7 @@ def _notes(s, text):
 
 def _tb1(s, text, left, top, w, h, fsize, fcolor, lat_font, ea_font,
          bold=False, italic=False, wrap=False, align=None):
-    """Add a single-paragraph textbox."""
+    """Add a single-paragraph textbox. Returns the shape for further tweaks."""
     tb = s.shapes.add_textbox(left, top, w, h)
     tf = tb.text_frame
     if wrap: tf.word_wrap = True
@@ -774,6 +846,7 @@ def _tb1(s, text, left, top, w, h, fsize, fcolor, lat_font, ea_font,
     r = p.add_run(); r.text = text
     _run_style(r, fsize, bold, fcolor, lat_font, ea_font, italic=italic)
     if align is not None: p.alignment = align
+    return tb
 
 
 def _run_style(r, size, bold, color, lat_font, ea_font, italic=False):

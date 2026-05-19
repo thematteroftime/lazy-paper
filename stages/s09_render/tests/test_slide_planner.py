@@ -320,36 +320,53 @@ def test_planner_grouped_outline_absorbs_pure_bullet_chapters():
     assert len(bullets_slides) == 0
 
 
-def test_truncate_bullet_caps_cjk_text():
-    """v1.2 Issue B4: bullets longer than ~38 CJK chars get truncated with ellipsis."""
-    long_cjk = "这是一个非常长的中文要点用来测试是否会被正确截断到合理的长度避免在卡片中换行重叠下一个条目内容"
-    out = SlidePlanner._truncate_bullet(long_cjk)
+def test_truncate_bullet_dense_card_uses_tighter_cap():
+    """v1.3 T2: dense card (n=7) → CJK cap 45, ASCII cap 80."""
+    long_cjk = "这是一个非常长的中文要点用来测试密集卡片下是否会被截断到合理的长度避免换行重叠下一个条目内容并占用太多空间"
+    out = SlidePlanner._truncate_bullet(long_cjk, n_bullets=7)
+    cjk_cap, _ = SlidePlanner._bullet_caps(7)
     assert out.endswith("…")
-    assert len(out) <= SlidePlanner._BULLET_CJK_MAX
-    assert out.startswith("这是一个非常长的中文要点")
+    assert len(out) <= cjk_cap
 
 
-def test_truncate_bullet_caps_ascii_text():
-    long_ascii = "x=0.35 sample shows 25C dielectric ~1600 with Tm shift of about 20C across 2-800kHz frequency span and gamma 1.87 trending toward 2 plus extra"
-    out = SlidePlanner._truncate_bullet(long_ascii)
-    assert out.endswith("…")
-    assert len(out) <= SlidePlanner._BULLET_ASCII_MAX
+def test_truncate_bullet_sparse_card_keeps_more_text():
+    """v1.3 T2: sparse card (n=3) → ASCII cap 110; a 95-char bullet fits fully."""
+    long_ascii = "x=0.35 sample shows 25C dielectric ~1600 with Tm shift of about 20C across 2-800kHz freq"
+    out = SlidePlanner._truncate_bullet(long_ascii, n_bullets=3)
+    _, ascii_cap = SlidePlanner._bullet_caps(3)
+    assert len(out) <= ascii_cap
+    assert not out.endswith("…")
+
+
+def test_bullet_caps_table_progression():
+    """v1.3 T2: caps shrink monotonically as density increases."""
+    assert SlidePlanner._bullet_caps(3)[1] > SlidePlanner._bullet_caps(7)[1]
+    assert SlidePlanner._bullet_caps(4) == (60, 110)
+    assert SlidePlanner._bullet_caps(7) == (45, 80)
 
 
 def test_truncate_bullet_passes_through_short_text():
     short = "Pb掺杂导致弛豫态形成"
-    assert SlidePlanner._truncate_bullet(short) == short
+    assert SlidePlanner._truncate_bullet(short, n_bullets=4) == short
 
 
 def test_section_divider_bullets_are_length_capped():
-    """v1.2 Issue B4: bullets reaching the section_divider are all length-capped."""
-    long_cjk_bullet = "这是一个非常长的中文要点用来测试是否会被正确截断到合理的长度避免在卡片中换行重叠下一个条目内容并占用太多空间"
+    """v1.3 T2: bullets reaching the section_divider respect the density cap.
+
+    With 7 bullets all > 45 chars, every one of them should be truncated.
+    """
+    long_cjk = (
+        "这是一个非常长的中文要点用来测试是否会被正确截断到合理的长度避免在卡片中换行重叠"
+        "下一个条目内容并占用太多空间和篇幅"
+    )
+    bullets = [long_cjk for _ in range(7)]
     doc = Document(paper_title="P", lang="zh", chapters=(
         Chapter(heading="Ch1", level=1, blocks=(Paragraph(text="dummy"),)),
     ))
     outline = [{"name": "G1", "chapter_headings": ["Ch1"], "takeaway": "tw"}]
-    summaries = {"Ch1": {"bullets": [long_cjk_bullet], "figure_observations": {}}}
+    summaries = {"Ch1": {"bullets": bullets, "figure_observations": {}}}
     deck = SlidePlanner(lang="zh").plan(doc, summaries=summaries, outline=outline)
     sec = next(s for s in deck.slides if s.kind == "section_divider")
-    assert all(len(b) <= SlidePlanner._BULLET_CJK_MAX for b in sec.bullets)
+    cjk_cap, _ = SlidePlanner._bullet_caps(len(sec.bullets))
+    assert all(len(b) <= cjk_cap for b in sec.bullets)
     assert sec.bullets[0].endswith("…")

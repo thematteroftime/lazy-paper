@@ -159,21 +159,45 @@ class SlidePlanner:
         )
 
     def _closing_slide(self, doc: Document) -> Slide:
-        """Fallback closing slide (v6 style)."""
+        """Fallback closing slide when LLM paper-brief is unavailable.
+
+        v1.3: pull 5-7 short sentences from the conclusion chapter (or last
+        chapter if no conclusion-named one) so the slide stays informative
+        even when the LLM paper_summary call failed validation.
+        """
         conclusion = next(
             (ch for ch in doc.chapters if "conclu" in ch.heading.lower()
-             or "结论" in ch.heading),
+             or "结论" in ch.heading or "总结" in ch.heading),
             doc.chapters[-1] if doc.chapters else None,
         )
         bullets: tuple[str, ...] = ()
         notes = ""
         if conclusion is not None:
             paragraphs = [b for b in conclusion.blocks if isinstance(b, Paragraph)]
-            bullets = tuple(self._paragraph_bullets(paragraphs)[:self.MAX_BULLETS_PER_SLIDE])
+            sentences = self._split_into_sentences(paragraphs)
+            bullets = tuple(sentences[:self.MAX_BULLETS_PER_SLIDE])
             notes = "\n\n".join(p.text for p in paragraphs)
         return Slide(kind="closing",
                      title=self._localize("Conclusion", "总结"),
                      bullets=bullets, notes=notes)
+
+    @staticmethod
+    def _split_into_sentences(paragraphs: list[Paragraph]) -> list[str]:
+        """Split paragraph text into <= 7 short sentences for fallback closing.
+
+        Splits on Chinese 。 and ASCII period+space, keeps sentences with
+        >= 10 chars, caps each at 120 chars.
+        """
+        out: list[str] = []
+        for p in paragraphs:
+            # Try Chinese full-stop first; fall back to ASCII.
+            parts = p.text.replace(". ", "。").split("。")
+            for s in parts:
+                s = s.strip().strip(".").strip()
+                if len(s) < 10:
+                    continue
+                out.append(s[:120].rstrip() + ("…" if len(s) > 120 else ""))
+        return out
 
     # ---------- per-section planners ----------
 
@@ -255,19 +279,37 @@ class SlidePlanner:
                 ))
         return slides
 
-    # v1.2 Issue B4: bullet length defence. A bullet wraps to 2+ lines when
-    # text exceeds ~38 CJK chars (~70 ASCII chars) at 13pt in the 6.35"-wide
-    # KEY POINTS card. We cap aggressively so dense (≥6 bullets) cards don't
-    # need to wrap at all; sparser cards still get the full text since the
-    # font stays at 16pt and the row is taller.
-    _BULLET_CJK_MAX = 38
-    _BULLET_ASCII_MAX = 70
+    # v1.3 Issue T2: bullet length is density-adaptive. Sparse cards keep the
+    # full thought; dense cards trim more aggressively since the renderer also
+    # scales the font down (16→13pt) and the card height is fixed.
+    #
+    #   n_bullets   CJK cap   ASCII cap   Font
+    #   ≤4          60        110         16 pt
+    #   5           55        100         15 pt
+    #   6           50        90          14 pt
+    #   ≥7          45        80          13 pt
+    _BULLET_CAP_TABLE: ClassVar[dict[int, tuple[int, int]]] = {
+        4: (60, 110),
+        5: (55, 100),
+        6: (50, 90),
+        7: (45, 80),
+    }
 
     @classmethod
-    def _truncate_bullet(cls, text: str) -> str:
+    def _bullet_caps(cls, n_bullets: int) -> tuple[int, int]:
+        key = max(4, min(7, n_bullets))
+        return cls._BULLET_CAP_TABLE[key]
+
+    @classmethod
+    def _truncate_bullet(cls, text: str, n_bullets: int = 7) -> str:
+        """Truncate a section-divider bullet to fit one line at the chosen font.
+
+        The cap depends on n_bullets (more bullets → smaller font → less room).
+        For mostly-CJK text we use the CJK cap; otherwise the ASCII cap.
+        """
+        cjk_cap, ascii_cap = cls._bullet_caps(n_bullets)
         cjk_count = sum(1 for c in text if "一" <= c <= "鿿")
-        # Estimate displayed width: CJK chars ~2x ASCII width.
-        budget = cls._BULLET_CJK_MAX if cjk_count * 2 >= len(text) else cls._BULLET_ASCII_MAX
+        budget = cjk_cap if cjk_count * 2 >= len(text) else ascii_cap
         if len(text) <= budget:
             return text
         return text[: budget - 1].rstrip() + "…"
@@ -307,8 +349,8 @@ class SlidePlanner:
                             fallback_bullets.append(first)
                         break
 
-        bullets = pure_bullets or figure_bullets or fallback_bullets
-        return [self._truncate_bullet(b) for b in bullets[:7]]
+        bullets = (pure_bullets or figure_bullets or fallback_bullets)[:7]
+        return [self._truncate_bullet(b, len(bullets)) for b in bullets]
 
     def _get_bullets(self, chapter: Chapter, paragraphs: list[Paragraph],
                      summary: dict | None) -> list[str]:

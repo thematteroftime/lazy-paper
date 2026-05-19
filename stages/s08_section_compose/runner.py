@@ -83,20 +83,24 @@ def _build_paper_data(
         for t in tables:
             tid = t.get("table_id", t.get("fig_id", "?"))
             cap = t.get("caption", "")
-            cap_short = cap[:120].replace("\n", " ").strip()
+            # v1.3 T5: keep more caption context (was 120) so the composer can
+            # cite specific table columns rather than a hint.
+            cap_short = cap[:300].replace("\n", " ").strip()
             tbl_lines.append(f"{tid}: {cap_short}")
         tables_str = "\n".join(tbl_lines)
     else:
         tables_str = _MISSING["tables"]
 
-    # fig_observations_brief — each fig's deep_observation truncated to 100 chars
+    # v1.3 T5: each figure's deep_observation truncated to 400 chars (was 100)
+    # so chapters can integrate caveats and quantitative anchors instead of
+    # paraphrasing.
     if fig_notes:
         obs_lines = []
         for note in fig_notes:
             fid = note.get("fig_id", "?")
             obs = (note.get("deep_observation") or note.get("deep_observation_cn") or "").strip()
-            obs_short = obs[:100].replace("\n", " ")
-            if len(obs) > 100:
+            obs_short = obs[:400].replace("\n", " ")
+            if len(obs) > 400:
                 obs_short += "..."
             if obs_short:
                 obs_lines.append(f"{fid} — {obs_short}")
@@ -145,19 +149,30 @@ def _keyword_score(text: str, keywords: list[str]) -> int:
 
 
 def _relevant_chapter_excerpts(chapters_dir: Path, keywords: list[str], top_k: int = 2) -> str:
+    """Return up to 15000 chars (v1.3 T8: was 8000) of the most-keyword-relevant
+    source chapters. Bigger budget lets the composer notice cross-chapter
+    contradictions instead of paraphrasing one segment.
+    """
+    chapter_paths = sorted(chapters_dir.glob("chapter_*.md"))
+    # If the paper has ≤ 8 source chapters, fold them all in — most short
+    # papers fit comfortably under 15000 chars combined and we then get true
+    # paper-wide synthesis instead of keyword-window peeking.
+    if len(chapter_paths) <= 8:
+        full = "\n\n---\n\n".join(p.read_text(encoding="utf-8") for p in chapter_paths)
+        return full[:15000]
     scored: list[tuple[int, str]] = []
-    for p in sorted(chapters_dir.glob("chapter_*.md")):
+    for p in chapter_paths:
         text = p.read_text(encoding="utf-8")
         scored.append((_keyword_score(text, keywords), text))
     scored.sort(key=lambda t: -t[0])
     selected = [t for s, t in scored[:top_k] if s > 0]
     if not selected:
         # Fall back: include results chapter or first content chapter
-        for p in sorted(chapters_dir.glob("chapter_*.md")):
+        for p in chapter_paths:
             if "Results" in p.name or "Introduction" in p.name:
                 selected.append(p.read_text(encoding="utf-8"))
                 break
-    return "\n\n---\n\n".join(selected)[:8000]
+    return "\n\n---\n\n".join(selected)[:15000]
 
 
 def _relevant_fig_notes(fig_notes: list[dict], figures: list[dict], keywords: list[str]) -> str:

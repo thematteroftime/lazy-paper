@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-19
+
+Quality release. Audit-driven LLM-output enforcement, adaptive PPT layout, deeper analytical context for the chapter composer, README design overhaul.
+
+### Added — generation-depth enforcement
+
+- **Quantitative content validator** (`pptx_summarizer.py`). Every chapter bullet must carry ≥1 numeric anchor (`%`, `J/cm³`, `kV/cm`, `°C`, etc.); paper-summary requires ≥3 quantitative bullets + a comparative/quantitative takeaway. Non-conforming responses trigger LLM retry. `_CHAPTER_PROMPT_VERSION` → `v13-quant-validation`, `_PAPER_PROMPT_VERSION` → `v13-quant-validation` (caches auto-invalidate).
+- **Critique-vs-description guard** on figure observations. Rejects payloads where ALL observations for a figure use only descriptive verbs (`shows`, `depicts`, `illustrates`) without any critique marker (`limitation`, `missing`, `should`, `alternative`, `unclear`, …). Soft retry once.
+- **Loud failure logging**. `summarize_outline`, `summarize`, and `summarize_paper` now emit a one-line `[pptx_summarizer] <method> failed for <label> after 3 retries: <ErrType>: <message>` to stderr when they exhaust retries. Was silent `return None` before — slides went out half-built without surfacing the cause.
+
+### Added — analytical context
+
+- s08 figure-observation truncation 100 → **400 chars**; caption truncation 120 → **300 chars**. Chapters can now cite specific caveats and numeric anchors from the vision-LLM analysis instead of paraphrasing the caption.
+- s08 chapter-excerpt budget 8000 → **15000 chars**; for short papers (≤8 source chapters) the composer now sees the full text. Enables cross-chapter synthesis (contradiction detection) instead of keyword-window peeking.
+
+### Added — PPT layout robustness
+
+- **Adaptive outline rows**: `_outline_grouped` no longer uses a fixed 0.9" row height. Each row's height is computed from the takeaway's estimated wrap count; line-spacing tightens (1.2 → ~1.05) before any ellipsis trim is applied. Eliminates "row N+1 overlaps row N's wrapped second line" on yang2025-style 5-group outlines.
+- **Density-adaptive KEY POINTS card**: `_truncate_bullet(text, n_bullets)` and `_bullet_caps` table. Sparse cards (≤4 bullets) keep up to 110 ASCII / 60 CJK chars at 16pt; dense cards (7 bullets) cap at 80 / 45 chars at 13pt. PowerPoint `TEXT_TO_FIT_SHAPE` autofit added as safety net so any residual overflow shrinks rather than overflowing.
+- **Figure-slide observation vertical guard**: when 3 observations would crowd the area, font drops 13pt → 12pt and row height 0.70" → 0.60" so all three fit cleanly above the footer.
+
+### Added — cross-renderer alignment
+
+- HTML/PDF table styling matched to DOCX "Light Grid": bold header row, light-gray row banding, thin gray borders. `table.md-table` styles in `stages/s09_render/templates/styles.css`.
+
+### Tests
+
+- 172 → **178** passing. New regression coverage for `_has_quant` / `_is_descriptive_only` / `_lang_directive` / quant-validation retry path / density-adaptive bullet caps / outline adaptive rows / stderr failure logging.
+
+### Docs
+
+- README + README.zh redesigned around hero showcase, tech-stack badge row, scientific minimalism. Real PPT screenshots in `docs/assets/`.
+- `CHANGELOG.md` 1.3.0 section; `pyproject.toml` 1.2.2 → 1.3.0; `HANDOFF.md` status updated.
+
 ## [1.2.2] - 2026-05-19
 
 ### Fixed
@@ -97,7 +131,8 @@ Initial public release of lazy-paper.
 - `SlidePlanner`: deterministic slide layout logic, no IO, accepts optional LLM summaries and outline
 - `LLM` client: OpenAI-compatible; two roles (`vision`, `text`) configured via `models.yaml` and env vars
 
-[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.0
 [1.2.2]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.2
 [1.2.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.1
 [1.2.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.0
