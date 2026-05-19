@@ -4,9 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lazy-paper"
-version = "0.1.0"
-description = "PDF to Markdown (PaddleOCR VL API)."
-requires-python = ">=3.9"
+version = "1.1.0"
+description = "Turn a PDF research paper into a structured, multi-format (DOCX/PDF/HTML/PPTX) bilingual deep analysis."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "thematteroftime" }]
+requires-python = ">=3.11"
+keywords = ["pdf", "ocr", "llm", "scientific-papers", "powerpoint", "pptx", "docx", "weasyprint", "deepseek", "qwen-vl", "mineru", "research-tool", "academic"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: Office/Business",
+]
 dependencies = [
     "requests>=2.31.0",
     "pdfplumber>=0.11",
@@ -20,6 +36,12 @@ dependencies = [
     "weasyprint>=62",
     "python-pptx>=0.6.23",
 ]
+
+[project.urls]
+Homepage = "https://github.com/thematteroftime/lazy-paper"
+Repository = "https://github.com/thematteroftime/lazy-paper"
+Changelog = "https://github.com/thematteroftime/lazy-paper/blob/main/CHANGELOG.md"
+Issues = "https://github.com/thematteroftime/lazy-paper/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
