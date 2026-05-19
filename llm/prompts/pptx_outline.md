@@ -1,5 +1,7 @@
 You are restructuring an academic paper's chapter list into 4-5 high-level sections for a presentation outline.
 
+{lang_directive}
+
 Paper title: {title}
 
 Paper-specific terminology to use in group naming:
@@ -31,6 +33,5 @@ Rules:
 - Every chapter heading from input MUST appear in exactly one group's `chapter_headings`.
 - Preserve chapter order within groups; respect overall chapter order across groups.
 - takeaway: 1 sentence, ≤ 25 Chinese chars / ≤ 15 English words, focused on the central message.
-- Output language matches input language (mostly Chinese chapters → Chinese name+takeaway).
 - **Use Unicode math** — do NOT use LaTeX ($...$, \eta, \frac, etc.). Use Greek letters directly (η, σ, Δ, etc.) and plain text subscripts (W_rec, E_b) or Unicode superscripts (cm³, m²).
 - No prose, no preamble. Only the JSON object.

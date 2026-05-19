@@ -44,32 +44,83 @@ _PAPER_SUMMARY_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prom
 
 # Bump these constants to invalidate old caches when prompts change.
 _CHAPTER_PROMPT_VERSION = "v12-quantitative-preservation"
-_OUTLINE_PROMPT_VERSION = "v12-extended-template"
+_OUTLINE_PROMPT_VERSION = "v13-lang-directive"
 _PAPER_PROMPT_VERSION = "v12-quantitative-takeaway"
 
 
-def _is_low_diversity(groups: list[dict]) -> bool:
-    """Return True if >2 of 4+ group names share a common content word.
+def _lang_directive(lang: str) -> str:
+    """Authoritative output-language instruction injected into PPT prompts."""
+    if (lang or "").lower().startswith("en"):
+        return (
+            "**OUTPUT LANGUAGE — STRICT**: Write every group name, takeaway, and any other "
+            "natural-language field in **English only**. Do NOT emit any Chinese characters "
+            "in this response, even if the JSON examples below show Chinese."
+        )
+    return (
+        "**OUTPUT LANGUAGE — STRICT**: Write every group name, takeaway, and any other "
+        "natural-language field in **Chinese (Simplified) only**. Do NOT switch to English "
+        "for stylistic effect; English-letter material identifiers and units are still allowed."
+    )
 
-    This detects the "all groups start with 弛豫反铁电" syndrome and triggers
-    a diversity-boosting retry (Enhancement 3).
+
+_STOP_WORDS_EN = {
+    "the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "for", "with",
+    "from", "by", "as", "is", "are", "be", "this", "that", "via", "into", "based",
+}
+
+
+def _is_low_diversity(groups: list[dict]) -> bool:
+    """Return True when ≥4 group names share too much surface form.
+
+    Two regimes:
+      * CJK-dominant names: count 2-4 character substrings (catches the
+        "弛豫反铁电…" syndrome where every name starts the same).
+      * ASCII-dominant names: count whole-word tokens (ignoring stop words).
+        A bigram like " C" used to flip 4-group English outlines into
+        "low diversity" just because every name had a word starting with
+        a capital letter — replaced with a real-token count so that
+        e.g. "CBPS" appearing in 3+ of 4 names triggers it but "Concept",
+        "CBPS", "CBPS", "Computing" does not.
+
+    "Too much" is defined as: any token appears in > floor(n_groups / 2) + 1
+    distinct group names (i.e. strict majority + one).
     """
     if len(groups) < 4:
         return False
     names = [g.get("name", "") for g in groups]
-    # Build set of all unique 2+ character segments from each name
-    # and check if any single word appears in >2 names
+    # Trigger only when a token appears in EVERY group name — the 100% repeat
+    # pattern ("弛豫反铁电基础" / "弛豫反铁电相变" / "弛豫反铁电应用" / "弛豫反铁电结论").
+    # Recurring paper-specific nouns in 3 of 4 names (e.g. CBPS appearing in
+    # three CBPS-related sub-domains) are acceptable and do not trigger.
+    threshold = len(names)
+
+    def is_cjk_heavy(text: str) -> bool:
+        cjk = sum(1 for c in text if "一" <= c <= "鿿")
+        return cjk * 2 >= max(1, len(text))
+
+    if any(is_cjk_heavy(n) for n in names):
+        from collections import Counter
+        substr_in_names: Counter = Counter()
+        for name in names:
+            seen: set[str] = set()
+            for length in (2, 3, 4):
+                for start in range(len(name) - length + 1):
+                    seen.add(name[start:start + length])
+            for s in seen:
+                substr_in_names[s] += 1
+        return any(c >= threshold for c in substr_in_names.values())
+
+    # ASCII / English: count distinct group names containing each lowercase
+    # non-stopword token of length ≥ 3.
     from collections import Counter
-    word_counts: Counter = Counter()
+    token_in_names: Counter = Counter()
     for name in names:
-        # Split Chinese names by common separators; for CJK just use substrings
-        # Check bigrams and trigrams as "words"
-        for length in (2, 3, 4):
-            for start in range(len(name) - length + 1):
-                word_counts[name[start:start + length]] += 1
-    # If any substring appears in >2 out of len(groups) names → low diversity
-    threshold = max(2, len(groups) - 1)
-    return any(count > threshold for count in word_counts.values())
+        toks = {t for raw in name.split()
+                for t in [raw.strip(".,;:!?()-").lower()]
+                if len(t) >= 3 and t not in _STOP_WORDS_EN}
+        for t in toks:
+            token_in_names[t] += 1
+    return any(c >= threshold for c in token_in_names.values())
 
 
 _LEADING_NUMERIC_PREFIX_RE = re.compile(r"^\s*\d+(?:\.\d+){0,2}\s+(.+)$")
@@ -505,6 +556,7 @@ class PptxSummarizer:
         keywords = "; ".join(ctx.get("keywords", []) or [])
         return (
             self._outline_template
+            .replace("{lang_directive}", _lang_directive(self.lang))
             .replace("{title}", doc.paper_title)
             .replace("{chapters_block}", chapters_block)
             .replace("{system}", system)

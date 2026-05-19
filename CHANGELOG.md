@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-05-19
+
+### Fixed
+
+- **PPT outline generated Chinese group names even with `--lang en`** (`runs/yao2022/...preview.pptx` etc.). The outline prompt's "match input language" hint plus a Chinese-only JSON example biased DeepSeek-Reasoner toward Chinese output. Replaced with an explicit `{lang_directive}` placeholder substituted from `doc.lang` at build time. `_OUTLINE_PROMPT_VERSION` bumped `v12-extended-template` → `v13-lang-directive` so caches auto-invalidate.
+- **`_is_low_diversity` over-rejected legitimate English outlines** (false-positive on yang2025: `" C"` bigram appeared in every name because each had a word starting with `C` — "Concept", "CBPS", "CBPS", "Computing"). Refactored to two regimes: CJK-dominant names use 2-4 char substring counts; ASCII-dominant names use whole-word tokens (length ≥ 3, stop-words excluded). Threshold raised to "token appears in EVERY group name" — catches the original `弛豫反铁电×4` degeneracy without rejecting paper-specific nouns recurring in N-1 of N names.
+
+### Verified
+
+- Re-rendered yang2025, randall2021, yao2022 with `--lang en` and all 4 formats (docx, pdf, html, pptx). All three now produce English-only LLM-grouped 4–5 section outlines with paper-specific names (CBPS / Perovskite / Ferrielectric PbZrO₃) and takeaways.
+- 172 unit tests pass (+5 new: `TestIsLowDiversity` × 5 covering CJK over-similar / CJK diverse / EN paper-specific noun in majority / EN every-name repeat / small-group skip).
+
 ## [1.2.1] - 2026-05-19
 
 ### Fixed
@@ -85,7 +97,8 @@ Initial public release of lazy-paper.
 - `SlidePlanner`: deterministic slide layout logic, no IO, accepts optional LLM summaries and outline
 - `LLM` client: OpenAI-compatible; two roles (`vision`, `text`) configured via `models.yaml` and env vars
 
-[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.2
 [1.2.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.1
 [1.2.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.0
 [1.1.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.1.0

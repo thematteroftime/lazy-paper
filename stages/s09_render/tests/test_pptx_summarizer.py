@@ -330,3 +330,47 @@ class TestNormalizeMath:
     def test_no_latex_passthrough(self):
         text = "ANT-3La achieves η=85% efficiency"
         assert normalize_math(text) == text  # no change needed
+
+
+class TestIsLowDiversity:
+    """v1.2.2: low-diversity heuristic refactored — only triggers when a token
+    appears in EVERY group name (catches mono-keyword outline degeneracy).
+    Recurring paper-specific nouns in N-1 of N names should NOT trigger."""
+
+    def test_cjk_all_same_prefix_triggers(self):
+        from stages.s09_render.pptx_summarizer import _is_low_diversity
+        groups = [{"name": n} for n in [
+            "弛豫反铁电基础概念", "弛豫反铁电相变机制",
+            "弛豫反铁电应用", "弛豫反铁电结论与展望",
+        ]]
+        assert _is_low_diversity(groups) is True
+
+    def test_cjk_diverse_passes(self):
+        from stages.s09_render.pptx_summarizer import _is_low_diversity
+        groups = [{"name": n} for n in [
+            "A位掺杂调控", "相变机制与极化",
+            "能量存储性能", "微观表征技术",
+        ]]
+        assert _is_low_diversity(groups) is False
+
+    def test_english_paper_specific_noun_in_majority_does_not_trigger(self):
+        """yang2025 regression: CBPS in 3 of 4 group names is acceptable."""
+        from stages.s09_render.pptx_summarizer import _is_low_diversity
+        groups = [{"name": n} for n in [
+            "Relaxor AFE Concept and Background",
+            "CBPS Synthesis and Crystal Structure",
+            "CBPS Relaxor AFE Properties",
+            "Neuromorphic Computing with CBPS",
+        ]]
+        assert _is_low_diversity(groups) is False
+
+    def test_english_token_in_every_name_triggers(self):
+        from stages.s09_render.pptx_summarizer import _is_low_diversity
+        groups = [{"name": n} for n in [
+            "CBPS Basics", "CBPS Synthesis", "CBPS Properties", "CBPS Outlook",
+        ]]
+        assert _is_low_diversity(groups) is True
+
+    def test_few_groups_never_triggers(self):
+        from stages.s09_render.pptx_summarizer import _is_low_diversity
+        assert _is_low_diversity([{"name": "A"}, {"name": "A"}, {"name": "A"}]) is False
