@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-05-20
+
+Hardening release based on a per-slide audit of the v1.3.0 output across an
+expanded 10-paper corpus. Eight defects classified into three families:
+
+### Fixed — layout
+
+- **`_combined` slide observations bled into wrapped bullets.** Bullets are now
+  capped via `SlidePlanner._truncate_bullet(b, n_bullets)` so each fits one
+  line; observations land below their allocated row.
+- **Sparse KEY POINTS cards (≤5 bullets) silently truncated mid-formula** when
+  LibreOffice interpreted `TEXT_TO_FIT_SHAPE` as clip-to-fit. Autofit is now
+  applied only for dense (≥6 bullet) cards.
+- **Single-observation figure slides wasted 80% of vertical space.** Density-
+  adaptive font + row height: n=1 → 15pt/1.40", n=2 → 14pt/0.95", n=3 →
+  13pt/0.70" (or 12pt/0.60" when crowded).
+- **Figure caption header truncated at 50/55 chars mid-formula.** Raised to
+  110/120 chars — the header box is 12" wide and easily fits.
+- **7-bullet KEY POINTS cap loosened** from (45 CJK / 80 ASCII) to
+  (50 / 95) — the previous cap was clipping XPS lists and similar.
+
+### Fixed — content depth
+
+- **T3 quant validator was rejecting 80%+ of EN chapter summaries** because
+  conceptual chapters legitimately lack numeric anchors. The summarizer now
+  soft-accepts the last shape-valid payload (still logs the strict-validation
+  failure to stderr) — better to ship a complete-shape PPT than fall back to
+  the rule-based 60-char paragraph snippet for most slides.
+- **Priority-3 rule-based fallback used a hardcoded `[:60]` cut** that produced
+  mid-word fragments like "probed by a co". The bullet now flows through
+  `_truncate_bullet` like any other source, with ellipsis on overflow.
+- **`pptx_summarize.md` had no `{lang_directive}`** — chapter summarizer
+  occasionally produced Chinese bullets for `--lang en` papers when the
+  context.yaml or first-chapter LLM bias leaked through. Added the same
+  authoritative language directive that outline + paper-summary use.
+  `_CHAPTER_PROMPT_VERSION` bumped v13-quant-validation →
+  v13.1-lang-directive (caches auto-invalidate).
+- **Figure observations fallback truncated full deep_observation at 200 chars**
+  in `slide_planner.py:236/258` — discarded 70% of the s07 vision-LLM
+  analysis. Replaced with `_split_full_obs(text, target=3)` that sentence-
+  splits the full text into 2-3 chunks of ≤220 chars each.
+
+### Fixed — font / rendering
+
+- **Exotic Unicode punctuation rendered as boxes** (U+2011 non-breaking hyphen,
+  U+202F narrow no-break space, U+200B zero-width space, …). The default PPT
+  body fonts (Crimson Pro / Songti) lack glyphs for these. `normalize_math()`
+  now maps them to ASCII equivalents via `_EXOTIC_PUNCT_FALLBACK`.
+- **`_extract_group_preview_bullets` bypassed `normalize_math`**, so section-
+  divider KEY POINTS bullets retained exotic Unicode. Now routes through
+  `normalize_math` before truncation.
+
+### Added — tooling
+
+- `scripts/audit_pptx.py`: scans a rendered PPTX for layout/content defects
+  (exotic codepoints, language drift, mid-formula truncation, empty
+  paragraphs). Used as the per-slide validator before push.
+
+### Tests
+
+189 passing (+11 vs v1.3.0).
+
+### Verified
+
+10-paper corpus (4 existing + 6 new non-thin-film: fu2020 / ge2025 /
+chai2026 / pamula2025 / meng2024 / gaur2022) — full pipeline OCR + LLM +
+4-format render. Per-slide audit shows zero exotic-Unicode and zero
+language-drift after the s09 v13.1 refresh.
+
 ## [1.3.0] - 2026-05-19
 
 Quality release. Audit-driven LLM-output enforcement, adaptive PPT layout, deeper analytical context for the chapter composer, README design overhaul.
@@ -131,7 +200,8 @@ Initial public release of lazy-paper.
 - `SlidePlanner`: deterministic slide layout logic, no IO, accepts optional LLM summaries and outline
 - `LLM` client: OpenAI-compatible; two roles (`vision`, `text`) configured via `models.yaml` and env vars
 
-[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.1
 [1.3.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.0
 [1.2.2]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.2
 [1.2.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.1

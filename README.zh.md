@@ -7,8 +7,8 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.3.0-blue"></a>
-  <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-178%20passing-22c55e"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.3.1-blue"></a>
+  <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-189%20passing-22c55e"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
@@ -119,7 +119,7 @@ uv run python -m cli run \
 | 渲染器 | `python-docx`、`python-pptx`、`weasyprint`、`jinja2` | 每种格式一个无状态渲染器 |
 | 配置 | `pyyaml`、`python-dotenv` | YAML 工件 + `.env` 凭证 |
 | HTTP | `requests` | OCR API 调用 |
-| 开发 | `pytest>=8` | 178 个测试 |
+| 开发 | `pytest>=8` | 189 个测试 |
 
 ## 质量守护（v1.3）
 
@@ -158,7 +158,7 @@ OCR：`OCR_BACKEND=mineru`（推荐识图密集）或 `OCR_BACKEND=paddleocr`。
 ## 测试
 
 ```bash
-uv run pytest -q          # 178 个测试
+uv run pytest -q          # 189 个测试
 uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 ```
 

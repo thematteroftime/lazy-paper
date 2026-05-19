@@ -232,8 +232,10 @@ class SlidePlanner:
                 # v9: get 2-3 observation points from figure_observations
                 obs_list = (summary or {}).get("figure_observations", {}).get(fb.fig_id)
                 if not obs_list:
-                    # Fallback: single-element list from deep_observation
-                    obs_list = [fb.deep_observation[:200]] if fb.deep_observation else []
+                    # v1.3.1 Bug 3a: was [fb.deep_observation[:200]] — threw
+                    # away 70% of the LLM's analysis. Split the full text into
+                    # 2-3 sentences instead so the slide stays informative.
+                    obs_list = self._split_full_obs(fb.deep_observation, target=3)
                 observations = tuple(normalize_math(o) for o in obs_list)
                 deep_obs = " · ".join(observations)
                 notes_full = "\n\n".join(
@@ -292,13 +294,52 @@ class SlidePlanner:
         4: (60, 110),
         5: (55, 100),
         6: (50, 90),
-        7: (45, 80),
+        7: (50, 95),  # v1.3.1 Bug 5: was (45, 80) — too tight, mid-formula cuts
     }
 
     @classmethod
     def _bullet_caps(cls, n_bullets: int) -> tuple[int, int]:
         key = max(4, min(7, n_bullets))
         return cls._BULLET_CAP_TABLE[key]
+
+    @staticmethod
+    def _split_full_obs(text: str, target: int = 3, max_chars: int = 220) -> list[str]:
+        """Split a long deep_observation into target items for slide display.
+
+        v1.3.1 Bug 3a: when chapter LLM didn't enumerate figure_observations
+        for a given figure, the previous fallback `[text[:200]]` discarded
+        most of the 600-900 chars produced by s07 figure_analyze. This splits
+        on sentence boundaries (`. ` and `。`) into up to `target` chunks,
+        each ≤ `max_chars`. Returns at least one non-empty item if text is
+        non-empty.
+        """
+        if not text:
+            return []
+        # Sentence split.
+        import re as _re
+        parts = _re.split(r"(?<=[.。!?])\s+|(?<=[.。])(?=[^.])", text.strip())
+        parts = [p.strip().strip(".").strip() for p in parts if p and p.strip()]
+        if not parts:
+            parts = [text.strip()]
+        # If we have fewer than target items, merge greedily up to max_chars.
+        out: list[str] = []
+        buf = ""
+        for p in parts:
+            candidate = (buf + ". " + p).strip(". ") if buf else p
+            if len(candidate) <= max_chars:
+                buf = candidate
+            else:
+                if buf:
+                    out.append(buf)
+                buf = p
+            if len(out) >= target:
+                # We already have enough; everything left would be discarded.
+                break
+        if buf and len(out) < target:
+            out.append(buf)
+        # Cap each item.
+        return [(s[: max_chars - 1].rstrip() + "…") if len(s) > max_chars else s
+                for s in out[:target]]
 
     @classmethod
     def _truncate_bullet(cls, text: str, n_bullets: int = 7) -> str:
@@ -341,15 +382,23 @@ class SlidePlanner:
             if bs:
                 (figure_bullets if has_figure else pure_bullets).extend(bs)
             else:
-                # Priority 3: rule-based — first sentence of first paragraph
+                # Priority 3: rule-based — first sentence of first paragraph.
+                # v1.3.1: drop the hardcoded [:60] cap that produced mid-word
+                # cuts like "probed by a co" / "quaternary lay" in the section
+                # divider. The downstream `_truncate_bullet(b, n_bullets)` call
+                # handles density-aware truncation with proper ellipsis.
                 for block in ch.blocks:
                     if isinstance(block, Paragraph) and block.text.strip():
-                        first = block.text.split("。")[0].split(". ")[0].strip()[:60]
+                        first = block.text.split("。")[0].split(". ")[0].strip()
                         if first:
                             fallback_bullets.append(first)
                         break
 
         bullets = (pure_bullets or figure_bullets or fallback_bullets)[:7]
+        # v1.3.1: normalize_math also strips exotic Unicode (U+2011, U+202F …)
+        # that the default PPT fonts lack glyphs for. Without this, LLM-emitted
+        # narrow no-break spaces render as squares in the KEY POINTS card.
+        bullets = [normalize_math(b) for b in bullets]
         return [self._truncate_bullet(b, len(bullets)) for b in bullets]
 
     def _get_bullets(self, chapter: Chapter, paragraphs: list[Paragraph],

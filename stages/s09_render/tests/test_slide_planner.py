@@ -342,7 +342,7 @@ def test_bullet_caps_table_progression():
     """v1.3 T2: caps shrink monotonically as density increases."""
     assert SlidePlanner._bullet_caps(3)[1] > SlidePlanner._bullet_caps(7)[1]
     assert SlidePlanner._bullet_caps(4) == (60, 110)
-    assert SlidePlanner._bullet_caps(7) == (45, 80)
+    assert SlidePlanner._bullet_caps(7) == (50, 95)
 
 
 def test_truncate_bullet_passes_through_short_text():
@@ -370,3 +370,85 @@ def test_section_divider_bullets_are_length_capped():
     cjk_cap, _ = SlidePlanner._bullet_caps(len(sec.bullets))
     assert all(len(b) <= cjk_cap for b in sec.bullets)
     assert sec.bullets[0].endswith("…")
+
+
+class TestV1_3_1_BugFixes:
+    """v1.3.1 regression tests for the 5 PPT layout/truncation bugs."""
+
+    def test_bug3a_full_obs_split_into_target_items(self):
+        """v1.3.1 Bug 3a: a 600-char obs should split into ~3 items, not be cut at 200."""
+        full = (
+            "The figure presents a misleading mismatch between caption and content. "
+            "Panel A claims one effect but shows another. Panel B lacks error bars. "
+            "Panel C uses arbitrary units. Quantitative claims would benefit from a "
+            "calibration trace. The colour map saturates before the data peak."
+        )
+        items = SlidePlanner._split_full_obs(full, target=3)
+        assert len(items) >= 2
+        assert len(items) <= 3
+        # All items together should preserve most of the source.
+        total = sum(len(i) for i in items)
+        assert total > 200, f"split lost too much info ({total} chars)"
+        # No item should exceed max_chars.
+        assert all(len(i) <= 220 for i in items)
+
+    def test_bug3a_empty_obs_returns_empty_list(self):
+        assert SlidePlanner._split_full_obs("") == []
+        assert SlidePlanner._split_full_obs(None or "") == []
+
+    def test_bug3a_short_obs_returns_single_item(self):
+        short = "One sentence only."
+        items = SlidePlanner._split_full_obs(short, target=3)
+        assert len(items) == 1
+        assert items[0] == "One sentence only"
+
+    def test_bug5_dense_bullet_cap_loosened(self):
+        """v1.3.1 Bug 5: 7-bullet caps loosened from (45, 80) to (50, 95)."""
+        cjk_cap, ascii_cap = SlidePlanner._bullet_caps(7)
+        assert cjk_cap == 50
+        assert ascii_cap == 95
+
+    def test_bug1_combined_bullets_capped_via_truncate(self):
+        """v1.3.1 Bug 1: combined-slide bullets should now route through the
+        same truncation logic as section_divider so they fit on one line and
+        don't overlap the observations region below.
+
+        We don't render here — just verify the helper exists and produces an
+        ellipsis-suffixed result for long English bullets at n=4.
+        """
+        long_ascii = (
+            "Mobile Cu cation order down to atomic thicknesses provides a clear "
+            "demonstration that the relaxor-AFE regime survives in 2D layered crystals"
+        )
+        out = SlidePlanner._truncate_bullet(long_ascii, n_bullets=4)
+        _, ascii_cap = SlidePlanner._bullet_caps(4)
+        assert len(out) <= ascii_cap
+        # If we cut, ellipsis must be present.
+        if len(long_ascii) > ascii_cap:
+            assert out.endswith("…")
+
+
+def test_priority3_fallback_no_more_60_char_hardcut():
+    """v1.3.1: Priority-3 rule-based fallback used to cap first sentence at
+    60 chars. Now it relies on _truncate_bullet for density-aware truncation
+    with proper ellipsis."""
+    long_first_sentence = (
+        "The crystal structure of CuBiP2Se6 was probed by a combination of "
+        "macroscopic and microscopic techniques"
+    )
+    doc = Document(paper_title="P", lang="en", chapters=(
+        Chapter(heading="Ch1", level=1, blocks=(Paragraph(text=long_first_sentence + ". More text..."),)),
+        Chapter(heading="Ch2", level=1, blocks=(Paragraph(text="Short."),)),
+    ))
+    outline = [{"name": "G1", "chapter_headings": ["Ch1", "Ch2"], "takeaway": "tw"}]
+    # No summaries → triggers fallback path
+    deck = SlidePlanner(lang="en").plan(doc, summaries=None, outline=outline)
+    sec = next(s for s in deck.slides if s.kind == "section_divider")
+    # First bullet should preserve the full first sentence up to n_bullets-aware cap.
+    n = len(sec.bullets)
+    _, ascii_cap = SlidePlanner._bullet_caps(n)
+    assert all(len(b) <= ascii_cap for b in sec.bullets)
+    # The truncated bullet, if any, must end with ellipsis (not silent mid-word cut).
+    for b in sec.bullets:
+        if len(b) == ascii_cap or "…" in b:
+            assert b.endswith("…")

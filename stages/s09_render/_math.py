@@ -88,4 +88,23 @@ def normalize_math(text: str) -> str:
     text = re.sub(r"\s*\\\]", "", text)   # \]
     text = text.replace(r"\%", "%").replace(r"\&", "&")
     text = _collapse_unicode_subscripts(text)
+    # v1.3.1: rare Unicode dashes/spaces/punctuation that the default PPT body
+    # fonts (Crimson Pro / Songti) lack glyphs for — they render as squares.
+    # Map back to ASCII equivalents.
+    for ch, repl in _EXOTIC_PUNCT_FALLBACK.items():
+        text = text.replace(ch, repl)
     return text
+
+
+# v1.3.1: small map of exotic Unicode punctuation that has no glyph in the
+# default PPT fonts. Conservatively short — only map the cases we've seen
+# in production output.
+_EXOTIC_PUNCT_FALLBACK: dict[str, str] = {
+    "‑": "-",   # non-breaking hyphen → ASCII hyphen
+    "‐": "-",   # hyphen → ASCII hyphen
+    " ": " ",   # narrow no-break space → regular space
+    " ": " ",   # no-break space → regular space (cosmetic)
+    " ": " ",   # thin space → regular space
+    " ": " ",   # figure space → regular space
+    "​": "",    # zero-width space → drop
+}

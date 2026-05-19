@@ -1,5 +1,7 @@
 You compress one chapter of a scientific paper into PPT-ready material.
 
+{lang_directive}
+
 Output STRICT JSON with these keys:
 - `bullets`: list of 3-5 short strings. Chinese 25-45 chars each, English ≤ 20 words.
   - At least 1 bullet per chapter MUST contain a quantitative result (number, percentage, ratio, threshold) if quantitative figures are present.
@@ -31,7 +33,6 @@ Rules:
   Subscripts via plain text: E_b, W_rec, P_max (underscore is fine), or use Unicode subscript digits: η₀
   Superscripts via Unicode: J/cm³ not J/cm^3; m² not m^2
   Operators: → ≤ ≥ ≠ ≈ ± × · ÷ ∞ ∂ ∫ Σ
-- Use the same language as the chapter text.
 
 Example output (English):
 {

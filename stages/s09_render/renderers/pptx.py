@@ -469,11 +469,16 @@ class PptxRenderer(Renderer):
                           Inches(5.9), by, Inches(6.35), tb_h,
                           Pt(txt_pt), T.TEXT, T.LAT_SANS, T.EA_SANS,
                           align=PP_ALIGN.LEFT, wrap=True)
-                # Autofit safety net — shrink font if text still overflows.
-                try:
-                    tb.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
-                except Exception:
-                    pass
+                # v1.3.1 Bug 2: autofit only when n_bullets >= 6. LibreOffice
+                # interprets TEXT_TO_FIT_SHAPE as clip-to-fit (not shrink-to-fit)
+                # for sparse cards, silently chopping bullets mid-formula without
+                # an ellipsis. Sparse cards have tall enough rows for natural
+                # 2-line wrap, so autofit is unnecessary.
+                if n_bullets >= 6:
+                    try:
+                        tb.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+                    except Exception:
+                        pass
 
         nav_text = _S.pick(_S.NAV_HINT, doc.lang)
         _tb1(s, nav_text,
@@ -574,7 +579,9 @@ class PptxRenderer(Renderer):
             sec_label = f"§{slide.group_idx}.{slide.chapter_in_group}"
         else:
             sec_label = f"§{chi + 1}"
-        header_text = f"{sec_label}  ·  {fig_label}  ·  {_short_title(slide.title, 50)}"
+        # v1.3.1 Bug 4: was 50 — chopped figure captions mid-formula. The header
+        # box is 12" wide, fitting ~140 chars at 12pt serif.
+        header_text = f"{sec_label}  ·  {fig_label}  ·  {_short_title(slide.title, 110)}"
         _tb1(s, header_text,
              Inches(0.7), Inches(0.15), Inches(12.0), Inches(0.45),
              Pt(12), T.TEXT_DIM, T.LAT_SERIF, T.EA_SERIF, wrap=True)
@@ -630,19 +637,29 @@ class PptxRenderer(Renderer):
               T.RULE, Pt(0.3))
 
         observations = slide.observations or ((slide.deep_observation,) if slide.deep_observation else ())
-        # v1.3 T6: vertical guard — when 3 observations would push past the
-        # available area, drop font 13→12pt and row height 0.70→0.60" so the
-        # three fit cleanly above the footer.
+        # v1.3.1 Bug 3b: density-adaptive font + row height. Sparse observation
+        # lists used to leave 80% of the slide white; now a single observation
+        # gets a generous box and larger font so the slide remains balanced.
+        #   n_obs = 1: 15pt, row 1.40"
+        #   n_obs = 2: 14pt, row 0.95"
+        #   n_obs = 3: 13pt, row 0.70" (or 12pt/0.60" when crowded)
         n_obs = min(len(observations), 3)
         obs_area_top = Inches(body_top + 1.52)
         obs_area_h_available = body_h - 1.62  # in inches
-        needed_at_default = n_obs * 0.70
-        if needed_at_default > obs_area_h_available - 0.1:
-            obs_row_h = Inches(0.60)
-            obs_pt = 12
+        if n_obs == 1:
+            obs_row_h = Inches(1.40)
+            obs_pt = 15
+        elif n_obs == 2:
+            obs_row_h = Inches(0.95)
+            obs_pt = 14
         else:
-            obs_row_h = Inches(0.70)
-            obs_pt = 13
+            needed_at_default = n_obs * 0.70
+            if needed_at_default > obs_area_h_available - 0.1:
+                obs_row_h = Inches(0.60)
+                obs_pt = 12
+            else:
+                obs_row_h = Inches(0.70)
+                obs_pt = 13
         obs_area_h = Inches(obs_area_h_available)
         for j, obs_text in enumerate(observations[:n_obs]):
             oy = obs_area_top + j * obs_row_h
@@ -678,7 +695,8 @@ class PptxRenderer(Renderer):
 
         fig_num = _parse_fig_num(slide.caption or "") or str(self._fig_idx + 1)
         fig_label = f"Fig. {fig_num}"
-        caption_short = _short_title(slide.caption or slide.title, 55)
+        # v1.3.1 Bug 4: was 55 — same root cause.
+        caption_short = _short_title(slide.caption or slide.title, 120)
         # v12: use hierarchical §group.chapter label when available
         if slide.group_idx > 0 and slide.chapter_in_group > 0:
             sec_label = f"§{slide.group_idx}.{slide.chapter_in_group}"
@@ -748,9 +766,19 @@ class PptxRenderer(Renderer):
             _tb1(s, _S.pick(_S.COMBINED_KW, doc.lang), tx, ty, tw, Inches(0.35),
                  Pt(12), T.TEXT_DIM, T.LAT_SANS, T.EA_SANS, bold=True)
 
+            # v1.3.1 Bug 1: cap each bullet via SlidePlanner._truncate_bullet so
+            # bullets stay on a single line. Previously, long English bullets
+            # wrapped to 2 lines and the wrapped second line bled into the
+            # observations region below.
+            from stages.s09_render.slide_planner import SlidePlanner
+            n_bullets = len(slide.bullets)
+            capped_bullets = [
+                SlidePlanner._truncate_bullet(b, n_bullets) for b in slide.bullets
+            ]
+
             bullet_row_h = Inches(0.55)
             bullets_top = ty + Inches(0.38)
-            for i, bul in enumerate(slide.bullets):
+            for i, bul in enumerate(capped_bullets):
                 by = bullets_top + i * bullet_row_h
                 marker = _MARKERS[i] if i < len(_MARKERS) else "▸"
                 _tb1(s, marker, tx, by, Inches(0.35), bullet_row_h,
@@ -758,7 +786,6 @@ class PptxRenderer(Renderer):
                 _tb1(s, bul, tx + Inches(0.38), by, tw - Inches(0.38), bullet_row_h,
                      Pt(14), T.TEXT, T.LAT_SANS, T.EA_SANS, wrap=True)
 
-            n_bullets = len(slide.bullets)
             obs_top = bullets_top + n_bullets * bullet_row_h + Inches(0.15)
         else:
             # ── no bullets: observations fill the full right pane ──────────

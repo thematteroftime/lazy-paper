@@ -439,8 +439,14 @@ class TestV1_3_QuantValidation:
         assert result is not None
         assert llm.chat.call_count == 2  # 1 reject + 1 accept
 
-    def test_summarize_paper_logs_failure_to_stderr(self, tmp_path: Path, capsys):
-        # All 3 retries return a payload missing quant.
+    def test_summarize_paper_soft_accept_logs_failure_but_returns_payload(
+        self, tmp_path: Path, capsys,
+    ):
+        """v1.3.1: strict-validation failure no longer returns None — the
+        last shape-valid payload is soft-accepted so the closing slide ships
+        with content instead of falling back to rule-based paragraph snippets.
+        Logging still surfaces the failure on stderr.
+        """
         payload = {
             "bullets": ["A", "B", "C"],
             "takeaway": "Good work.",
@@ -451,7 +457,76 @@ class TestV1_3_QuantValidation:
         )
         summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
         result = summarizer.summarize_paper(_multi_doc())
-        assert result is None
+        # Soft-accept: payload returned even though strict validation rejected it.
+        assert result is not None
+        assert result["bullets"] == payload["bullets"]
         captured = capsys.readouterr()
-        assert "summarize_paper failed" in captured.err
-        assert "quantitative" in captured.err.lower() or "takeaway" in captured.err.lower()
+        # Failure is still logged with the soft-accept marker.
+        assert "summarize_paper (soft-accept)" in captured.err
+
+
+class TestV1_3_1_SoftAccept:
+    """v1.3.1 — chapter and paper summarizers must soft-accept the last
+    shape-valid payload when strict T3 quant validation rejects all retries.
+    Catastrophic for EN papers in v1.3.0: 80%+ of chapters lost their LLM
+    summaries because conceptual chapters legitimately have no quant anchors,
+    which dropped the slide planner to its [:60] rule-based fallback."""
+
+    def test_summarize_chapter_soft_accepts_no_quant_payload(self, tmp_path: Path):
+        # All retries return a shape-valid payload with NO quantitative content.
+        non_quant = {
+            "bullets": [
+                "Relaxor antiferroelectrics combine antiparallel dipoles with field-induced polarization switching.",
+                "CuBiP2Se6 single crystals retain antiferroelectric order down to atomic thicknesses.",
+            ],
+            "figure_observations": {},
+        }
+        llm = MagicMock()
+        llm.chat.return_value = MagicMock(
+            content=json.dumps(non_quant), model="m", usage={}, latency_ms=1,
+        )
+        summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+        result = summarizer.summarize(_doc())
+        # Soft-accept: result has the bullets even though strict validation failed.
+        assert result is not None
+        assert result["Intro"]["bullets"] == non_quant["bullets"]
+        # Cache written despite validation failure (soft-accept persists).
+        assert (tmp_path / "Intro.json").exists()
+
+    def test_summarize_paper_soft_accepts_non_comparative_takeaway(self, tmp_path: Path):
+        # 3 quant bullets but qualitative takeaway → would have been rejected.
+        payload = {
+            "bullets": [
+                "Reached 8.6 J/cm³",
+                "Efficiency 91%",
+                "Field 350 kV/cm",
+                "Stable to 250°C",
+            ],
+            "takeaway": "This paper introduces a robust new framework for relaxor design.",
+        }
+        llm = MagicMock()
+        llm.chat.return_value = MagicMock(
+            content=json.dumps(payload), model="m", usage={}, latency_ms=1,
+        )
+        summarizer = PptxSummarizer(llm=llm, cache_dir=tmp_path, lang="en")
+        result = summarizer.summarize_paper(_multi_doc())
+        assert result is not None
+        assert result["takeaway"] == payload["takeaway"]
+
+
+class TestV1_3_1_ExoticUnicodeFallback:
+    """v1.3.1: rare Unicode punctuation (U+2011, U+202F, …) renders as boxes
+    in the default PPT fonts. normalize_math maps them to ASCII equivalents."""
+
+    def test_non_breaking_hyphen_becomes_ascii_hyphen(self):
+        # U+2011 → '-'
+        assert normalize_math("non‑centrosymmetric") == "non-centrosymmetric"
+        assert normalize_math("P‑E loop") == "P-E loop"
+
+    def test_narrow_no_break_space_becomes_regular_space(self):
+        # U+202F → ' '
+        assert normalize_math("8.6 J/cm³") == "8.6 J/cm³"
+
+    def test_zero_width_space_dropped(self):
+        # U+200B disappears
+        assert normalize_math("foo​bar") == "foobar"

@@ -44,7 +44,7 @@ _OUTLINE_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" /
 _PAPER_SUMMARY_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "pptx_paper_summary.md"
 
 # Bump these constants to invalidate old caches when prompts change.
-_CHAPTER_PROMPT_VERSION = "v13-quant-validation"
+_CHAPTER_PROMPT_VERSION = "v13.1-lang-directive"
 _OUTLINE_PROMPT_VERSION = "v13-lang-directive"
 _PAPER_PROMPT_VERSION = "v13-lang-directive-quant"
 
@@ -366,6 +366,8 @@ class PptxSummarizer:
 
         prompt = self._build_paper_summary_prompt(doc)
         last_error: Exception | None = None
+        last_valid_payload: dict | None = None
+        last_valid_response = None
         for _ in range(_MAX_RETRIES):
             try:
                 response = self.llm.chat(
@@ -379,6 +381,9 @@ class PptxSummarizer:
                 payload = json.loads(response.content)
                 if "bullets" not in payload or "takeaway" not in payload:
                     raise ValueError("Missing 'bullets' or 'takeaway' in LLM response")
+                # v1.3.1: save any shape-valid payload as soft-accept fallback.
+                last_valid_payload = payload
+                last_valid_response = response
                 # v1.3 T3: enforce quantitative-content rules from
                 # llm/prompts/pptx_paper_summary.md (≥3 quant bullets + quant
                 # comparison in takeaway). Best-effort: violation triggers
@@ -397,6 +402,15 @@ class PptxSummarizer:
             except Exception as exc:
                 last_error = exc
                 continue
+        # v1.3.1: same soft-accept as chapter summary — better to ship an
+        # imperfect closing slide than a fallback one from rule-based.
+        if last_valid_payload is not None:
+            _log_failure(
+                "summarize_paper (soft-accept)", "paper summary",
+                last_error or RuntimeError("unknown"),
+            )
+            self._write_cache("_paper", input_hash, last_valid_payload, prompt, last_valid_response)
+            return last_valid_payload
         _log_failure("summarize_paper", "paper summary", last_error or RuntimeError("unknown"))
         return None
 
@@ -436,6 +450,8 @@ class PptxSummarizer:
             next_heading=next_heading,
         )
         last_error: Exception | None = None
+        last_valid_payload: dict | None = None
+        last_valid_response = None
         for _ in range(_MAX_RETRIES):
             try:
                 response = self.llm.chat(
@@ -448,6 +464,13 @@ class PptxSummarizer:
                     raise ValueError("Empty LLM response (reasoning-token budget exhausted)")
                 payload = json.loads(response.content)
                 payload = _normalize_chapter_summary(payload)
+                # v1.3.1: save any shape-valid payload as a soft-accept fallback.
+                # If strict T3/T7 validation rejects all attempts, we still return
+                # the last shape-valid one rather than None — better than the
+                # `[:60]` rule-based fallback in the planner.
+                if payload.get("bullets"):
+                    last_valid_payload = payload
+                    last_valid_response = response
                 # v1.3 T3: at least one bullet must carry a quantitative anchor.
                 bullets = payload.get("bullets") or []
                 if bullets and not any(_has_quant(b) for b in bullets):
@@ -469,7 +492,18 @@ class PptxSummarizer:
             except Exception as exc:
                 last_error = exc
                 continue
-        # All retries exhausted
+        # All strict retries exhausted; if we have a shape-valid payload,
+        # soft-accept it instead of forcing the slide planner down the
+        # 60-char rule-based fallback path. This is essential for chapters
+        # that legitimately have no quantitative anchors (theoretical /
+        # discussion sections in English papers).
+        if last_valid_payload is not None:
+            _log_failure(
+                "summarize_chapter (soft-accept)", chapter.heading,
+                last_error or RuntimeError("unknown"),
+            )
+            self._write_cache(slug, input_hash, last_valid_payload, prompt, last_valid_response)
+            return last_valid_payload
         _log_failure("summarize_chapter", chapter.heading, last_error or RuntimeError("unknown"))
         return None
 
@@ -619,6 +653,7 @@ class PptxSummarizer:
             figures_block = "(no figures in this chapter)"
         return (
             self._template
+            .replace("{lang_directive}", _lang_directive(self.lang))
             .replace("{heading}", chapter.heading)
             .replace("{body}", body or "(no body text)")
             .replace("{figures_block}", figures_block)
