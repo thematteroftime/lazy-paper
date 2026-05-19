@@ -1,12 +1,12 @@
 """Render a Document to a single self-contained HTML file with base64 images."""
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 from typing import ClassVar
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from stages._common.images import image_to_data_url
 from stages.s09_render.model import Document, FigureBlock
 from stages.s09_render.renderers import RENDERERS
 from stages.s09_render.renderers.base import Renderer
@@ -34,15 +34,7 @@ class HtmlRenderer(Renderer):
 
     @staticmethod
     def _block_images(block: FigureBlock) -> list[str]:
-        out: list[str] = []
-        for img_path in block.image_paths:
-            if not img_path.exists():
-                continue
-            mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp",
-                    "gif": "gif"}.get(img_path.suffix.lstrip(".").lower(), "jpeg")
-            b64 = base64.b64encode(img_path.read_bytes()).decode("ascii")
-            out.append(f"data:image/{mime};base64,{b64}")
-        return out
+        return [image_to_data_url(p) for p in block.image_paths if p.exists()]
 
 
 RENDERERS["html"] = HtmlRenderer

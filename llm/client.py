@@ -1,7 +1,6 @@
 """OpenAI-compatible client for vision (Qwen-VL) and text (DeepSeek) roles."""
 from __future__ import annotations
 
-import base64
 import os
 import time
 from dataclasses import dataclass
@@ -10,6 +9,8 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 from openai import OpenAI
+
+from stages._common.images import image_to_data_url
 
 _MODELS_YAML = Path(__file__).resolve().parent / "models.yaml"
 
@@ -32,12 +33,7 @@ def max_tokens(default: int) -> int:
     return min(default, max(1, ceiling))
 
 
-def image_to_data_url(path: Path) -> str:
-    suffix = path.suffix.lower().lstrip(".")
-    mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp", "gif": "gif"}.get(suffix, "jpeg")
-    data = path.read_bytes()
-    b64 = base64.b64encode(data).decode("ascii")
-    return f"data:image/{mime};base64,{b64}"
+__all__ = ["LLM", "LLMResponse", "image_to_data_url", "max_tokens"]
 
 
 @dataclass

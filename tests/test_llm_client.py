@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from llm.client import LLM, image_to_data_url
+from llm.client import LLM, image_to_data_url, max_tokens
 
 
 def test_image_to_data_url(tmp_path: Path):
@@ -64,3 +64,22 @@ def test_llm_vision_role_rejects_images_if_unsupported(monkeypatch):
     llm = LLM(role="text")
     with pytest.raises(ValueError, match="does not support images"):
         llm.chat(system="x", user="y", images=[Path("/tmp/whatever.jpg")])
+
+
+def test_max_tokens_returns_default_when_under_ceiling(monkeypatch):
+    monkeypatch.delenv("LLM_MAX_TOKENS_CEILING", raising=False)
+    assert max_tokens(8000) == 8000
+    assert max_tokens(40000) == 40000
+
+
+def test_max_tokens_clamps_to_env_ceiling(monkeypatch):
+    monkeypatch.setenv("LLM_MAX_TOKENS_CEILING", "5000")
+    assert max_tokens(12000) == 5000
+    assert max_tokens(2000) == 2000
+
+
+def test_max_tokens_ignores_garbage_env(monkeypatch):
+    monkeypatch.setenv("LLM_MAX_TOKENS_CEILING", "not-a-number")
+    # Falls back to the built-in 40000 ceiling.
+    assert max_tokens(60000) == 40000
+    assert max_tokens(8000) == 8000

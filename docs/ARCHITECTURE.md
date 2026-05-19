@@ -243,6 +243,21 @@ dump_yaml(stage_path / "done.yaml", {"finished_at": time.time(), **extra})
 
 `is_done(path)` returns `True` if `done.yaml` exists. The CLI skips stages where `is_done` is true unless `--force` is set. For s09_render, `done.yaml` also records a `formats` dict (extension → file path or error dict) and a `partial` flag.
 
+### LLM token budgets
+
+All LLM call sites route through `llm.client.max_tokens(default)`, which clamps to the `LLM_MAX_TOKENS_CEILING` env var (default 40000). Per-stage defaults:
+
+| Stage | Call | Default `max_tokens` |
+|---|---|---|
+| s06_context | paper context | 4000 |
+| s07_figure_analyze | per figure (vision) | 4000 |
+| s08_section_compose | per chapter (text) | 12000 |
+| s09_render / PptxSummarizer | `summarize_outline` | 16000 |
+| s09_render / PptxSummarizer | `summarize` (per chapter) | 8000 |
+| s09_render / PptxSummarizer | `summarize_paper` (closing) | 8000 |
+
+DeepSeek-Reasoner consumes chain-of-thought tokens before emitting JSON content; budgets are deliberately generous to prevent the JSON payload from being truncated to an empty string. Empty-content responses now raise a meaningful error so the retry loop short-circuits cleanly.
+
 ### LLM cache
 
 `PptxSummarizer` uses a double-track cache stored under `s09_render/llm_cache/`:

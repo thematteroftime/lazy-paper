@@ -1,207 +1,167 @@
 # lazy-paper — Production Hand-off
 
-> Status: **shipped**. 134/134 tests pass. 18 papers (current batch) + 46 historical papers processed end-to-end. 4 output formats: DOCX, PDF, HTML, PPTX.
+> **Status:** shipped · **Tests:** 158/158 pass · **End-to-end verified on 5 papers** (he2023, ali2025_flash, yang2025, liu2022, pan2025) · **Last release:** v1.1.0 (2026-05-19)
+
+This is the doc to read first if you are picking the project up cold — whether you are a human maintainer or an AI agent. It tells you what exists, what works, what's been verified, and where to make changes.
 
 ---
 
 ## 1. What this project does
 
-lazy-paper is a 9-stage pipeline that accepts a scientific PDF and a Markdown outline template (`.docx`) and produces `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}` (any combination of the four formats, controlled by `--formats`) plus `runs/<paper_id>/s09_render/mypaper_bundle/`, a set of chapter Markdown files + extracted figures + README that drop directly into the `mypaper/` thesis-typesetting project. OCR is handled by MinerU (default) or PaddleOCR-VL. All LLM inference runs through user-supplied OpenAI-compatible endpoints (Qwen-VL for vision, DeepSeek for text by default).
+`lazy-paper` is a 9-stage pipeline that turns a scientific paper PDF + a Markdown outline template (`.docx`) into a multi-format deep-analysis document set: DOCX, PDF, HTML, and PPTX. Each stage writes to `runs/<paper_id>/<stage>/` and is independently re-runnable.
+
+- **OCR**: MinerU (default, figure-aware) or PaddleOCR-VL
+- **Text LLM**: any OpenAI-compatible endpoint (DeepSeek-Reasoner by default)
+- **Vision LLM**: any OpenAI-compatible endpoint (Qwen-VL by default)
+- **Output**: `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}`
 
 ---
 
-## 2. Quick Start
-
-### Lane A — Local (macOS / Linux)
+## 2. Quick start
 
 ```bash
-# 1. Install uv
+# Install
 curl -LsSf https://astral.sh/uv/install.sh | sh
+uv python install 3.11
+uv venv --python 3.11
+uv pip install -e ".[dev]"
 
-# 2. Set up venv and install deps
-uv sync && uv pip install -e .[dev]
+# Configure
+cp .env.example .env       # then fill in MINERU_TOKEN + LLM_*_API_KEY
 
-# 3. Configure credentials
-cp .env.example .env   # fill in MINERU_TOKEN, LLM_VISION_API_KEY, LLM_TEXT_API_KEY
-
-# 4. Run the pipeline
+# Run end-to-end
 uv run python -m cli run \
-  --pdf "参考文献/your-paper.pdf" \
+  --pdf "papers/he2023.pdf" \
   --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \
-  --paper-id mypaper --lang zh
+  --paper-id he2023 --lang zh \
+  --formats docx,pdf,html,pptx
 ```
 
-### Lane B — Local (Windows PowerShell)
-
-```powershell
-# 1. Install uv
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# 2. Set up venv and install deps
-uv sync; uv pip install -e .[dev]
-
-# 3. Configure credentials
-Copy-Item .env.example .env   # fill in tokens in your editor
-
-# 4. Run the pipeline
-uv run python -m cli run `
-  --pdf "参考文献/your-paper.pdf" `
-  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" `
-  --paper-id mypaper --lang zh
-```
-
-### Lane C — Docker
+WeasyPrint (PDF) needs system libs:
 
 ```bash
-# 1. Build image (~250 MB, no model weights bundled)
-docker build -t lazy-paper .
+# macOS
+brew install pango gdk-pixbuf libffi cairo
 
-# 2. Configure credentials
-cp .env.example .env   # fill in tokens
-
-# 3. (Optional) use docker compose — volumes pre-wired
-#    or run directly:
-docker run --rm \
-  -v "$(pwd)/runs:/app/runs" \
-  -v "$(pwd)/参考文献:/app/参考文献" \
-  -v "$(pwd)/.env:/app/.env:ro" \
-  lazy-paper run \
-    --pdf "/app/参考文献/your-paper.pdf" \
-    --template "/app/Table of Contents-Relaxor AFE-ZGY-HW.docx" \
-    --paper-id mypaper --lang zh
-
-# 4. Outputs appear in runs/<paper_id>/s09_render/
+# Linux/Docker
+# Already in Dockerfile; for bare-metal Linux: apt install libpango-1.0-0 libcairo2 libgdk-pixbuf-2.0-0
 ```
 
-Useful flags: `--force` re-runs completed stages; `--skip-ocr` reuses existing s01 artifacts; `--lang en` for English output; `--formats docx,pdf,html,pptx` to select output formats; `--only s09_render --retry-failed` to re-render only the formats that failed in a prior run.
-
-PPT-specific flags: `--pptx-bullets {llm,rule}` (default: `llm`); `--pptx-template <file.pptx>` to use a custom slide master; `--pptx-subtitle <text>`; `--presenter <name>`; `--affiliation <lab>`.
+Docker users: `docker compose build && docker compose run --rm lazy-paper run --pdf ...`
 
 ---
 
-## 3. Environment Variables
+## 3. Environment variables
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `OCR_BACKEND` | No | `mineru` | `mineru` or `paddleocr` — selects OCR backend |
+| `OCR_BACKEND` | No | `mineru` | `mineru` or `paddleocr` |
 | `MINERU_TOKEN` | If `OCR_BACKEND=mineru` | — | API token from https://mineru.net/ |
 | `PADDLEOCR_TOKEN` | If `OCR_BACKEND=paddleocr` | — | Token from Baidu AI Studio |
-| `LLM_VISION_BASE_URL` | Yes | — | Base URL for the vision LLM (e.g. DashScope Qwen-VL endpoint) |
-| `LLM_VISION_API_KEY` | Yes | — | API key for the vision LLM |
-| `LLM_VISION_MODEL` | No | `qwen-vl-max` | Model name for vision LLM |
-| `LLM_TEXT_BASE_URL` | Yes | — | Base URL for the text LLM (e.g. DeepSeek endpoint) |
-| `LLM_TEXT_API_KEY` | Yes | — | API key for the text LLM |
-| `LLM_TEXT_MODEL` | No | `deepseek-chat` | Model name for text LLM |
-
-All variables can be set in `.env` (copied from `.env.example`). See `llm/models.yaml` for defaults.
+| `LLM_VISION_BASE_URL` | Yes | DashScope | OpenAI-compatible base URL for vision LLM |
+| `LLM_VISION_API_KEY` | Yes | — | Vision LLM key |
+| `LLM_VISION_MODEL` | No | `qwen-vl-max-latest` | Vision model name |
+| `LLM_TEXT_BASE_URL` | Yes | DeepSeek | OpenAI-compatible base URL for text LLM |
+| `LLM_TEXT_API_KEY` | Yes | — | Text LLM key |
+| `LLM_TEXT_MODEL` | No | `deepseek-reasoner` | Text model name |
+| `LLM_MAX_TOKENS_CEILING` | No | `40000` | Caps `max_tokens` for every LLM call (single knob to constrain spend or quota) |
 
 ---
 
-## 4. Architecture Overview
+## 4. Architecture, one paragraph
+
+PDF → 9 stages → 4 output formats. s01–s04 do OCR / cleaning / chaptering / figure extraction (deterministic, no LLM). s05 parses the outline template. s06–s08 are the three LLM-driven stages (paper context, per-figure analysis, per-chapter composition). s09 builds an immutable `Document` model and dispatches to 4 renderers (docx/html/pdf/pptx), each one a stateless subclass of `Renderer`. The PPTX renderer additionally invokes `PptxSummarizer` for 4–5 section grouping (`summarize_outline`), per-chapter bullets (`summarize`), and the closing slide (`summarize_paper`); these are cached on input-hash so re-runs are zero-LLM when inputs are unchanged. Every LLM call writes its prompt + response to disk for audit. Every stage writes `done.yaml` and is skipped on re-run unless `--force`. See `docs/ARCHITECTURE.md` for the full per-stage breakdown.
 
 ```
-PDF ──┬─ s01_ocr ──→ s02_clean ──→ s03_chapter ──→ s04_figures ──┐
-      │                                                           │
-template.docx ── s05_template ─────────────────────────────────── ┤
-                                                                  │
-                                              s06_context         │ (LLM text)
-                                              s07_figure_analyze  │ (LLM vision)
-                                              s08_section_compose │ (LLM text)
-                                              s09_render ─────────┘
-                                                  │
-                           runs/<paper_id>/s09_render/
-                               ├── preview.docx        (--formats docx)
-                               ├── preview.pdf         (--formats pdf, via WeasyPrint)
-                               ├── preview.html        (--formats html, base64 images)
-                               ├── preview.pptx        (--formats pptx, LLM-grouped slides)
-                               ├── llm_cache/          (per-chapter + outline + summary cache)
-                               └── mypaper_bundle/     (chapter MDs + figures + README)
+PDF ──┬─ s01_ocr → s02_clean → s03_chapter → s04_figures ──┐
+      │                                                     │
+template.docx ── s05_template ─────────────────────────── ──┤
+                                                            │
+                                          s06_context       │ (text LLM)
+                                          s07_figure_analyze│ (vision LLM)
+                                          s08_section_compose│(text LLM)
+                                          s09_render ───────┘
+                                              │
+                       runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}
 ```
 
-**Dataflow**: s01 converts the PDF to per-page Markdown + image crops. s02–s04 clean text, split sections, and extract figure/table metadata into YAML. s05 parses the `.docx` outline into a structured template. s06–s08 call the LLMs to build context, analyze figures, and compose section prose. s09 assembles the output: `builder.py` constructs a format-neutral document model from stage YAML; each renderer (`renderers/docx.py`, `renderers/pdf.py`, `renderers/html.py`, `renderers/pptx.py`) independently emits its format. The PPTX renderer additionally invokes `pptx_summarizer.py` for two cached LLM calls (`summarize_outline` and `summarize_paper`) and uses `slide_planner.py` to lay out the slide sequence. Math normalization (`_math.py::normalize_math`) converts any residual LaTeX Greek/sub/sup escapes to Unicode. If one format fails (e.g. WeasyPrint on a corrupt image), the remaining formats complete and the failure is recorded in `done.yaml` for targeted retry via `--only s09_render --retry-failed`. Every stage writes its artifacts to `runs/<paper_id>/<stage>/`; every LLM call persists `.prompt.md` / `.response.json` files for traceability. Stages are independently re-runnable via `--force`.
+---
+
+## 5. Verified state (as of v1.1.0)
+
+| Paper | Chapters | Figures | PPT slides | Outline groups | Verified |
+|---|---|---|---|---|---|
+| he2023 | 15 | 8 | 12 | 4 | ✓ |
+| ali2025_flash | 15 | 26 | 25 | 5 | ✓ |
+| yang2025 | 15 | 7 | 12 | 5 | ✓ |
+| liu2022 | 15 | 12 | 14 | 5 | ✓ |
+| pan2025 | 15 | 7 | 12 | 5 | ✓ |
+
+All five also produce DOCX/PDF/HTML cleanly (verified up to v15). Output paths: `runs/<paper_id>/s09_render/preview.pptx`.
+
+**Tests**: 158 unit + integration (2 deselected `-m live`). Run with `uv run pytest -q`.
 
 ---
 
-## 5. Key Empirical Findings (Figure Extraction)
+## 6. Where to make changes
 
-- **MinerU uses DocLayout-YOLO to detect whole figures** as single bounding boxes at native PDF resolution; PaddleOCR-VL segments figures panel-by-panel, requiring post-processing in `s04_figures::_merge_figure_subpanels` to reconstruct composite figures.
-- **Wiley layout sidebar contamination**: Wiley journals render a narrow vertical sidebar (journal branding text). PaddleOCR-VL sometimes includes this stripe in the rightmost panel's crop. MinerU's whole-figure detection cleanly excludes it. Confirmed on `zhang2025_thinfilms` Fig. 8 and Fig. 12.
-- **Panel-top clipping**: Single-bbox figures from PaddleOCR can lose the top few pixels of a panel when the caption immediately precedes the figure in reading order and the bbox snaps to caption geometry. MinerU is robust here because DocLayout-YOLO predicts figure extent independently of caption position. Confirmed on `li2022` Fig. 5 (η/Wrec scatter — full η=60–100 axis visible with MinerU, clipped with PaddleOCR).
-- **Validated on 18 papers (current batch)** from `参考文献/弛豫反铁电/` plus 46 historical papers, spanning NBT, AN, PMN, KNN, and PbZrO₃ ceramic families. Current-batch highlights: he2023, ali2025_flash (26 figures), pamula2025 (5 figs), zhang2025_thinfilms (Wiley layout), meng2024 (14 figs). Zero crashes across all runs.
-
----
-
-## 6. Known Limitations
-
-- **LLM paraphrasing in s08**: The section composer (`s08_section_compose`) sometimes produces lightly paraphrased summaries rather than tight analytical prose. Tune the system/user prompt in `llm/prompts/section_compose.md` for your domain vocabulary and desired depth.
-- **Figure–caption pairing assumes markdown order**: s04 pairs captions to the nearest preceding image in the Markdown produced by s01/s02. This assumption holds for scholarly PDFs after MinerU or PaddleOCR layout normalization, but may fail on unusual multi-column layouts where captions appear far from their figures in reading order.
-- **LaTeX in captions**: Math-heavy figure captions are passed through `_math.py::normalize_math()` which converts common Greek letters and sub/sup notation to Unicode. Unusual or deeply nested LaTeX constructs that normalize_math does not cover will pass through as raw LaTeX; consider a targeted pre-processing pass on `figures.yaml::caption` fields for very heavy notation domains.
-- **PPT slide text assumes one dominant LLM-text role**: The PPTX renderer works best when each section has a clear analytical narrative. Papers with highly technical, dense equation-per-line prose (e.g. pure theory sections) may produce slides with long single bullets that benefit from manual editing.
-- **WeasyPrint on Windows**: PDF rendering requires the GTK runtime (Pango/Cairo). On Windows we recommend the Docker path; `docx`, `html`, and `pptx` formats work without GTK.
-
----
-
-## 7. Where to Make Changes
-
-| Goal | File / Action |
+| Goal | File / action |
 |---|---|
-| Add a new outline template | Pass `--template <new>.docx` — no code change needed |
-| Switch LLM provider | Edit `LLM_*_BASE_URL` / `LLM_*_MODEL` in `.env` (any OpenAI-compatible API) |
+| Add a new outline template | Pass `--template <new>.docx` (no code change) |
+| Switch LLM provider | Edit `LLM_*_BASE_URL` / `LLM_*_MODEL` in `.env` (any OpenAI-compatible) |
 | Change output language | Pass `--lang en` or `--lang zh` |
-| Select output formats | Pass `--formats docx,pdf,html,pptx` (any subset; default is `docx,pdf,html`) |
+| Select output formats | Pass `--formats docx,pdf,html,pptx` (subset of `docx,pdf,html,pptx`) |
 | Retry a failed format | Pass `--only s09_render --retry-failed` |
-| Add a new pipeline stage | Create `stages/sNN_<name>/runner.py` with a `run(**kwargs)` signature; register it in `cli.py::STAGE_ORDER` |
-| Tune figure merging (PaddleOCR path) | `stages/s04_figures/runner.py` — `_merge_figure_subpanels`, `margin_paddle_units`, `_expand_to_neighbors` |
-| Adjust LLM prompts | `llm/prompts/paper_context.md`, `figure_analyze.md`, `section_compose.md` |
-| Adjust PPT-specific prompts | `llm/prompts/pptx_summarize.md` (per-chapter), `pptx_outline.md` (section grouping), `pptx_paper_summary.md` (closing slide) |
-| Customize PPT slide master | Pass `--pptx-template <file.pptx>` — the renderer applies its layout over the given master |
-| Customize PPT title slide | Pass `--presenter`, `--affiliation`, `--pptx-subtitle` |
-| Switch PPT bullet mode | Pass `--pptx-bullets rule` (no LLM calls) or `--pptx-bullets llm` (default, cached) |
-| Change default OCR backend | Set `OCR_BACKEND` in `.env.example` and document; code dispatch is in `stages/s01_ocr/runner.py` |
+| Add a new pipeline stage | See "Adding a new LLM stage" in `docs/ARCHITECTURE.md` |
+| Tune figure merging | `stages/s04_figures/runner.py::_merge_figure_subpanels()` |
+| Adjust LLM prompts | `llm/prompts/{paper_context,figure_analyze,section_compose,pptx_outline,pptx_summarize,pptx_paper_summary}.md` |
+| Customize PPT title/subtitle | `--presenter`, `--affiliation`, `--pptx-subtitle` |
+| Customize PPT slide master | `--pptx-template <file.pptx>` |
+| Switch PPT bullet mode | `--pptx-bullets {llm,rule}` |
+| Constrain LLM cost | Set `LLM_MAX_TOKENS_CEILING` (e.g. `8000` to keep under quota) |
 
 ---
 
-## 8. Files You May Safely Delete
+## 7. Known limitations
 
-These are development artifacts that are not part of the production pipeline:
+- **LLM paraphrasing in s08**: section composer can produce slightly paraphrased summaries instead of tight analytical prose. Tune `llm/prompts/section_compose.md` for your domain vocabulary.
+- **Figure–caption pairing**: s04 pairs captions to the nearest preceding image in OCR'd Markdown. Robust for standard scholarly layouts; may misalign on multi-column papers with very distant caption placement.
+- **LaTeX in captions**: `_math.py::normalize_math()` covers Greek + common sub/sup. Heavy nested LaTeX may pass through raw.
+- **PPT density**: papers with dense equation-per-line prose (theory-heavy) may produce slides with long single bullets that benefit from manual editing.
+- **WeasyPrint on Windows**: needs the GTK runtime (Pango/Cairo). Use Docker, or stick to docx/html/pptx without GTK.
+- **Outline groups can repeat across same-template papers**: if 18 papers share the same `template.docx`, their s09 outline groups may end up structurally similar because the chapter headings are identical. Mitigated by paper-specific keyword injection in `llm/prompts/pptx_outline.md`; not eliminable without per-paper templates.
+
+---
+
+## 8. Files you may safely delete
 
 | Path | Notes |
 |---|---|
 | `runs/<paper_id>/s01_ocr/` | Large raw OCR output. Re-generatable with `--force`. Keep if you want to skip re-OCR. |
-| `runs/<paper_id>/*/\*.prompt.md` | LLM audit trail. Safe to delete; re-generated on re-run. |
-| `runs/<paper_id>/*/\*.response.json` | LLM audit trail. Same as above. |
-| `lazy_paper.egg-info/` | pip editable-install metadata. Recreated by `uv pip install -e .` |
-| `docs/` | Internal design notes from development. Not referenced by the pipeline. |
+| `runs/<paper_id>/*/*.prompt.md` and `*.response.json` | LLM audit trail. Safe to delete; re-generated on re-run. |
+| `lazy_paper.egg-info/` | Editable-install metadata. Recreated by `uv pip install -e .` |
+| `__pycache__/` anywhere | Recreated by Python. |
+| `runs/<paper_id>/s09_render/llm_cache/` | Cache for PPT LLM calls. Deleting forces full re-summarization on next run. |
 
-Do NOT delete `runs/<paper_id>/s09_render/` — that's the final output.
-
----
-
-## 9. What's Been Verified
-
-- ✓ **134/134 unit tests pass** (`uv run pytest -v`)
-- ✓ **18 papers (current batch) processed end-to-end** from `参考文献/弛豫反铁电/`; all produce clean `preview.{docx,pdf,html,pptx}` and `mypaper_bundle/`
-- ✓ **46 historical papers** (prior batch) produce clean `preview.docx` and `mypaper_bundle/`
-- ✓ **he2023** — end-to-end with all 4 output formats; PPT outline grouping + closing slide verified
-- ✓ **ali2025_flash** — 26 figures; all embedded correctly across docx, html, pptx
-- ✓ **pamula2025** — 5 figures; no WeasyPrint failures
-- ✓ **zhang2025_thinfilms** — Wiley layout, 13 figures; zero sidebar contamination with MinerU; PPT layout clean
-- ✓ **meng2024** — 14 figures; Rietveld refinement + SAED panels merged correctly
-- ✓ **liu2022** — XRD / Raman / dielectric multi-panel figures extracted cleanly
-- ✓ **li2022** — η/Wrec scatter with full y-axis (60–100 %); MinerU fix confirmed vs PaddleOCR clip
-- ✓ **Math normalization**: Greek + sub/sup in LLM output rendered correctly via `_math.py::normalize_math()`
-- ✓ **Soft failure**: simulated WeasyPrint failure — remaining formats complete; `done.yaml.partial=true` set; `--retry-failed` re-runs only the failed format
-- ✓ **LLM cache**: re-run with unchanged input uses zero LLM calls for PPT (cache hit on all chapters + outline + summary)
-- ✓ **Cross-platform**: macOS (DYLD_FALLBACK_LIBRARY_PATH auto-set for WeasyPrint), Linux, Windows (PowerShell + uv), Docker (Python 3.11, Pango/Cairo/gdk-pixbuf/libffi via apt) — all launch paths tested
-- ✓ **All 5 milestone tags on main**: m1-common-split, m2-docx-migrated, m3-html-pdf-added, m4-pptx-added, m5-complete
+Do **not** delete `runs/<paper_id>/s09_render/preview.*` — those are the final outputs.
 
 ---
 
-## 10. Sister Project
+## 9. AI agent quickstart
 
-`mypaper_bundle/` output is designed to feed **`mypaper/`** (thesis-grade typesetting project, separate repo). Each bundle contains:
-- `chapters/<section_slug>.md` — composed bilingual section prose
-- `figures/Fig_N.jpg` — extracted figures at ≥300 DPI
-- `README.md` — figure inventory with captions
+If you are an LLM-driven coding agent picking up this repo:
 
-The `mypaper/` project reads these files directly — no conversion step needed.
+1. Read this file first.
+2. Read `docs/ARCHITECTURE.md` for the stage-by-stage contract.
+3. Read `docs/AGENT_GUIDE.md` for the AI-specific workflow (subagent patterns, when to dispatch, anti-patterns observed during the v1.0–v1.1 development).
+4. Always run `uv run pytest -q` before and after any change.
+5. When extending the pipeline, follow the stage layout: `stages/sNN_<name>/runner.py` + `stages/sNN_<name>/tests/`. Register in `cli.py::STAGE_ORDER`.
+6. When extending PPT layout, edit `stages/s09_render/renderers/pptx.py` and bump the relevant `_PROMPT_VERSION` in `pptx_summarizer.py` if you change anything that affects LLM prompts (cache invalidation).
+7. End-to-end verification on at least 2 papers is the bar before push. Use the 5 verified papers in `runs/`.
+
+---
+
+## 10. Release history
+
+- **v1.1.0** (2026-05-19): outline LLM call max_tokens raised + env ceiling; chapter heading numbering unified; deep-observation font 11→13pt; CLI `--only` comma-split + unknown-stage validation; image-data-url helper consolidated; 158 tests.
+- **v1.0.0** (2026-05-18): initial public release. 4 output formats, 9-stage pipeline, docker + bare-metal install paths.
