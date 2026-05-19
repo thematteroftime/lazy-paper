@@ -249,7 +249,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
             encoding="utf-8",
         )
         md_file = out_chapters / f"{basename}.md"
-        heading = f"# {node.get('number', idx + 1)} {title_cn}\n\n"
+        heading = f"# {title_cn}\n\n"
         md_file.write_text(heading + response.content.strip() + "\n", encoding="utf-8")
         written.append(md_file.name)
 

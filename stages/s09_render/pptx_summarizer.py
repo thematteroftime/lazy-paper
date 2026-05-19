@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from stages._common import load_yaml
@@ -70,9 +71,15 @@ def _is_low_diversity(groups: list[dict]) -> bool:
     return any(count > threshold for count in word_counts.values())
 
 
+_LEADING_NUMERIC_PREFIX_RE = re.compile(r"^\s*\d+(?:\.\d+){0,2}\s+(.+)$")
+
+
 def _strip_md_heading(heading: str) -> str:
-    """Strip leading markdown heading markers (##, #, etc.) from a heading string."""
+    """Strip leading markdown markers and numeric prefixes from a heading string."""
     stripped = heading.lstrip("# ").strip()
+    m = _LEADING_NUMERIC_PREFIX_RE.match(stripped)
+    if m:
+        stripped = m.group(1)
     return stripped if stripped else heading
 
 
@@ -206,8 +213,10 @@ class PptxSummarizer:
                     system="You output strict JSON only.",
                     user=user_prompt,
                     temperature=temp,
-                    max_tokens=3500,
+                    max_tokens=8000,
                 )
+                if not response.content.strip():
+                    raise ValueError("Empty LLM response (likely reasoning-token budget exhausted)")
                 payload = json.loads(response.content)
                 if "groups" not in payload:
                     raise ValueError("Missing 'groups' key in LLM response")

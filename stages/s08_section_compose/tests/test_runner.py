@@ -46,5 +46,5 @@ def test_run_writes_chapters(tmp_path: Path):
 
     out_chapters = sorted((out_dir / "chapters").glob("*.md"))
     assert len(out_chapters) == 2
-    assert out_chapters[0].read_text(encoding="utf-8").startswith("# 1")
+    assert out_chapters[0].read_text(encoding="utf-8").startswith("# Introduction")
     assert "本节正文" in out_chapters[0].read_text(encoding="utf-8")

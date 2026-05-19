@@ -223,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     run_root.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
-    stage_list = [args.only] if args.only else STAGE_ORDER
+    stage_list = [s.strip() for s in args.only.split(",")] if args.only else STAGE_ORDER
     for name in stage_list:
         _run_one(args, name, run_root, paper_id)
 
