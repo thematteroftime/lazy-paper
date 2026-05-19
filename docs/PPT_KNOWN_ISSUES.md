@@ -1,6 +1,6 @@
 # PPT Renderer — Known Issues & Proposed Fixes (v1.1.0)
 
-> Status: **diagnosed, not yet fixed**. This document captures the analysis so a follow-up cycle can fix with intent.
+> Status: **RESOLVED in v1.2.0**. Both issues described below were fixed in 90e9a38 → v1.2.0. This document is retained for the analysis trail; see `CHANGELOG.md` for the implemented fix.
 
 Two issues surface intermittently on the v1.1.0 PPT output. Both are real, reproducible, and have clear remediation paths. Neither is severe enough to block the v1.1 release; they go into v1.2.
 

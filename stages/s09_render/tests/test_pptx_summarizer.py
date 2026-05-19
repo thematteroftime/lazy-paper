@@ -308,6 +308,19 @@ class TestNormalizeMath:
         assert normalize_math(r"\leq") == "≤"
         assert normalize_math(r"\rightarrow") == "→"
 
+    def test_unicode_subscript_letters_collapse_to_underscore_ascii(self):
+        # v1.2 Issue A1: Unicode subscript letters get dropped by PPT fonts
+        # that don't cover U+2090–U+209C, so we fall back to ASCII underscore.
+        assert normalize_math("aₚₕₒₜ/cₚₕₒₜ") == "a_phot/c_phot"
+        assert normalize_math("Tₘ") == "T_m"
+        assert normalize_math("εᵣ") == "ε_r"
+
+    def test_unicode_subscript_digits_remain_unicode(self):
+        # Pure digit subscripts like H₂O / Pb²⁺ render fine in standard fonts.
+        # They must NOT be collapsed back to ASCII.
+        assert normalize_math("H₂O") == "H₂O"
+        assert normalize_math("Pb₀.₆₅") == "Pb₀.₆₅"
+
     def test_empty_string(self):
         assert normalize_math("") == ""
 

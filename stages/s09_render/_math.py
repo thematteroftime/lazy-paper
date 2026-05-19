@@ -31,6 +31,44 @@ _SUPER_MAP = str.maketrans("0123456789+-=()", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻
 # Subscript Unicode map (digits + common letters)
 _SUB_MAP = str.maketrans("0123456789+-=()aeiouvxh", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑᵢₒᵤᵥₓₕ")
 
+# Reverse Unicode-subscript → ASCII map.
+# Covers U+2080-U+209C (digits/operators/Latin) and the modifier-letter
+# subscripts in U+1D62-U+1D6A. PPT viewers commonly lack glyphs for the rare
+# Latin subscripts when the body font is CJK; we fall back to plain ASCII so
+# `aₚₕₒₜ` reads as `a_phot` instead of `aphot` (glyph dropped) or □□□□.
+_UNICODE_SUB_TO_ASCII: dict[str, str] = {
+    "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
+    "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9",
+    "₊": "+", "₋": "-", "₌": "=", "₍": "(", "₎": ")",
+    "ₐ": "a", "ₑ": "e", "ₕ": "h", "ᵢ": "i", "ⱼ": "j",
+    "ₖ": "k", "ₗ": "l", "ₘ": "m", "ₙ": "n", "ₒ": "o",
+    "ₚ": "p", "ᵣ": "r", "ₛ": "s", "ₜ": "t", "ᵤ": "u",
+    "ᵥ": "v", "ₓ": "x",
+}
+_UNICODE_SUB_CHARS = "".join(_UNICODE_SUB_TO_ASCII.keys())
+_UNICODE_SUB_RUN_RE = re.compile(f"([{_UNICODE_SUB_CHARS}]+)")
+
+
+def _collapse_unicode_subscripts(text: str) -> str:
+    """Collapse runs of Unicode subscript chars to a single `_<plain>` token.
+
+    Rationale: when the LLM emits multi-letter subscripts as Unicode
+    (`aₚₕₒₜ`), PPT viewers often lack glyphs in the active CJK body font and
+    drop them silently. Rendering as `a_phot` is uglier but font-portable.
+    Single-digit subscripts adjacent to digits (e.g. `H₂O`) are common and
+    well-supported, so we only collapse runs that contain at least one
+    Latin-letter subscript — pure digit runs (`H₂O`, `T_m`) keep their
+    Unicode form.
+    """
+    def repl(m: "re.Match[str]") -> str:
+        run = m.group(1)
+        if not any(c.isalpha() for c in (_UNICODE_SUB_TO_ASCII[c] for c in run)):
+            return run  # pure digits/ops — leave Unicode in place
+        ascii_run = "".join(_UNICODE_SUB_TO_ASCII[c] for c in run)
+        return f"_{ascii_run}"
+
+    return _UNICODE_SUB_RUN_RE.sub(repl, text)
+
 
 def normalize_math(text: str) -> str:
     """Convert LaTeX math expressions in *text* to Unicode for PPT rendering."""
@@ -49,4 +87,5 @@ def normalize_math(text: str) -> str:
     text = re.sub(r"\\\[\s*", "", text)   # \[
     text = re.sub(r"\s*\\\]", "", text)   # \]
     text = text.replace(r"\%", "%").replace(r"\&", "&")
+    text = _collapse_unicode_subscripts(text)
     return text

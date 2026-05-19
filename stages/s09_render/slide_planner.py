@@ -255,6 +255,23 @@ class SlidePlanner:
                 ))
         return slides
 
+    # v1.2 Issue B4: bullet length defence. A bullet wraps to 2+ lines when
+    # text exceeds ~38 CJK chars (~70 ASCII chars) at 13pt in the 6.35"-wide
+    # KEY POINTS card. We cap aggressively so dense (≥6 bullets) cards don't
+    # need to wrap at all; sparser cards still get the full text since the
+    # font stays at 16pt and the row is taller.
+    _BULLET_CJK_MAX = 38
+    _BULLET_ASCII_MAX = 70
+
+    @classmethod
+    def _truncate_bullet(cls, text: str) -> str:
+        cjk_count = sum(1 for c in text if "一" <= c <= "鿿")
+        # Estimate displayed width: CJK chars ~2x ASCII width.
+        budget = cls._BULLET_CJK_MAX if cjk_count * 2 >= len(text) else cls._BULLET_ASCII_MAX
+        if len(text) <= budget:
+            return text
+        return text[: budget - 1].rstrip() + "…"
+
     def _extract_group_preview_bullets(self, group: dict, doc: Document,
                                        summaries: dict | None) -> list[str]:
         """Pull preview bullets for the section divider.
@@ -264,6 +281,9 @@ class SlidePlanner:
           2. LLM bullets from figure-bearing chapters in the group.
           3. Rule-based fallback: first sentence of first paragraph of each chapter.
              (v15 safety net — ensures KEY POINTS card is never empty)
+
+        All bullets are length-capped (~38 CJK / ~70 ASCII) to avoid 2-line
+        wrap in the section-divider card (v1.2 Issue B4).
         """
         headings = set(group.get("chapter_headings") or [])
         pure_bullets: list[str] = []
@@ -288,7 +308,7 @@ class SlidePlanner:
                         break
 
         bullets = pure_bullets or figure_bullets or fallback_bullets
-        return bullets[:7]  # v13: was 5
+        return [self._truncate_bullet(b) for b in bullets[:7]]
 
     def _get_bullets(self, chapter: Chapter, paragraphs: list[Paragraph],
                      summary: dict | None) -> list[str]:

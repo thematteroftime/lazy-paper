@@ -318,3 +318,38 @@ def test_planner_grouped_outline_absorbs_pure_bullet_chapters():
     # No standalone bullets slide for TextOnly
     bullets_slides = [s for s in deck.slides if s.kind == "bullets"]
     assert len(bullets_slides) == 0
+
+
+def test_truncate_bullet_caps_cjk_text():
+    """v1.2 Issue B4: bullets longer than ~38 CJK chars get truncated with ellipsis."""
+    long_cjk = "这是一个非常长的中文要点用来测试是否会被正确截断到合理的长度避免在卡片中换行重叠下一个条目内容"
+    out = SlidePlanner._truncate_bullet(long_cjk)
+    assert out.endswith("…")
+    assert len(out) <= SlidePlanner._BULLET_CJK_MAX
+    assert out.startswith("这是一个非常长的中文要点")
+
+
+def test_truncate_bullet_caps_ascii_text():
+    long_ascii = "x=0.35 sample shows 25C dielectric ~1600 with Tm shift of about 20C across 2-800kHz frequency span and gamma 1.87 trending toward 2 plus extra"
+    out = SlidePlanner._truncate_bullet(long_ascii)
+    assert out.endswith("…")
+    assert len(out) <= SlidePlanner._BULLET_ASCII_MAX
+
+
+def test_truncate_bullet_passes_through_short_text():
+    short = "Pb掺杂导致弛豫态形成"
+    assert SlidePlanner._truncate_bullet(short) == short
+
+
+def test_section_divider_bullets_are_length_capped():
+    """v1.2 Issue B4: bullets reaching the section_divider are all length-capped."""
+    long_cjk_bullet = "这是一个非常长的中文要点用来测试是否会被正确截断到合理的长度避免在卡片中换行重叠下一个条目内容并占用太多空间"
+    doc = Document(paper_title="P", lang="zh", chapters=(
+        Chapter(heading="Ch1", level=1, blocks=(Paragraph(text="dummy"),)),
+    ))
+    outline = [{"name": "G1", "chapter_headings": ["Ch1"], "takeaway": "tw"}]
+    summaries = {"Ch1": {"bullets": [long_cjk_bullet], "figure_observations": {}}}
+    deck = SlidePlanner(lang="zh").plan(doc, summaries=summaries, outline=outline)
+    sec = next(s for s in deck.slides if s.kind == "section_divider")
+    assert all(len(b) <= SlidePlanner._BULLET_CJK_MAX for b in sec.bullets)
+    assert sec.bullets[0].endswith("…")

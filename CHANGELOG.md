@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-19
+
+### Fixed
+
+- **PPT math subscripts rendering as plain ASCII** (Issue A in `docs/PPT_KNOWN_ISSUES.md`). LLM-emitted Unicode subscript letters (`aₚₕₒₜ`, U+2090–U+209C / U+1D62–U+1D6A) were silently dropped to base letters (`aphot`) when the active CJK body font lacked glyphs. `_math.py::normalize_math()` now collapses runs that contain Latin-letter subscripts back to `_<plain>` ASCII (`aₚₕₒₜ` → `a_phot`). Pure digit/operator subscripts (`H₂O`, `Pb₀.₆₅Ba₀.₃₅ZrO₃`) keep their Unicode form because they render fine in standard fonts.
+- **KEY POINTS card row overlap when ≥6 bullets wrap to 2 lines** (Issue B). `_section_divider` now scales bullet font 16pt→13pt and marker 14pt→12pt when `n_bullets ≥ 6`, drops the `* 0.7` clamp on text-box height (text now uses the full row), and `SlidePlanner._truncate_bullet()` caps bullet length to ~38 CJK / ~70 ASCII chars with `…` suffix as defence-in-depth.
+
+### Verified
+
+- Re-rendered 5 verified papers (he2023, ali2025_flash, yang2025, liu2022, pan2025) with all 4 formats (docx, pdf, html, pptx). All 20 outputs produced cleanly.
+- 164 unit tests pass (+6 new: Unicode subscript fallback, bullet truncation cap, section-divider integration).
+
 ## [1.1.0] - 2026-05-19
 
 ### Added
@@ -60,6 +72,7 @@ Initial public release of lazy-paper.
 - `SlidePlanner`: deterministic slide layout logic, no IO, accepts optional LLM summaries and outline
 - `LLM` client: OpenAI-compatible; two roles (`vision`, `text`) configured via `models.yaml` and env vars
 
-[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.0
 [1.1.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.1.0
 [1.0.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.0.0

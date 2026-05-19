@@ -390,7 +390,7 @@ class PptxRenderer(Renderer):
         card.line.width = Pt(1)
         card.text_frame.text = ""
 
-        bullets = slide.bullets[:7] if slide.bullets else []   # v13: was 5
+        bullets = slide.bullets[:7] if slide.bullets else []
         n_bullets = len(bullets)
 
         if n_bullets > 0:
@@ -401,16 +401,25 @@ class PptxRenderer(Renderer):
             usable_h    = card_h - 2 * padding
             row_h       = usable_h / max(n_bullets, 1)
 
+            # v1.2 Issue B: scale font down when many bullets so that 2-line
+            # wraps don't visually collide with the next bullet. Use the full
+            # row_h for the text box (no 0.7 clamp) so wrapped content lives
+            # inside its own row instead of bleeding downward.
+            dense   = n_bullets >= 6
+            txt_pt  = 13 if dense else 16
+            mark_pt = 12 if dense else 14
+            tb_h    = Inches(row_h)
+
             for i, bul in enumerate(bullets):
-                by = Inches(card_top + padding + i * row_h + row_h * 0.15)
+                by = Inches(card_top + padding + i * row_h)
                 marker = _MARKERS[i] if i < len(_MARKERS) else "▸"
                 _tb1(s, marker,
-                     Inches(5.4), by, Inches(0.45), Inches(row_h * 0.7),
-                     Pt(14), _GRAY88, T.LAT_SANS, T.EA_SANS,
+                     Inches(5.4), by, Inches(0.45), tb_h,
+                     Pt(mark_pt), _GRAY88, T.LAT_SANS, T.EA_SANS,
                      align=PP_ALIGN.LEFT)
                 _tb1(s, bul,
-                     Inches(5.9), by, Inches(6.35), Inches(row_h * 0.7),
-                     Pt(16), T.TEXT, T.LAT_SANS, T.EA_SANS,
+                     Inches(5.9), by, Inches(6.35), tb_h,
+                     Pt(txt_pt), T.TEXT, T.LAT_SANS, T.EA_SANS,
                      align=PP_ALIGN.LEFT, wrap=True)
 
         nav_text = _S.pick(_S.NAV_HINT, doc.lang)
