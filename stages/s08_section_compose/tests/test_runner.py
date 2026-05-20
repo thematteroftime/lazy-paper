@@ -62,3 +62,11 @@ def test_observe_critic_writes_yaml(tmp_path):
         fig_yaml=[],
     )
     assert isinstance(flags, list)
+
+
+def test_zh_ratio_detects_english_draft():
+    """v1.4.1: _zh_ratio gives us a knob for the language-guard retry."""
+    from stages.s08_section_compose.runner import _zh_ratio
+    assert _zh_ratio("# Heading\n\nThe ceramics were characterized.") < 0.05
+    assert _zh_ratio("# Heading\n\n本文采用流延成型法制备陶瓷。") > 0.5
+    assert _zh_ratio("") == 0.0

@@ -58,4 +58,7 @@ Relevant paper chapter excerpts:
 Relevant figure notes (YAML):
 {fig_notes_block}
 
+Already established in prior sections (do not restate verbatim — refer back, build on, or contrast):
+{prior_findings}
+
 Write the section body now.

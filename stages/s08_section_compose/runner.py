@@ -198,10 +198,22 @@ LANG_INSTRUCTIONS = {
 }
 
 
+_CHINESE = re.compile(r"[一-鿿]")
+
+
+def _zh_ratio(text: str) -> float:
+    text = re.sub(r"#.*", "", text)  # strip header
+    body = "".join(text.split())
+    if not body:
+        return 0.0
+    return len(_CHINESE.findall(body)) / len(body)
+
+
 def _legacy_compose(llm, system_tpl, user_tpl, paper_context_str, node, idx,
                     title_cn, title_en, guidance, hints, keywords,
                     chapters_dir, fig_notes, figures, retriever,
-                    out_dir, basename) -> str:
+                    out_dir, basename, lang: str = "zh",
+                    prior_findings: str = "") -> str:
     """v1.3.x prompt-stuffed compose path. Used as agent fallback or when no PaperDB."""
     if retriever is not None:
         chunks = retriever.retrieve(guidance, top_k=8)
@@ -218,18 +230,38 @@ def _legacy_compose(llm, system_tpl, user_tpl, paper_context_str, node, idx,
                 .replace("{needs_table}", str(hints.get("needs_table", False)))
                 .replace("{needs_figure}", str(hints.get("needs_figure", False)))
                 .replace("{chapter_excerpts}", excerpts)
-                .replace("{fig_notes_block}", notes_block))
+                .replace("{fig_notes_block}", notes_block)
+                .replace("{prior_findings}", prior_findings or "（本节为首节，无前文要点）"))
     (out_dir / f"{basename}.prompt.md").write_text(
         f"# SYSTEM\n{system_tpl}\n\n# USER\n{user_msg}", encoding="utf-8"
     )
     response = llm.chat(system=system_tpl, user=user_msg, max_tokens=max_tokens(12000))
+
+    # Post-LLM language guard: if zh was requested but the draft came out
+    # mostly English (LLM defaulting to source-paper language), retry once
+    # with a system-prompt amendment that hard-enforces Chinese.
+    composed = response.content.strip()
+    if lang == "zh" and len(composed) > 100 and _zh_ratio(composed) < 0.3:
+        print(f"[s08] {basename}: zh requested but draft is mostly English "
+              f"(zh ratio {_zh_ratio(composed):.2f}); retrying", flush=True)
+        forced_system = (system_tpl
+                         + "\n\n## HARD LANGUAGE OVERRIDE\n"
+                         "OUTPUT MUST BE WRITTEN IN CHINESE (中文) PROSE. "
+                         "Embedded English technical terms (e.g., 'tape-casting', "
+                         "'Vogel-Fulcher', chemical formulas) are allowed, but the "
+                         "narrative sentences must be Chinese. If the previous "
+                         "attempt was English, write the same content in Chinese now.")
+        response = llm.chat(system=forced_system, user=user_msg,
+                            max_tokens=max_tokens(12000))
+        composed = response.content.strip()
+
     (out_dir / f"{basename}.response.json").write_text(
         json.dumps({"model": response.model, "latency_ms": response.latency_ms,
                     "usage": response.usage, "content": response.content},
                    ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    return response.content.strip()
+    return composed
 
 
 def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
@@ -288,6 +320,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
     llm = LLM(role="text")
     written: list[str] = []
     all_flags: dict[str, list[dict]] = {}
+    prior_section_claims: list[str] = []  # accumulated across sections (v1.4.1)
 
     for idx, node in enumerate(template):
         title_cn = node["title"]
@@ -300,6 +333,13 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
 
         slug = slugify(title_cn, maxlen=30)
         basename = f"{idx + 1:02d}-{slug}"
+
+        # v1.4.1: pass at most the last 8 prior-section claim bullets so the
+        # composer can build on / refer back / contrast instead of restating.
+        prior_findings_block = (
+            "\n".join(f"- {c}" for c in prior_section_claims[-8:])
+            if prior_section_claims else ""
+        )
 
         # v1.4: prompt-stuffed compose with retriever-fed evidence. The
         # tool-using agent (stages.s08_section_compose.agent) is experimental
@@ -325,14 +365,16 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                     llm, system_tpl, user_tpl, paper_context_str, node, idx,
                     title_cn, title_en, guidance, hints, keywords,
                     chapters_dir, fig_notes, figures, retriever,
-                    out_dir, basename,
+                    out_dir, basename, lang=lang,
+                    prior_findings=prior_findings_block,
                 )
         else:
             composed = _legacy_compose(
                 llm, system_tpl, user_tpl, paper_context_str, node, idx,
                 title_cn, title_en, guidance, hints, keywords,
                 chapters_dir, fig_notes, figures, retriever,
-                out_dir, basename,
+                out_dir, basename, lang=lang,
+                prior_findings=prior_findings_block,
             )
 
         # Critic — regex tier always; LLM tier only when flags > 0
@@ -365,6 +407,15 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         append_verified_claims(
             out_dir=out_dir, section_name=basename, claims=extract_claims(composed),
         )
+
+        # v1.4.1: accumulate a 1-line summary of this section into the rolling
+        # prior_findings list. The legacy compose path doesn't emit [span:...]
+        # markers (so extract_claims returns []); instead, take the first
+        # sentence and tag it with the section title for context.
+        first_sentence = re.split(r"[。！？.!?]\s*", composed.strip(), maxsplit=1)[0]
+        first_sentence = first_sentence.strip()[:160]
+        if first_sentence:
+            prior_section_claims.append(f"§{idx + 1} {title_cn}: {first_sentence}")
 
         md_file = out_chapters / f"{basename}.md"
         heading = f"# {title_cn}\n\n"
