@@ -306,6 +306,37 @@ TESTS: list[TestCase] = [
         },
         min_chars=1000,
     ),
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Generic generalization tests — apply to any clean corpus paper.
+    # T5+T6 verify the strategy doesn't break sane defaults on papers
+    # without specific known defects.
+    # ────────────────────────────────────────────────────────────────────────
+    TestCase(
+        name="fu2020:ch01_basic",
+        paper_id="fu2020",
+        section="01-Introduction",
+        required={
+            # Fu et al. 2020 paper title — should be present in any intro
+            "on_topic": [r"PbZrO|铅锆|antiferroelectric|反铁电",
+                         r"ferrielectric|铁电体性|亚铁电"],
+        },
+        forbidden=[r"η\s*=\s*85%", r"Wrec\s*=\s*8\.6"],  # template-fab signals
+        min_chars=600,
+        lang_zh_min_ratio=0.30,
+    ),
+    TestCase(
+        name="chai2026:ch01_basic",
+        paper_id="chai2026",
+        section="01-Introduction",
+        required={
+            "on_topic": [r"K[0₀]\.?5Na[0₀]\.?5NbO[3₃]|KNN|铌酸",
+                         r"energy storage|储能"],
+        },
+        forbidden=[r"η\s*=\s*85%", r"Wrec\s*=\s*8\.6"],
+        min_chars=600,
+        lang_zh_min_ratio=0.30,
+    ),
 ]
 
 
@@ -315,12 +346,11 @@ def evaluate_run(run_dir: Path) -> dict:
     """Run every applicable test against this run_dir; return dict report."""
     # Determine the underlying paper by trimming any trailing _vXXX_Y suffix.
     paper_id = run_dir.name
-    for suffix_pattern in (r"_v\d+_baseline$", r"_v\d+_[A-Za-z]+$", r"_v\d+_J\d*$",
-                           r"_v\d+\d?$"):
-        m = re.match(rf"^(.+?){suffix_pattern}", paper_id)
-        if m:
-            paper_id = m.group(1)
-            break
+    # Strip any trailing "_v<digits>_..." suffix (one regex covers all
+    # variants: _v140, _v140_baseline, _v170_KL, _v170_KL_run2, _v160_J1, ...)
+    m = re.match(r"^(.+?)_v\d+(?:_[A-Za-z0-9]+)*$", paper_id)
+    if m:
+        paper_id = m.group(1)
     results = []
     for tc in TESTS:
         if tc.paper_id != paper_id:
