@@ -1,111 +1,212 @@
-# Content Optimization Roadmap — v1.4 → v2.0
+# Content Optimization Roadmap — v1.4
 
-> v1.3.x 关闭了所有可见的布局缺陷。内容缺陷需要换思路 —— 不是再调一两个 prompt，而是**把生成范式从"单次提示"升级为"检索-验证-迭代"循环**。本文给出可执行的 4 步路径，每步对齐一个成熟开源项目。
+> Status: **research-validated, awaiting implementation greenlight from maintainer**.
+> v1.3.x closed all observable layout defects. v1.4 attacks the three content defects
+> the parallel audits surfaced (template-driven hallucination, quoted-symbol drift,
+> missed source facts) by switching the generation paradigm from "template fill" to
+> "retrieve evidence → write → verify".
+>
+> This document was revised after a deep-research subagent stress-tested an earlier
+> draft against the upstream repositories. See "Research findings" below for what
+> changed vs. the v1.3.3 draft.
 
-## 现状的内容三宗病
+## The three content defects (recap)
 
-`docs/v1_4_roadmap.md` 第一次审计已记录，复述为机制语言：
+| # | Defect | Where seen |
+|---|---|---|
+| 1 | **Template-driven hallucination** when source doesn't cover topic | yang2025 ch01 fabricated "8.6 J/cm³ at η=85%"; ch03 invented KNN/NBT review |
+| 2 | **Quoted-symbol drift** | meng2024 ch01 conflated E_b (348 kV/cm) with test field (340 kV/cm) |
+| 3 | **Missed direct source facts** | meng2024 ch10 missed "tape-casting" stated explicitly in source |
 
-1. **Hallucination on topic mismatch** —— LLM 用模板暗示的"应该写什么"覆盖了源论文的"实际是什么"。yang2025 是神经形态论文，s08 却补了能量存储数字（8.6 J/cm³ / 85%）。本质是 prompt 给 LLM 太多"应当"，留太少"必须基于源"。
-2. **Quoted-symbol drift** —— LLM 在长上下文中弄混 E_b vs 测试场（340 vs 348 kV/cm）、单位（4 MV/cm vs 4000 kV/cm）。本质是没有事后核对环节。
-3. **Missed source facts** —— meng2024 源中明明写了 "tape-casting"，composer 却说"不涉及合成方法"。本质是 keyword-matching 召回错过了关键段落。
+Common root: the LLM only sees keyword-matched excerpts, never the full source, and
+no mechanism verifies what it generated against source.
 
-三种病一个共同特征：**模型只看到了我们喂给它的子集，而不是源论文全貌；产生的内容没有被任何机制对照源验证。**
+## Refined two-stage plan for v1.4
 
-## 路线图：四阶段升级
+The original draft had four stages; research showed two are right-sized for v1.4
+and two should defer.
 
-### 阶段 1 — 检索增强生成（RAG over paper）·  对齐 [PaperQA2](https://github.com/Future-House/paper-qa)
+### Stage 1 — RAG over the paper (CONFIRMED, in-house build)
 
-**问题**：s08 现在给 LLM 8000–15000 字的"keyword 最相关章节摘录"。但 keyword 匹配会漏掉同义改写的关键句（"tape-casting" / "流延法" / "doctor blade method"），也会带入大量与本节无关的内容。
+Replace keyword scoring with embedding retrieval scoped to the current section.
 
-**做法**：用 embedding 检索替代 keyword 匹配。
-- **离线**：把每篇论文的 cleaned chapters（`s02_clean/doc_*.md`）+ `s07_figure_analyze/fig_notes.yaml` 切成 200–400 字 chunks，跑 embedding（`text-embedding-3-small` 或开源 `bge-m3`），存到 `runs/<paper>/s06_context/index.parquet`。
-- **生成时**：s08 写每节前，用该节的 `title + guidance + key_terms` 做 query，retrieve top-8 chunks，仅这 8 个作为"evidence pool"喂给 LLM。
-- **prompt 加锁**：「ONLY use facts present in `<evidence>` block. If a fact you want to write is not in there, write 'this paper does not directly address X' instead of inventing.」
+**Build, not depend on PaperQA2.** PaperQA2 is library-grade but its citations are
+page-range scoped (not character-offset), it bundles its own answer-loop, and the
+total adoption cost outweighs writing a 200-line retriever ourselves.
 
-**参考**：PaperQA2 实现了"问题 → 检索 → 多 chunk 综合 → 引用回写"完整闭环；它的 `evidence_summary` / `final_answer` 两阶段思路可直接借鉴。
+**Concrete spec**:
 
-**预期效果**：解决病 1（topic mismatch）和病 3（missed facts）；不解决病 2。
+```
+stages/s06_context/embed.py        # ~80 LOC
+  build_index(chapters_dir, fig_notes) -> parquet
+    chunks each chapter to 200-400 chars (preserve sentence boundaries)
+    embeds via openai-compatible API (default: text-embedding-3-small or bge-m3)
+    stores (doc_id, chunk_id, text, char_start, char_end, vec) rows
 
-**工作量**：~3 天。新增 `stages/s06_context/embed.py`、`llm/retriever.py`、s08 prompt 重写。LLM 成本下降（喂 LLM 的 token 减少 60%）。
-
-### 阶段 2 — 自校验 critic 回路 ·  对齐 [Reflexion](https://github.com/noahshinn/reflexion) / [Self-Refine](https://github.com/madaan/self-refine)
-
-**问题**：s08 一次性产出整章，没有"对完了答案再翻书"的步骤。
-
-**做法**：在 s08 完成一章后，跑一个轻量 critic 模型。
-- 输入：composed chapter 文本 + 该章对应的 retrieved evidence chunks。
-- 任务：逐句标注  
-  ① 此句中数字 / 化学式 / 命名实体是否在 evidence 中存在？  
-  ② 此句中"Fig.N"是否在 `figures.yaml` 中？  
-  ③ 是否有 evidence 之外的事实断言？
-- 输出：若问题 ≥ 阈值，把 critic 的标注当 feedback 给 composer 重写一次（最多 2 轮）。
-
-**参考**：Reflexion 的"trial → reflection → retry"循环最适合；Self-Refine 提供 critic prompt 模板。两者都是几百行实现，可直接借鉴。
-
-**预期效果**：解决病 2（symbol drift）大半；同时大幅压低病 1 残留。
-
-**工作量**：~3 天。需要 critic prompt + 1 额外 LLM call/chapter（成本 ≈ +30%）。
-
-### 阶段 3 — 多 perspective 大纲驱动 ·  对齐 [STORM](https://github.com/stanford-oval/storm) / [Sakana AI Scientist](https://github.com/SakanaAI/AI-Scientist)
-
-**问题**：s08 把"撰写本节"作为单一任务给 LLM。深度分析需要"多角度提问 → 回答 → 整合"。
-
-**做法**：把每节拆成 3 阶段：
-1. **Outliner agent**：「按这个 guidance，我应该回答 5 个具体子问题：Q1…Q5」  
-2. **Researcher agent**（每个 Q）：从 evidence chunks 中检索 → 用 evidence 回答 → 引用 chunk id
-3. **Synthesizer agent**：把 5 个 Q&A 写成 1 段连贯叙述
-
-**参考**：STORM 是 Wikipedia 文章生成的 SOTA，思路就是「perspective generation → grounded outline → writing」。AI Scientist 的 ideator/experimenter/reviewer 三角色也可借鉴。
-
-**预期效果**：从"paraphrase"变成"genuine synthesis"。yang2025 ch14 / ali2025 ch14 已经偶尔展现这种品质 —— 多 agent 化可以稳定复现。
-
-**工作量**：~5 天。重构 s08 为 mini-pipeline。LLM 成本 +200%（3 次调用/section），但用 retrieval 减下来的 token 数能抵消一半。
-
-### 阶段 4 — 编译式 prompt 程序化 ·  对齐 [DSPy](https://github.com/stanfordnlp/dspy)
-
-**问题**：现在我们用字符串模板手写 prompt。每次改 prompt 都靠人眼试错；prompt 间没有结构。
-
-**做法**：用 DSPy 把每个 LLM 调用声明为「Signature（输入字段→输出字段）+ ChainOfThought / Predict」。DSPy 把 prompt 工程变成「编译目标」—— 你写 spec，它自动调 prompt。
-
-```python
-class ComposeSection(dspy.Signature):
-    """Compose a presentation section grounded in source evidence."""
-    section_title: str = dspy.InputField()
-    section_guidance: str = dspy.InputField()
-    evidence_chunks: list[str] = dspy.InputField()
-    section_body: str = dspy.OutputField(desc="≥80% facts traceable to evidence")
-
-composer = dspy.ChainOfThought(ComposeSection)
-result = composer(section_title=..., evidence_chunks=...)
+llm/retriever.py                   # ~120 LOC
+  retrieve(index, query, top_k=8) -> list[Chunk]
+    cosine-sim over the index parquet
+    returns Chunk with char_start/end for stage 2 grounding
 ```
 
-**参考**：DSPy 文档的 "Optimizing prompts with DSPy" 教程。已经在生产中被 PaperQA、TextGrad 等用作底层。
+The char-offset span is critical — Stage 2's symbol-drift check needs to grep the
+source for an exact substring. Page-level citations alone don't enable that.
 
-**预期效果**：可维护性 +50%；prompt 自动优化器（BootstrapFewShot）能挖掘出比人手调更好的 prompt；测试每个 signature 比测试整个 stage 容易。
+**Figure notes are atomic.** Don't fragment a `deep_observation` (which is one
+paragraph of vision-LLM critique). Embed each `fig_notes.yaml` entry as one chunk;
+chunk only the cleaned chapter text.
 
-**工作量**：~5 天，分散在 v1.4–v2.0 中渐进迁移（不必一次重写）。
+**Prompt change in s08**:
+> Use ONLY facts present in the `<evidence>` block below. If a fact you want to
+> assert isn't grounded in evidence, write "this paper does not directly address
+> X" instead of inventing.
 
-## 优先级与里程碑
+**Cost**: LLM context per s08 call drops from 8K-15K → ~3K tokens (8 chunks × 400
+chars + section guidance). Embedding cost ≈ $0.001 per paper.
 
-| 版本 | 包含阶段 | 关键能力 | 工作量 |
+**Effort**: ~3 days, mostly testing on the 10-paper corpus.
+
+### Stage 2 — Self-Refine critic loop (CONFIRMED, Self-Refine pattern)
+
+After s08 produces a chapter, run a deterministic-then-LLM verification.
+
+**Two-tier verification**:
+
+1. **Python regex tier (cheap, 100% reliable)** — Before the critic LLM sees the
+   text, deterministic checks:
+   - Every numeric assertion (e.g. `8.6 J/cm³`, `85%`, `348 kV/cm`) → string-match
+     against the source (or normalized form). Unit normalization (`kV/cm` ↔
+     `kV·cm⁻¹`, `4000 kV/cm` ↔ `4 MV/cm`) handled deterministically.
+   - Every `Fig. N` reference → must exist in `s04_figures/figures.yaml`.
+   - Every chemical formula (regex for `[A-Z][a-z]?\d+(\.\d+)?`) → must appear in
+     source OR `s06_context/context.yaml`.
+   - Failures collected as `(span, claim, problem)` tuples.
+
+2. **LLM critic tier (Self-Refine pattern)** — Only if regex tier finds problems:
+   - 3-prompt loop (Self-Refine spec): `init → feedback → refine`.
+   - Feedback prompt receives the regex-flagged spans + the source excerpts they
+     should have matched.
+   - One revision round max (research finding: more rounds rarely help).
+
+**License-safe critic checklist** — inspired by Sakana AI Scientist's reviewer
+fields (Soundness/Clarity/Grounding/Quote-fidelity), reimplemented from scratch.
+Their code is on a RAIL-derivative license, incompatible with our Apache-2.0.
+
+**Effort**: ~3 days. Regex tier first (1 day); LLM tier on top (2 days).
+
+**Cost**: ~+100% LLM calls per section (one critic, one revise). Earlier draft
+estimated +30%; research showed that was unrealistic.
+
+## What's deferred
+
+### Stage 3 — Multi-perspective outliner — DEFER to v1.5
+
+Originally proposed three roles (Outliner / Researcher / Synthesizer per section).
+Research finding: STORM's three-role pattern is designed for open-domain Wikipedia
+where multiple perspectives need surfacing. For a single grounded scientific
+paper, Researcher and Synthesizer collapse to one call given retrieved evidence.
+
+**Plan for v1.5**: try a 2-role pattern (Researcher with evidence → Composer).
+Reassess after v1.4 audit results.
+
+### Stage 4 — DSPy — DOWNGRADE to v2.0, Signature-only
+
+Originally proposed DSPy as a compilation layer with automatic prompt optimization
+(BootstrapFewShot). Research finding: BootstrapFewShot needs ≥20 labeled
+(input, gold) pairs + a metric function. We have 10 papers, no gold annotations,
+no quality metric.
+
+**Plan for v2.0**: adopt `dspy.Signature` + `dspy.Predict` as a typed prompt scaffold
+(replaces string templates with declared fields). **Skip the optimizer.** This is
+a maintenance win, not a quality win.
+
+### LangGraph — NOT ADOPTING
+
+Considered: would LangGraph's state-machine + node-graph orchestration help?
+
+**Research finding**: no.
+
+LangGraph's selling points (checkpointing, durable execution, human-in-the-loop,
+streaming, agent branching) map to problems we don't have. Our pipeline is a
+deterministic 9-stage DAG with explicit `for stage in STAGE_ORDER` iteration —
+no agent ambiguity, no branching cycles, no need for cross-process resume.
+
+The simpler-equivalent already-in-repo approach:
+- A `StageContext` dataclass passed between stages (state dict)
+- A `@retry(max_attempts=2)` decorator on s08 LLM calls (or just `while attempts`)
+- Per-section critic→revise loop written as plain Python `while problems and rounds < 1`
+
+Total: ~30 LOC of orchestration vs. taking on a LangChain-adjacent framework
+footprint that conflicts with our LiteLLM/openai-SDK minimalism.
+
+If LangGraph becomes useful later (e.g., we add human-in-the-loop review or
+multi-paper batch coordination), we'll revisit.
+
+## Risk register (for the v1.4 implementer)
+
+| Stage | Risk | Mitigation |
+|---|---|---|
+| 1 | Embedding service rate-limit on big papers | Batch embed in 64-chunk groups; retry on 429; cache by content-hash |
+| 1 | Chunk boundary cuts a numeric value mid-formula | Preserve sentence boundaries; minimum chunk 100 chars |
+| 1 | Figure notes get fragmented | Keep `fig_notes.yaml` entries atomic — one chunk per figure |
+| 2 | Critic loop runs away in cost | Hard cap: 1 revision round per chapter, 3 retries per stage total |
+| 2 | Regex tier produces false positives (every number is flagged) | Whitelist tokens that match `{paper.system}` / units / chemical formulas already in source |
+| 2 | Symbol-drift verification needs unit normalization | Build a small `_units.py` helper: `kV/cm ↔ kV·cm⁻¹ ↔ MV/cm × 1000` etc. |
+
+## DO NOT DO list
+
+1. **Don't depend on PaperQA2 as a library** — its agent loop is a separate
+   product; we only need retrieval. 200-line in-house build is the right call.
+2. **Don't lift AI-Scientist's `perform_review.py` verbatim** — RAIL-derivative
+   license incompatible with Apache-2.0. Reimplement the checklist fields.
+3. **Don't run DSPy BootstrapFewShot on the 6-paper corpus** — undertrained;
+   you'll overfit to whatever artifacts those 10 papers happen to share. Need
+   ≥20 labeled examples and a metric function first.
+4. **Don't add LangGraph for "future flexibility"** — adds a framework we don't
+   need and conflicts with our minimal LLM-client stack. Revisit only if we add
+   a true agent / human-in-loop use case.
+
+## Sequence + costs
+
+| Milestone | Stages included | Duration | LLM cost vs v1.3.3 |
 |---|---|---|---|
-| **v1.4** | 阶段 1 (RAG) + 阶段 2 (critic loop) | 病 1/2/3 大半被堵；同时 LLM 成本下降 | ~6 天 |
-| **v1.5** | 阶段 3 (multi-agent outline) | 内容从 paraphrase → 真综合 | ~5 天 |
-| **v2.0** | 阶段 4 (DSPy 编译化) + 全 prompt 迁移 | 工程可维护性跃迁 | ~5 天分散 |
+| **v1.4.0** | Stage 1 (RAG) + Stage 2 (critic) | ~6 days | ~2× per section (retrieval saves token in s08 prompt; critic adds 1 LLM call) |
+| **v1.5.0** | Stage 3 (2-role outliner) | ~3-5 days | ~3× total |
+| **v2.0.0** | Stage 4 (DSPy Signatures) | ~5 days, distributed | neutral |
 
-v1.4 是性价比最高的一步 —— 6 天投入消除 ~70% 内容缺陷。如果只能做一阶段，做阶段 1+2。
+## Greenlight
 
-## 相邻借鉴的若干小点
+**YES, with changes.**
 
-- **Anthropic Citations API**：原生 grounding，输出时附带源 span 引用。可作为阶段 1 的轻量等价方案（不用自建 embedding 索引）。
-- **Instructor** + **Pydantic** 强 schema：现在我们已经用 `_normalize_chapter_summary` 防御性补字段，迁到 Pydantic schema 后可以编译期就拒掉错 payload。
-- **GPT Researcher** / **AutoGen GroupChat**：多 agent debate 模式的开源参考，适合做阶段 3 的 prototype。
-- **LlamaIndex Knowledge Graph Index**：把论文的 entities（材料、参数、单位、设备）抽成 KG 后，再生成时可以用 KG 约束 "Pb₀.₉₈La₀.₀₂" 等命名实体 —— 解决病 2 的另一条路径。
-- **Sakana AI Scientist** 的 reviewer prompt：直接复用其 review checklist（novelty / soundness / clarity / contribution）作为阶段 3 的 critic 角色 baseline。
+Stages 1 and 2 are confirmed by upstream evidence; stages 3 and 4 should not block
+v1.4. LangGraph is rejected for our deterministic pipeline. Cost budget revised
+upward (the original +30% estimate for the critic was unrealistic — plan for
++100%). The build-in-house bias is intentional: paper2md's value is in being a
+focused, audit-friendly pipeline. Adding heavy framework dependencies works
+against that.
 
-## 决定点
+## Adjacent OSS to consider as light-touch tools (no integration commitment)
 
-v1.3.x 已经在布局上做到了"无可见 bug"。内容优化是更深的、更值得投入的方向。建议下一轮投入 v1.4（阶段 1+2 ≈ 6 天）后回到 corpus 全量审，看是否能把内容审计的 3 类病一次降到 < 10% 出现率。
+- **LiteLLM** — already a transitive dep through Sakana / STORM. Could replace
+  our hand-rolled `llm/client.py` if we ever support more than 2 providers.
+  Right now overkill.
+- **Instructor + Pydantic** — replace ad-hoc `_normalize_chapter_summary` with
+  Pydantic models for typed LLM outputs. ~half a day, real win in robustness.
+  Could land in v1.4 if budget allows.
+- **Anthropic Citations API** — first-class grounded outputs (if we add Anthropic
+  as a provider). Eliminates Stage 1's need for an in-house retriever for that
+  provider. Defer; we don't currently support Anthropic.
 
-如果时间紧，**只做阶段 1 也是一次重大升级** —— 整个生成范式从"模板填空"变成"基于源回答"。
+## Open questions for maintainer
+
+1. **Embedding model choice** — `text-embedding-3-small` (OpenAI-compatible, costs
+   pennies per paper) vs. `bge-m3` (self-hosted via Ollama, free but adds infra).
+   Default to OpenAI-compatible; allow opt-out via env var.
+2. **Cost ceiling for critic loop** — currently a 15-chapter paper at +100%
+   means ~30 LLM calls instead of 15. Acceptable for production-quality output,
+   or do we gate the critic behind `--strict-mode`?
+3. **Multi-language stress test** — RAG over Chinese source docs needs CJK-aware
+   chunking (split on `。` not `.`). Need to validate before claiming "works
+   for ZH papers".
+
+Maintainer to greenlight before implementation begins.
