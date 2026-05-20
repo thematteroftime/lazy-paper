@@ -197,6 +197,40 @@ LANG_INSTRUCTIONS = {
 }
 
 
+def _legacy_compose(llm, system_tpl, user_tpl, paper_context_str, node, idx,
+                    title_cn, title_en, guidance, hints, keywords,
+                    chapters_dir, fig_notes, figures, retriever,
+                    out_dir, basename) -> str:
+    """v1.3.x prompt-stuffed compose path. Used as agent fallback or when no PaperDB."""
+    if retriever is not None:
+        chunks = retriever.retrieve(guidance, top_k=8)
+        excerpts = "\n\n---\n\n".join(c.text for c in chunks)[:15000]
+    else:
+        excerpts = _relevant_chapter_excerpts(chapters_dir, keywords)
+    notes_block = _relevant_fig_notes(fig_notes, figures, keywords)
+    user_msg = (user_tpl
+                .replace("{paper_context}", paper_context_str)
+                .replace("{number}", str(node.get("number", idx + 1)))
+                .replace("{title_cn}", title_cn)
+                .replace("{title_en}", title_en)
+                .replace("{guidance}", guidance)
+                .replace("{needs_table}", str(hints.get("needs_table", False)))
+                .replace("{needs_figure}", str(hints.get("needs_figure", False)))
+                .replace("{chapter_excerpts}", excerpts)
+                .replace("{fig_notes_block}", notes_block))
+    (out_dir / f"{basename}.prompt.md").write_text(
+        f"# SYSTEM\n{system_tpl}\n\n# USER\n{user_msg}", encoding="utf-8"
+    )
+    response = llm.chat(system=system_tpl, user=user_msg, max_tokens=max_tokens(12000))
+    (out_dir / f"{basename}.response.json").write_text(
+        json.dumps({"model": response.model, "latency_ms": response.latency_ms,
+                    "usage": response.usage, "content": response.content},
+                   ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return response.content.strip()
+
+
 def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         fig_notes_dir: Path, figures_stage_dir: Path, out_dir: Path,
         lang: str = "zh") -> dict:
@@ -263,50 +297,67 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         hints = node.get("hints", {})
         keywords = re.findall(r"[A-Za-z一-鿿]{3,}", f"{title_cn} {guidance}")
 
-        # v1.4: retriever query (top-8 hybrid) replaces keyword excerpts
-        if retriever is not None:
-            entity_spans = []
-            if kg is not None:
-                entity_spans = [e.source_span for e in kg.entities
-                                if any(k.lower() in e.text.lower() for k in keywords)]
-            chunks = retriever.retrieve(guidance, top_k=8, entity_spans=entity_spans)
-            excerpts = "\n\n---\n\n".join(c.text for c in chunks)[:15000]
-        else:
-            excerpts = _relevant_chapter_excerpts(chapters_dir, keywords)
-
-        notes_block = _relevant_fig_notes(fig_notes, figures, keywords)
-
-        user_msg = (user_tpl
-                    .replace("{paper_context}", paper_context_str)
-                    .replace("{number}", str(node.get("number", idx + 1)))
-                    .replace("{title_cn}", title_cn)
-                    .replace("{title_en}", title_en)
-                    .replace("{guidance}", guidance)
-                    .replace("{needs_table}", str(hints.get("needs_table", False)))
-                    .replace("{needs_figure}", str(hints.get("needs_figure", False)))
-                    .replace("{chapter_excerpts}", excerpts)
-                    .replace("{fig_notes_block}", notes_block))
-
         slug = slugify(title_cn, maxlen=30)
         basename = f"{idx + 1:02d}-{slug}"
-        (out_dir / f"{basename}.prompt.md").write_text(
-            f"# SYSTEM\n{system_tpl}\n\n# USER\n{user_msg}", encoding="utf-8"
-        )
-        response = llm.chat(system=system_tpl, user=user_msg, max_tokens=max_tokens(12000))
-        (out_dir / f"{basename}.response.json").write_text(
-            json.dumps({"model": response.model, "latency_ms": response.latency_ms,
-                        "usage": response.usage, "content": response.content},
-                       ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        composed = response.content.strip()
 
-        # v1.4: observe-only critic
+        # v1.4.0: section agent (with KG + retriever); fall back on failure
+        composed: str
+        if retriever is not None and kg is not None:
+            try:
+                from stages.s08_section_compose.agent import run_section_agent
+                prior_bullet = written[-1] if written else ""
+                composed = run_section_agent(
+                    section={"title": title_cn, "guidance": guidance},
+                    kg=kg, retriever=retriever,
+                    prior_bullet=prior_bullet, max_iters=8,
+                )
+            except Exception as exc:
+                print(f"[s08] agent failed for {basename}: {exc!r}; legacy compose",
+                      flush=True)
+                composed = _legacy_compose(
+                    llm, system_tpl, user_tpl, paper_context_str, node, idx,
+                    title_cn, title_en, guidance, hints, keywords,
+                    chapters_dir, fig_notes, figures, retriever,
+                    out_dir, basename,
+                )
+        else:
+            composed = _legacy_compose(
+                llm, system_tpl, user_tpl, paper_context_str, node, idx,
+                title_cn, title_en, guidance, hints, keywords,
+                chapters_dir, fig_notes, figures, retriever,
+                out_dir, basename,
+            )
+
+        # Critic — regex tier always; LLM tier only when flags > 0
+        flags = []
         if kg is not None:
             flags = regex_check(composed, source_docs, kg=kg, fig_yaml=figures)
             if flags:
-                all_flags[basename] = [f.model_dump() for f in flags]
-                print(f"[critic-observe] {basename}: {len(flags)} flags", flush=True)
+                from stages.s08_section_compose.reviewer import llm_review
+                evidence = "\n".join(
+                    f"[{c.doc_name}] {c.text[:200]}"
+                    for c in (retriever.retrieve(guidance, top_k=4) if retriever else [])
+                )
+                try:
+                    rev = llm_review(composed, flags, evidence)
+                    composed = rev.revised_draft
+                    flags2 = regex_check(composed, source_docs, kg=kg, fig_yaml=figures)
+                    if flags2:
+                        all_flags[basename] = [f.model_dump() for f in flags2]
+                        print(f"[critic-unresolved] {basename}: {len(flags2)} flags",
+                              flush=True)
+                except Exception as exc:
+                    all_flags[basename] = [f.model_dump() for f in flags]
+                    print(f"[critic-llm-failed] {basename}: {exc!r}; keeping flags",
+                          flush=True)
+
+        # v1.5 stub
+        from stages.s08_section_compose.findings import (
+            extract_claims, append_verified_claims,
+        )
+        append_verified_claims(
+            out_dir=out_dir, section_name=basename, claims=extract_claims(composed),
+        )
 
         md_file = out_chapters / f"{basename}.md"
         heading = f"# {title_cn}\n\n"
@@ -321,6 +372,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         "sections": len(written),
         "retriever": "ok" if retriever else "degraded",
         "kg": "ok" if kg else "missing",
+        "agent": "ok" if (kg and retriever) else "degraded",
         "flagged_sections": len(all_flags),
     })
     return {"sections": len(written)}
