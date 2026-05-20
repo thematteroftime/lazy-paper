@@ -10,16 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.4.0] — 2026-05-20
 
 ### Added
-- Section composer agent (`pydantic-ai-slim`) with 4 tools: `query_kg`, `retrieve`, `check_source`, `emit_section`.
-- Reviewer LLM tier (`instructor` + `CritiqueRevision`) with dimensional scoring.
+- Reviewer LLM tier (`instructor` + `CritiqueRevision`) with dimensional scoring; revises drafts when regex flags appear, soft-accepts when revision fails.
 - Vendored Onyx `citation_processor.py` (MIT) at `llm/citation/stream_processor.py`; see `THIRD_PARTY_NOTICES.md`.
 - Citation rendering in DOCX + HTML with 3 modes (HYPERLINK / KEEP / REMOVE).
 - `--debug-citations` CLI flag exposes `[span:...]` markers.
 - `findings.yaml` per-paper memory (write-only stub for v1.5).
+- Embeddings role inherits `LLM_VISION_*` credentials when `LLM_EMBEDDINGS_*` is absent (DashScope shares its endpoint).
+- Section composer agent (`pydantic-ai-slim`) with 4 tools (`query_kg`, `retrieve`, `check_source`, `emit_section`) — **experimental, gated behind `LAZY_PAPER_AGENT=1`**.
 
 ### Changed
-- s08 default path: agent loop (max 8 iters) → reviewer regex → reviewer LLM if flagged → write.
-- Soft-degrade per-section: agent failure falls back to v1.3.4 legacy compose; reviewer failure soft-accepts the draft.
+- s08 default path: retriever-fed prompt-stuffed compose → regex critic → LLM revise (when flagged) → write. The agent loop is kept in-tree but gated; live runs showed it occasionally emitting meta-commentary, so the retriever upgrade alone delivers the content win.
+- Reviewer regex: compound units (`°C/s`, `K/s`) no longer false-match bare `°C`/`K`; OCR digit-spacing (`0 . 0 3 6`) and LaTeX escapes (`\%`, `\$`) normalized before search.
+- KG extraction `max_tokens` raised from 8000 to 16000 (avoids `instructor.IncompleteOutputException` on dense-content papers).
+- s08 `done.yaml` `agent` field reports `enabled`/`disabled` based on the env opt-in instead of always reading `ok`.
+
+### Validated
+- 13-paper corpus (3 known-defect + 10 random): 0 pipeline crashes, 195/195 sections, 13/13 KG ok, 13/13 retriever ok, 13/13 renders. 29 critic-flagged instances across all papers — all verified as real LLM numeric drift, not false positives.
+- Known v1.3 defects fixed: yang2025 no longer fabricates `Wrec=8.6 J/cm³ at η=85%`; meng2024 ch10 now captures `tape-casting` and adds source-grounded grain-size data.
 
 ### Compatibility
 - Hard cutover; rollback = `git checkout v1.3.4` or `v1.3.3`.
