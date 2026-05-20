@@ -234,23 +234,25 @@ def _legacy_compose(llm, system_tpl, user_tpl, paper_context_str, node, idx,
                     chapters_dir, fig_notes, figures, retriever,
                     out_dir, basename, lang: str = "zh",
                     prior_findings: str = "", kg=None) -> str:
-    """v1.3.x prompt-stuffed compose path. Used as agent fallback or when no PaperDB.
+    """Prompt-stuffed section composer with expanded retrieval (default v1.4.2+).
 
-    Env knobs (all opt-in):
-      LAZY_PAPER_QUERY_EXPAND=1  Strategy C — expanded query + top_k 15 + 25K context
-      LAZY_PAPER_TWO_STEP=1      Strategy B — outline → expand pipeline (2 LLM calls/section)
+    Query is built from section title + guidance + KG-scoped entity texts;
+    top_k=15 with up to 25K char excerpt context. This consistently outperformed
+    the narrower v1.4.1 default on the meng2024 4-way A/B comparison (chapters
+    averaged 1932 vs 1791 bytes, with the fewest critic flags).
+
+    Env knobs (opt-in only):
+      LAZY_PAPER_TWO_STEP=1  experimental — outline → expand pipeline (2 LLM
+                             calls/section). Caused per-section size regression
+                             on meng2024; kept for further development.
     """
-    expand_query = os.environ.get("LAZY_PAPER_QUERY_EXPAND") == "1"
     two_step = os.environ.get("LAZY_PAPER_TWO_STEP") == "1"
-    top_k = 15 if expand_query else 8
-    excerpt_cap = 25000 if expand_query else 15000
 
     chunks_for_two_step = []
     if retriever is not None:
-        query = (_build_retrieval_query(title_cn, guidance, kg, keywords)
-                 if expand_query else guidance)
-        chunks_for_two_step = retriever.retrieve(query, top_k=top_k)
-        excerpts = "\n\n---\n\n".join(c.text for c in chunks_for_two_step)[:excerpt_cap]
+        query = _build_retrieval_query(title_cn, guidance, kg, keywords)
+        chunks_for_two_step = retriever.retrieve(query, top_k=15)
+        excerpts = "\n\n---\n\n".join(c.text for c in chunks_for_two_step)[:25000]
     else:
         excerpts = _relevant_chapter_excerpts(chapters_dir, keywords)
 

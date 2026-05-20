@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] — 2026-05-20
+
+### Changed
+- **Expanded retrieval is now the default** for s08 section composition.
+  The retrieval query is built from `section title + guidance + KG-scoped
+  entity texts + keywords` rather than just `guidance`; `top_k` is 15
+  (was 8); the excerpt context cap is 25K chars (was 15K). In a 4-way
+  meng2024 A/B test this produced the largest, most complete chapters
+  (avg 1932 bytes vs the v1.4.1 default's 1791) with the fewest critic
+  flags (1 vs 3). `LAZY_PAPER_QUERY_EXPAND=1` is no longer needed — and
+  no longer recognized.
+
+### Added (env-gated, experimental)
+- **`LAZY_PAPER_COVERAGE=1`** — per-section KG entity coverage check.
+  `stages/s08_section_compose/coverage.py` scopes the KG to entities
+  whose tokens overlap the section title/guidance, then flags
+  in-scope entities missing from the draft (`entity_coverage_missing`
+  Flag problem). The LLM critic revises to bring them back. Useful
+  scaffolding for v1.5 once the KG extractor is taught to harvest
+  competitor literature benchmarks (see `docs/v1_5_test_cases.md`).
+- **`LAZY_PAPER_TWO_STEP=1`** — experimental outline → expand pipeline.
+  Step 1: instructor → `SectionOutline` Pydantic. Step 2: expand each
+  outline point with its pinned chunks. **Currently regresses chapter
+  size** on meng2024 (avg dropped 1791→1259) because the per-point
+  char budget is treated as a ceiling. Kept in tree for further
+  development; do not enable in production.
+
+### Documented
+- `docs/v1_5_test_cases.md` — research scenarios for the three known
+  regressions that no current strategy fixes: competitor-literature
+  recovery (Jiang/Ma/Zhang/Tang in meng2024 ch01), cross-chapter
+  numeric drift (meng2024 ch06 `5.1` vs ch10 `5.00`), depth loss on
+  comparison sections (ali2025_flash ch14). Each scenario names the
+  root cause and the candidate strategy (D section-aware queries,
+  E richer KG extraction, F whole-paper coherence pass).
+
 ## [1.4.1] — 2026-05-20
 
 ### Added
