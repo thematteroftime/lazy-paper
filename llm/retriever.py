@@ -24,6 +24,8 @@ class Chunk:
     doc_name: str
     char_start: int
     char_end: int
+    parent_id: str | None = None   # Strategy H: link child → parent chunk
+    is_parent: bool = False         # Strategy H: True for parent (~2000 char) chunks
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -47,7 +49,9 @@ def _embed_texts(texts: list[str]) -> np.ndarray:
 
 class Retriever:
     def __init__(self) -> None:
-        self.chunks: list[Chunk] = []
+        self.chunks: list[Chunk] = []          # children (indexed; what we search)
+        self.parents: list[Chunk] = []         # Strategy H: rich-context parents
+        self._parents_by_id: dict[str, Chunk] = {}
         self.vectors: np.ndarray | None = None
         self.bm25: bm25s.BM25 | None = None
 
@@ -56,52 +60,97 @@ class Retriever:
               overlap: int | None = None) -> Path:
         # Strategy G: env-overridable chunk size + overlap.
         # Defaults 400/80 give precise retrieval; 2000/400 give richer context.
+        # Strategy H: LAZY_PAPER_HIERARCHICAL=1 builds both child (precise)
+        # and parent (rich-context) chunks; retrieve() auto-merges children
+        # to their parent when ≥2 children of the same parent are ranked
+        # together.
         if chunk_size is None:
             chunk_size = int(os.environ.get("LAZY_PAPER_CHUNK_SIZE", "400"))
         if overlap is None:
             overlap = int(os.environ.get("LAZY_PAPER_CHUNK_OVERLAP",
                                           str(min(400, chunk_size // 5))))
-        splitter = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
+        hierarchical = os.environ.get("LAZY_PAPER_HIERARCHICAL") == "1"
+        parent_size = int(os.environ.get("LAZY_PAPER_PARENT_SIZE", "2000"))
+        parent_overlap = int(os.environ.get("LAZY_PAPER_PARENT_OVERLAP", "200"))
+
+        child_splitter = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
+        parent_splitter = (SentenceSplitter(chunk_size=parent_size,
+                                            chunk_overlap=parent_overlap)
+                           if hierarchical else None)
+
         docs: list[Document] = []
-        doc_offsets: dict[str, int] = {}
         for p in sorted(chapters_dir.glob("chapter_*.md")):
             text = p.read_text(encoding="utf-8")
             docs.append(Document(text=text, doc_id=p.name,
                                  metadata={"doc_name": p.name}))
-            doc_offsets[p.name] = 0
 
-        nodes: list[TextNode] = splitter.get_nodes_from_documents(docs)
-        self.chunks = []
+        # Build parent chunks first (if hierarchical) so children can be assigned.
+        parents: list[Chunk] = []
+        parent_offsets: dict[str, int] = {}
+        if hierarchical and parent_splitter is not None:
+            parent_nodes = parent_splitter.get_nodes_from_documents(docs)
+            for i, n in enumerate(parent_nodes):
+                doc_name = n.metadata.get("doc_name", "unknown")
+                start = parent_offsets.get(doc_name, 0)
+                end = start + len(n.text)
+                parent_offsets[doc_name] = end
+                parents.append(Chunk(
+                    id=f"p{i:04d}", text=n.text, doc_name=doc_name,
+                    char_start=start, char_end=end, is_parent=True,
+                ))
+
+        # Build child chunks.
+        nodes: list[TextNode] = child_splitter.get_nodes_from_documents(docs)
+        children: list[Chunk] = []
+        doc_offsets: dict[str, int] = {}
         for i, n in enumerate(nodes):
             doc_name = n.metadata.get("doc_name", "unknown")
             start = doc_offsets.get(doc_name, 0)
             end = start + len(n.text)
             doc_offsets[doc_name] = end
-            self.chunks.append(Chunk(
-                id=f"c{i:04d}",
-                text=n.text,
-                doc_name=doc_name,
-                char_start=start,
-                char_end=end,
+            parent_id = None
+            if hierarchical:
+                # find the parent whose char range contains this child's midpoint
+                mid = (start + end) // 2
+                for p in parents:
+                    if p.doc_name == doc_name and p.char_start <= mid < p.char_end:
+                        parent_id = p.id
+                        break
+            children.append(Chunk(
+                id=f"c{i:04d}", text=n.text, doc_name=doc_name,
+                char_start=start, char_end=end, parent_id=parent_id,
             ))
 
-        texts = [c.text for c in self.chunks]
+        # Only children are embedded + BM25-indexed (precise matching).
+        # Parents are looked up by id during retrieve() for merge-up.
+        self.chunks = children
+        self.parents = parents
+        self._parents_by_id = {p.id: p for p in parents}
+        texts = [c.text for c in children]
         self.vectors = _embed_texts(texts)
 
         self.bm25 = bm25s.BM25()
-        self.bm25.index(bm25s.tokenize([c.text for c in self.chunks]))
+        self.bm25.index(bm25s.tokenize([c.text for c in children]))
 
         self._write_parquet(out_path)
         return out_path
 
     def _write_parquet(self, out_path: Path) -> None:
+        # Serialize children (with vectors) + parents (no vectors) into one table.
+        all_chunks = self.chunks + self.parents
+        n_children = len(self.chunks)
+        empty_vec = [0.0] * (self.vectors.shape[1] if self.vectors is not None and self.vectors.size else 0)
         tbl = pa.table({
-            "id": [c.id for c in self.chunks],
-            "text": [c.text for c in self.chunks],
-            "doc_name": [c.doc_name for c in self.chunks],
-            "char_start": [c.char_start for c in self.chunks],
-            "char_end": [c.char_end for c in self.chunks],
-            "vector": [v.tolist() for v in (self.vectors if self.vectors is not None else np.zeros((0, 0)))],
+            "id":         [c.id for c in all_chunks],
+            "text":       [c.text for c in all_chunks],
+            "doc_name":   [c.doc_name for c in all_chunks],
+            "char_start": [c.char_start for c in all_chunks],
+            "char_end":   [c.char_end for c in all_chunks],
+            "parent_id":  [c.parent_id or "" for c in all_chunks],
+            "is_parent":  [c.is_parent for c in all_chunks],
+            "vector":     [v.tolist() for v in (self.vectors if self.vectors is not None
+                                                else np.zeros((0, 0)))]
+                          + [empty_vec for _ in self.parents],
         })
         pq.write_table(tbl, out_path)
 
@@ -109,12 +158,24 @@ class Retriever:
     def load(cls, parquet_path: Path) -> "Retriever":
         tbl = pq.read_table(parquet_path).to_pylist()
         r = cls()
-        r.chunks = [
-            Chunk(id=row["id"], text=row["text"], doc_name=row["doc_name"],
-                  char_start=row["char_start"], char_end=row["char_end"])
-            for row in tbl
-        ]
-        r.vectors = np.asarray([row["vector"] for row in tbl], dtype=np.float32)
+        children: list[Chunk] = []
+        parents: list[Chunk] = []
+        child_vectors: list[list[float]] = []
+        for row in tbl:
+            parent_id = row.get("parent_id") or None
+            is_parent = bool(row.get("is_parent", False))
+            ch = Chunk(id=row["id"], text=row["text"], doc_name=row["doc_name"],
+                       char_start=row["char_start"], char_end=row["char_end"],
+                       parent_id=parent_id, is_parent=is_parent)
+            if is_parent:
+                parents.append(ch)
+            else:
+                children.append(ch)
+                child_vectors.append(row["vector"])
+        r.chunks = children
+        r.parents = parents
+        r._parents_by_id = {p.id: p for p in parents}
+        r.vectors = np.asarray(child_vectors, dtype=np.float32)
         r.bm25 = bm25s.BM25()
         r.bm25.index(bm25s.tokenize([c.text for c in r.chunks]))
         return r
@@ -157,8 +218,34 @@ class Retriever:
                         rrf[idx] = rrf.get(idx, 0.0) + 0.05  # decisive bump
                         break
 
-        ranked = sorted(rrf.items(), key=lambda kv: -kv[1])[:top_k]
-        return [self.chunks[i] for i, _ in ranked]
+        # Take a wider initial ranking so the auto-merge has material to fold.
+        merge_k = top_k * 2 if self._parents_by_id else top_k
+        ranked = sorted(rrf.items(), key=lambda kv: -kv[1])[:merge_k]
+        ranked_chunks = [self.chunks[i] for i, _ in ranked]
+
+        # Strategy H auto-merge: when 2+ children of the same parent appear
+        # in the wider top-K, return the parent text once (preserving the
+        # rank of its highest-scoring child) instead of two children.
+        if not self._parents_by_id:
+            return ranked_chunks[:top_k]
+        parent_hits: dict[str, int] = {}
+        for c in ranked_chunks:
+            if c.parent_id:
+                parent_hits[c.parent_id] = parent_hits.get(c.parent_id, 0) + 1
+        result: list[Chunk] = []
+        emitted_parents: set[str] = set()
+        for c in ranked_chunks:
+            if c.parent_id and parent_hits.get(c.parent_id, 0) >= 2:
+                if c.parent_id not in emitted_parents:
+                    parent = self._parents_by_id.get(c.parent_id)
+                    if parent:
+                        result.append(parent)
+                        emitted_parents.add(c.parent_id)
+            else:
+                result.append(c)
+            if len(result) >= top_k:
+                break
+        return result[:top_k]
 
     def check_claim(self, claim: str, expected_value: str | None = None) -> dict:
         """Substring lookup across all chunks. Returns {found, span, evidence}."""
