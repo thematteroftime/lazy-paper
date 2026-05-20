@@ -457,32 +457,37 @@ def _single_compose(
 
 
 def _merge_drafts(drafts: list["SectionDraft"], max_claims: int = 14) -> "SectionDraft":
-    """Strategy K: union-merge multiple drafts.
+    """Strategy K: union-merge multiple drafts via round-robin interleave.
 
-    Greedy: accept claims in order, skipping any whose cited_chunk_ids are
-    a subset of an already-accepted claim's IDs (the existing claim
-    already covers that evidence). Caps at max_claims.
+    Take the i-th claim from each draft in turn (1st-from-run1, 1st-from-run2,
+    2nd-from-run1, 2nd-from-run2, ...). Dedupe only on near-identical prose
+    (first 120 chars); preserve claims whose chunk-ID sets overlap but whose
+    text differs substantively — those are exactly the case where different
+    sampling runs cite the same chunk but pick different facts from it.
 
-    This preserves coverage from EACH run while removing direct duplicates
-    — the bet is that different sampling runs cite different comparator
-    chunks, and union-merging them lifts the per-paper recovery.
+    Caps at max_claims (SectionDraft's enforced upper bound is 14).
+    Falls back to the first draft if dedup leaves < 2 claims.
     """
-    accepted_claims: list[GroundedClaim] = []
-    seen_id_sets: list[frozenset[int]] = []
-    for d in drafts:
-        for c in d.claims:
-            id_set = frozenset(c.cited_chunk_ids)
-            # skip if a prior accepted claim already cites a superset of these IDs
-            if any(id_set <= s and id_set for s in seen_id_sets):
+    if not drafts:
+        raise ValueError("no drafts to merge")
+    interleaved: list[GroundedClaim] = []
+    seen_text_keys: set[str] = set()
+    max_len = max(len(d.claims) for d in drafts)
+    for i in range(max_len):
+        for d in drafts:
+            if i >= len(d.claims):
                 continue
-            accepted_claims.append(c)
-            seen_id_sets.append(id_set)
-            if len(accepted_claims) >= max_claims:
-                return SectionDraft(claims=accepted_claims)
-    if len(accepted_claims) < 2:
-        # Fall back to whatever the first draft produced rather than failing
+            c = d.claims[i]
+            key = c.text.strip()[:120]
+            if key in seen_text_keys:
+                continue
+            seen_text_keys.add(key)
+            interleaved.append(c)
+            if len(interleaved) >= max_claims:
+                return SectionDraft(claims=interleaved)
+    if len(interleaved) < 2:
         return drafts[0]
-    return SectionDraft(claims=accepted_claims)
+    return SectionDraft(claims=interleaved)
 
 
 def compose_structured(
