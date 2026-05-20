@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-05-20
+
+Whitespace-vs-truncate audit. v1.3.1 left 42% of section-divider bullets ending
+with `…` while substantial vertical whitespace remained on the card. v1.3.2
+flips the trade-off — prefer **wrap to 2-3 lines** over single-line truncation.
+
+### Changed
+
+- `_BULLET_CAP_TABLE` recalibrated for every density to enable multi-line wrap.
+  Each density's per-bullet box has > 2 line-heights of room; caps are now sized
+  to ≈ 2-3 wrapped lines rather than 1:
+
+  | n_bullets | font | row_h | old (CJK/ASCII) | new (CJK/ASCII) |
+  |---|---|---|---|---|
+  | 1 | 16pt | 3.40" | n/a (no key) | (150, 300) — up to 4 lines |
+  | 2 | 16pt | 1.70" | n/a | (115, 225) |
+  | 3 | 16pt | 1.13" | (60, 110) | (100, 200) |
+  | 4 | 16pt | 0.85" | (60, 110) | (80, 150) |
+  | 5 | 15pt | 0.68" | (55, 100) | (80, 160) |
+  | 6 | 14pt | 0.57" | (50, 90)  | (90, 180) |
+  | 7 | 13pt | 0.49" | (50, 95)  | (95, 190) |
+
+- `_split_full_obs` `max_chars` now defaults proportionally to target (target=1
+  → 500 chars; target=2 → 320; target=3 → 220). Single-observation figure
+  slides now carry full s07 vision-LLM analysis instead of being clipped.
+
+### Verified
+
+- **Section-divider ellipsis rate dropped from 42% → 2.9%** (15 of 521 bullets
+  across the 10-paper corpus). The remaining 15 truncations are legitimate
+  overflows beyond the 2-line-wrap budget.
+- Visual review of yang2025 §2 (7 bullets, all wrap to 2 lines, no ellipsis,
+  no whitespace), fu2020 §1.1 combined slide (4 full bullets + 3 full obs),
+  meng2024, chai2026 confirms wrap behavior is clean.
+
+### Tests
+
+189 passing (unchanged). 4 tests updated to reflect new cap table:
+`test_bullet_caps_table_progression`, `test_truncate_bullet_dense_card`,
+`test_section_divider_bullets_are_length_capped`,
+`test_bug5_dense_bullet_cap_loosened`.
+
 ## [1.3.1] - 2026-05-20
 
 Hardening release based on a per-slide audit of the v1.3.0 output across an
@@ -200,7 +242,8 @@ Initial public release of lazy-paper.
 - `SlidePlanner`: deterministic slide layout logic, no IO, accepts optional LLM summaries and outline
 - `LLM` client: OpenAI-compatible; two roles (`vision`, `text`) configured via `models.yaml` and env vars
 
-[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.2
 [1.3.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.1
 [1.3.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.0
 [1.2.2]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.2.2

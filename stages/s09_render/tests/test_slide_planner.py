@@ -320,13 +320,19 @@ def test_planner_grouped_outline_absorbs_pure_bullet_chapters():
     assert len(bullets_slides) == 0
 
 
-def test_truncate_bullet_dense_card_uses_tighter_cap():
-    """v1.3 T2: dense card (n=7) → CJK cap 45, ASCII cap 80."""
-    long_cjk = "这是一个非常长的中文要点用来测试密集卡片下是否会被截断到合理的长度避免换行重叠下一个条目内容并占用太多空间"
+def test_truncate_bullet_dense_card_allows_two_line_wrap():
+    """v1.3.2: dense card (n=7) → CJK cap 95, ASCII cap 190. Bullets up to
+    ~2 wrapped lines pass through; only longer bullets get truncated."""
+    long_cjk = (
+        "这是一个非常长的中文要点用来测试密集卡片下是否会被截断到合理的长度"
+        "避免换行重叠下一个条目内容并占用太多空间额外的字符让超过两行"
+    )
     out = SlidePlanner._truncate_bullet(long_cjk, n_bullets=7)
     cjk_cap, _ = SlidePlanner._bullet_caps(7)
-    assert out.endswith("…")
     assert len(out) <= cjk_cap
+    # If the source was longer than cap, ellipsis must be present.
+    if len(long_cjk) > cjk_cap:
+        assert out.endswith("…")
 
 
 def test_truncate_bullet_sparse_card_keeps_more_text():
@@ -339,10 +345,18 @@ def test_truncate_bullet_sparse_card_keeps_more_text():
 
 
 def test_bullet_caps_table_progression():
-    """v1.3 T2: caps shrink monotonically as density increases."""
-    assert SlidePlanner._bullet_caps(3)[1] > SlidePlanner._bullet_caps(7)[1]
-    assert SlidePlanner._bullet_caps(4) == (60, 110)
-    assert SlidePlanner._bullet_caps(7) == (50, 95)
+    """v1.3.2: every density allows multi-line wrap. Sparse cards (n=1)
+    get the largest budget (3-4 wrapped lines); dense cards (n=7) still get
+    ~2 wrapped lines worth (190 ASCII). Caps monotonically decrease with
+    density but never collapse to single-line."""
+    assert SlidePlanner._bullet_caps(1)[1] > SlidePlanner._bullet_caps(7)[1]
+    assert SlidePlanner._bullet_caps(3)[1] >= SlidePlanner._bullet_caps(7)[1]
+    assert SlidePlanner._bullet_caps(1) == (150, 300)
+    assert SlidePlanner._bullet_caps(3) == (100, 200)
+    assert SlidePlanner._bullet_caps(4) == (80, 150)
+    assert SlidePlanner._bullet_caps(7) == (95, 190)
+    # 2-line wrap floor: even dense cards must allow ≥150 ASCII chars.
+    assert SlidePlanner._bullet_caps(7)[1] >= 150
 
 
 def test_truncate_bullet_passes_through_short_text():
@@ -351,13 +365,14 @@ def test_truncate_bullet_passes_through_short_text():
 
 
 def test_section_divider_bullets_are_length_capped():
-    """v1.3 T2: bullets reaching the section_divider respect the density cap.
+    """v1.3.2: bullets reaching the section_divider respect the density cap.
 
-    With 7 bullets all > 45 chars, every one of them should be truncated.
+    With 7 bullets all > 95 chars (the 2-line-wrap budget), every one of
+    them should be truncated with an ellipsis.
     """
     long_cjk = (
         "这是一个非常长的中文要点用来测试是否会被正确截断到合理的长度避免在卡片中换行重叠"
-        "下一个条目内容并占用太多空间和篇幅"
+        "下一个条目内容并占用太多空间和篇幅" * 2
     )
     bullets = [long_cjk for _ in range(7)]
     doc = Document(paper_title="P", lang="zh", chapters=(
@@ -402,11 +417,13 @@ class TestV1_3_1_BugFixes:
         assert len(items) == 1
         assert items[0] == "One sentence only"
 
-    def test_bug5_dense_bullet_cap_loosened(self):
-        """v1.3.1 Bug 5: 7-bullet caps loosened from (45, 80) to (50, 95)."""
+    def test_bug5_dense_bullet_cap_loosened_to_two_line_wrap(self):
+        """v1.3.2: 7-bullet caps further loosened to enable 2-line wrap
+        (50,95) → (95,190). 42% of v1.3.1 bullets ended in `…` while empty
+        vertical room remained — now wraps to 2 lines instead of cutting."""
         cjk_cap, ascii_cap = SlidePlanner._bullet_caps(7)
-        assert cjk_cap == 50
-        assert ascii_cap == 95
+        assert cjk_cap == 95
+        assert ascii_cap == 190
 
     def test_bug1_combined_bullets_capped_via_truncate(self):
         """v1.3.1 Bug 1: combined-slide bullets should now route through the

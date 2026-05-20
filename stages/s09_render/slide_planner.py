@@ -285,34 +285,54 @@ class SlidePlanner:
     # full thought; dense cards trim more aggressively since the renderer also
     # scales the font down (16→13pt) and the card height is fixed.
     #
-    #   n_bullets   CJK cap   ASCII cap   Font
-    #   ≤4          60        110         16 pt
-    #   5           55        100         15 pt
-    #   6           50        90          14 pt
-    #   ≥7          45        80          13 pt
+    # v1.3.2 strategy: PREFER WRAP OVER TRUNCATE. Every bullet has at least
+    # 2-line vertical room (verified empirically — at the chosen font size,
+    # 2 × line_h fits inside row_h with margin). Cap budgets the bullet to
+    # 2-3 wrapped lines so dense cards (n=6,7) carry ~180-190 ASCII chars,
+    # not 95. The v1.3.1 audit showed 42% truncation with the previous caps
+    # while visible whitespace remained.
+    #
+    #   n   row_h     Font   chars/line   wrap     CJK   ASCII
+    #   1   3.40"     16 pt  ≈75 ASCII    4 lines  150   300
+    #   2   1.70"     16 pt  ≈75          3 lines  115   225
+    #   3   1.13"     16 pt  ≈75          3 lines  100   200
+    #   4   0.85"     16 pt  ≈75          2 lines  80    150
+    #   5   0.68"     15 pt  ≈80          2 lines  80    160
+    #   6   0.57"     14 pt  ≈90          2 lines  90    180
+    #   7   0.49"     13 pt  ≈95          2 lines  95    190
     _BULLET_CAP_TABLE: ClassVar[dict[int, tuple[int, int]]] = {
-        4: (60, 110),
-        5: (55, 100),
-        6: (50, 90),
-        7: (50, 95),  # v1.3.1 Bug 5: was (45, 80) — too tight, mid-formula cuts
+        1: (150, 300),
+        2: (115, 225),
+        3: (100, 200),
+        4: (80, 150),
+        5: (80, 160),
+        6: (90, 180),
+        7: (95, 190),
     }
 
     @classmethod
     def _bullet_caps(cls, n_bullets: int) -> tuple[int, int]:
-        key = max(4, min(7, n_bullets))
+        key = max(1, min(7, n_bullets))
         return cls._BULLET_CAP_TABLE[key]
 
     @staticmethod
-    def _split_full_obs(text: str, target: int = 3, max_chars: int = 220) -> list[str]:
+    def _split_full_obs(text: str, target: int = 3, max_chars: int | None = None) -> list[str]:
         """Split a long deep_observation into target items for slide display.
 
         v1.3.1 Bug 3a: when chapter LLM didn't enumerate figure_observations
         for a given figure, the previous fallback `[text[:200]]` discarded
         most of the 600-900 chars produced by s07 figure_analyze. This splits
-        on sentence boundaries (`. ` and `。`) into up to `target` chunks,
-        each ≤ `max_chars`. Returns at least one non-empty item if text is
-        non-empty.
+        on sentence boundaries (`. ` and `。`) into up to `target` chunks.
+
+        v1.3.2: max_chars scales with target — fewer items → each gets a
+        larger budget so the figure-only slide doesn't waste vertical room.
+
+           target=1 → 500 chars (single rich block)
+           target=2 → 320 chars
+           target=3 → 220 chars (current)
         """
+        if max_chars is None:
+            max_chars = {1: 500, 2: 320, 3: 220}.get(target, 220)
         if not text:
             return []
         # Sentence split.
