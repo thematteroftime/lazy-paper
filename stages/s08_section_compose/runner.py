@@ -520,7 +520,13 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
 
         # Critic — regex tier always; coverage critic (Strategy A) gated by env.
         flags = []
-        if kg is not None:
+        # v1.6: when Strategy J ran, the verifier gate already validated each
+        # claim's quote against its cited chunk. Running the regex critic +
+        # LLM revisor on top would falsely flag numbers that ARE in source
+        # (in LaTeX form) and the LLM critic would "fix" by deleting them —
+        # destroying the structured compose's grounded content. Skip the
+        # redundant critic when structured succeeded.
+        if kg is not None and not structured_used:
             flags = regex_check(composed, source_docs, kg=kg, fig_yaml=figures)
 
             # Strategy A: coverage critic — flag in-scope KG entities missing from draft
