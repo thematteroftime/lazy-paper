@@ -89,3 +89,23 @@ def test_llm_review_score_validation():
             quote_fidelity=5,  # out of range
             grounding=4, synthesis_depth=3, notes="",
         )
+
+
+# v1.4 live-run hardening: regression tests for false-positive critic flags.
+
+def test_compound_unit_not_flagged_as_bare():
+    """1000 °C in draft is OK when source has 1000 °C/s (the rate)."""
+    draft = "Heating rate reached 1000 °C/s during flash annealing."
+    source = {"doc_1.md": "achieved 1000 °C/s heating rate"}
+    flags = regex_check(draft, source, kg=_kg(), fig_yaml=[])
+    # neither side should produce a bare "1000 °C" match
+    assert all(f.claim != "1000 °C" for f in flags), \
+        f"compound unit °C/s should not match bare °C: {flags}"
+
+
+def test_ocr_spaced_number_matched_in_source():
+    """Source has '0 . 0 3 6 %' (OCR artifact); draft has '0.036 %' — must match."""
+    draft = "Microscopic strain ε = 0.036 %."
+    source = {"doc_1.md": "strain values: $0 . 0 3 6 \\%$ for CA process"}
+    flags = regex_check(draft, source, kg=_kg(), fig_yaml=[])
+    assert flags == [], f"OCR-spaced source should match: {flags}"

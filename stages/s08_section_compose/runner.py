@@ -374,12 +374,13 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
     if all_flags:
         dump_yaml(out_dir / "critic_flags.yaml", all_flags)
 
+    agent_enabled = os.environ.get("LAZY_PAPER_AGENT") == "1"
     dump_yaml(out_dir / "written.yaml", written)
     mark_done(out_dir, {
         "sections": len(written),
         "retriever": "ok" if retriever else "degraded",
         "kg": "ok" if kg else "missing",
-        "agent": "ok" if (kg and retriever) else "degraded",
+        "agent": "enabled" if (agent_enabled and kg and retriever) else "disabled",
         "flagged_sections": len(all_flags),
     })
     return {"sections": len(written)}

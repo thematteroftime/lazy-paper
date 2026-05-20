@@ -30,23 +30,40 @@ class Flag(BaseModel):
 
 _NUM_UNIT = re.compile(
     r"(?<![A-Za-z\d])([-+]?\d+(?:\.\d+)?)\s*"
-    r"(kV/cm|MV/cm|J/cm[³³3]|mJ/cm[³³3]|%|K\b|°?C\b|kHz|MHz)"
+    r"(kV/cm|MV/cm|J/cm[³³3]|mJ/cm[³³3]|%|K(?![A-Za-z/])|°?C(?![A-Za-z/])|kHz|MHz)"
 )
 _FIG_REF = re.compile(r"\bFig\.\s*\d+[a-z]?\b")
 _FORMULA = re.compile(
     r"\b(Vogel[- ]Fulcher|Curie[- ]Weiss|Maxwell[- ]Wagner|Lorentz|Debye)\b"
 )
 
+# OCR backends sometimes emit numbers with single spaces between digits
+# ("0 . 0 3 6 %") and LaTeX-style escapes preserved from the PDF math layer
+# ("$0.036 \\%$"). We collapse both before the regex search so the source
+# match isn't lost to those artifacts. Applied iteratively so chains like
+# "0 . 0 3 6" fully fold even after the first pass leaves "0. 036".
+_OCR_DIGIT_SPACE = re.compile(r"(?<=[\d.])\s+(?=[\d.])")
+_LATEX_NOISE = re.compile(r"\\(?=[%$&_^{}])")
+
+
+def _normalize_source(text: str) -> str:
+    prev = None
+    cur = text
+    while prev != cur:
+        prev, cur = cur, _OCR_DIGIT_SPACE.sub("", cur)
+    return _LATEX_NOISE.sub("", cur)
+
 
 def _source_contains_value(source_docs: dict[str, str], val_unit: str) -> str | None:
     """Search source for a numerically equal value-with-unit. Returns evidence snippet."""
     for doc_name, text in source_docs.items():
-        for m in _NUM_UNIT.finditer(text):
+        normalized = _normalize_source(text)
+        for m in _NUM_UNIT.finditer(normalized):
             candidate = f"{m.group(1)} {m.group(2)}"
             if units_equal(val_unit, candidate):
                 start = max(0, m.start() - 40)
-                end = min(len(text), m.end() + 40)
-                return f"[{doc_name}] ...{text[start:end]}..."
+                end = min(len(normalized), m.end() + 40)
+                return f"[{doc_name}] ...{normalized[start:end]}..."
     return None
 
 
