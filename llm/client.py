@@ -53,9 +53,17 @@ class LLM:
         cfg = roles[role]
         prefix = cfg["env_prefix"]
         api_key = os.environ.get(f"{prefix}_API_KEY")
+        base_url = os.environ.get(f"{prefix}_BASE_URL", cfg["default_base_url"])
+        # Fallback: inherit credentials from a sibling role when configured.
+        # Useful when the embeddings role shares an endpoint (e.g. DashScope)
+        # with the vision role and the user has only one key set.
+        fallback_prefix = cfg.get("fallback_env_prefix")
+        if not api_key and fallback_prefix:
+            api_key = os.environ.get(f"{fallback_prefix}_API_KEY")
+            if not os.environ.get(f"{prefix}_BASE_URL"):
+                base_url = os.environ.get(f"{fallback_prefix}_BASE_URL", base_url)
         if not api_key:
             raise RuntimeError(f"missing env var {prefix}_API_KEY")
-        base_url = os.environ.get(f"{prefix}_BASE_URL", cfg["default_base_url"])
         self.model = os.environ.get(f"{prefix}_MODEL", cfg["default_model"])
         self.supports_images = bool(cfg.get("supports_images", False))
         self._client = OpenAI(api_key=api_key, base_url=base_url)

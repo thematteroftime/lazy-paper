@@ -15,6 +15,7 @@ text:
   supports_images: false
 embeddings:
   env_prefix: LLM_EMBEDDINGS
+  fallback_env_prefix: LLM_VISION    # share DashScope creds with vision role
   default_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-  default_model: text-embedding-3-small
+  default_model: text-embedding-v3   # Qwen series via DashScope
   supports_images: false
