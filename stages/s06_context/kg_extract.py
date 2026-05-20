@@ -49,7 +49,7 @@ def _extract_via_llm(system: str, user: str) -> PaperKG:
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        max_tokens=max_tokens(16000),
+        max_tokens=max_tokens(32000),
         temperature=0.0,
         max_retries=2,
     )
