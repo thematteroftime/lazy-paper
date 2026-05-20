@@ -31,9 +31,9 @@ PDF  +  outline.docx                    ┌─▶ preview.docx
         │                               │
         ▼                               │
   OCR ▶ clean ▶ chapter ▶ figures ▶ ────┼─▶ preview.pdf
-  template ▶ context ▶ figure-LLM ▶ ────┼─▶ preview.html
-  section-LLM ▶ render ────────────────┼─▶ preview.pptx
-                                        │   (academic-defense style)
+  template ▶ context+KG ▶ figure-LLM ──┼─▶ preview.html
+  retriever ▶ section-agent ▶ reviewer ┼─▶ preview.pptx
+  ▶ citation ▶ render ────────────────┼─▶   (academic-defense style)
                                         ▼
                                   runs/<paper-id>/s09_render/
 ```
@@ -115,17 +115,25 @@ Output lands at `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`.
 | LLM client | `openai>=1.50` | OpenAI-compatible — one config, any provider |
 | Default text LLM | [DeepSeek-Reasoner](https://api-docs.deepseek.com/) | chain-of-thought analysis quality |
 | Default vision LLM | [Qwen-VL-Max](https://help.aliyun.com/zh/dashscope/) | figure understanding |
+| KG extraction | `instructor` | typed Pydantic LLM output; 10-type closed-schema entity/relation extraction |
+| Retrieval | `llama-index-core`, `llama-index-retrievers-bm25`, `bm25s` | chunk + dense + BM25 + RRF hybrid retrieval |
+| Section agent | `pydantic-ai-slim[openai]` | typed tool-calling agent for section composition (env-gated) |
+| Parquet I/O | `pyarrow` | PaperDB storage (paper_kg.parquet, retrieval.parquet) |
 | Templates | `python-docx`, `jinja2` | parse outline `.docx`, render HTML |
 | Renderers | `python-docx`, `python-pptx`, `weasyprint`, `jinja2` | one stateless renderer per format |
 | Config | `pyyaml`, `python-dotenv` | YAML artifacts + `.env` credentials |
 | HTTP | `requests` | OCR API calls |
-| Dev | `pytest>=8` | 189 tests |
+| Dev | `pytest>=8` | 225 tests |
 
-## Quality controls (v1.3)
+## Quality controls (v1.4)
 
 - **Quantitative validation**: every PPT chapter bullet must carry ≥1 numeric anchor; closing-slide takes ≥3 quantitative bullets + a comparative takeaway. Enforced post-LLM via regex; non-conforming responses trigger retry.
 - **Critique-vs-description**: figure observations rejected when all-descriptive ("shows / depicts") with no critique markers ("limitation / missing / should").
 - **Layout robustness**: outline rows are dynamically sized to wrap-count; KEY POINTS bullet font + length scale with density (16pt ↔ 13pt); figure observation height shrinks rather than overflows.
+- **Closed 10-type KG**: `instructor`-driven extraction of material / dopant / parameter / value / unit / figure / table / claim / method / comparator entities — every extracted entity carries a `source_span` tying it back to the exact passage.
+- **Hybrid retrieval (RRF + entity boost)**: dense cosine + BM25 sparse results fused via Reciprocal Rank Fusion; chunks overlapping with KG entity spans are boosted, pulling relevant passages toward top-8 evidence.
+- **Observe-only regex critic + LLM critic**: after composition, `reviewer.regex_check()` flags numeric, figure, and unit mismatches. In v1.4 the LLM critic (`instructor` + `CritiqueRevision`) runs only when regex flags appear — minimizing cost while targeting the highest-risk prose.
+- **Citation markers rendered or stripped by mode**: `[span:...]` markers are stripped by default (clean prose); pass `--debug-citations` to expose them for attribution auditing.
 - **Single env knob to cap LLM cost**: `LLM_MAX_TOKENS_CEILING` (default 40000) clamps every call site.
 
 ## CLI reference
@@ -158,7 +166,7 @@ For OCR: `OCR_BACKEND=mineru` (recommended for figure-heavy papers) or `OCR_BACK
 ## Tests
 
 ```bash
-uv run pytest -q          # 189 tests
+uv run pytest -q          # 225 tests
 uv run pytest -m live     # live LLM smoke tests (real keys)
 ```
 
@@ -183,6 +191,7 @@ uv run pytest -m live     # live LLM smoke tests (real keys)
 | File | Audience |
 |---|---|
 | [`README.md`](README.md) · [`README.zh.md`](README.zh.md) | First-time user (EN / ZH) |
+| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | End user — setup, quickstart, iteration, troubleshooting |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Maintainer — per-stage contracts |
 | [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) | AI coding agent — workflow + anti-patterns |
 | [`docs/INTERNAL/HANDOFF.md`](docs/INTERNAL/HANDOFF.md) | Next maintainer — verified state + change-locations |

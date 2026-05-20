@@ -5,7 +5,7 @@ This document is written for an AI coding agent (Claude Code, Cursor, Copilot, e
 ## TL;DR for agents
 
 1. **Don't touch `runs/`** unless the user explicitly asks you to clean it. It's the verified-test corpus.
-2. **Always run `uv run pytest -q` before and after any change**. If you break tests, fix them or revert. 158 should pass; live-LLM tests are gated behind `-m live`.
+2. **Always run `uv run pytest -q` before and after any change**. If you break tests, fix them or revert. 225 should pass; live-LLM tests are gated behind `-m live`.
 3. **Use `LLM_MAX_TOKENS_CEILING` env var to cap spend** in test runs (e.g. `LLM_MAX_TOKENS_CEILING=4000` for fast smoke tests).
 4. **Don't bypass `llm.client.max_tokens()`**. All LLM calls go through it. Bumping a hardcoded `max_tokens=N` is a regression.
 5. **Prompt edits require `_PROMPT_VERSION` bumps** in `stages/s09_render/pptx_summarizer.py` (or equivalent in other LLM stages) — otherwise cached responses won't invalidate.
@@ -95,6 +95,112 @@ Then read the PNGs via the Read tool to inspect.
 
 ---
 
+## v1.4 workflow patterns
+
+### When to re-run KG extraction vs reuse it
+
+`paper_kg.parquet` is written once by s06 and **survives `--force` on s06** by design. KG extraction is a full-paper LLM call; re-running it costs ~1 API call per paper and takes 15–30 seconds. Delete the file explicitly to force re-extraction:
+
+```bash
+rm runs/<paper_id>/s06_context/paper_kg.parquet
+uv run python -m cli run ... --only s06_context --force
+```
+
+When to re-extract:
+- The `kg_extract.py` prompt or schema changed (bump schema version).
+- A paper produced a `kg_extract.failed` marker that you believe is spurious (e.g. transient API error).
+- You manually edited chapter text and want the KG to reflect the edit.
+
+When to leave it alone:
+- Re-running s08 with `--force` (the KG is unchanged; only evidence retrieval and composition run fresh).
+- Bumping `_CHAPTER_PROMPT_VERSION` in pptx_summarizer (that only invalidates the s09 cache, not the KG).
+
+`retrieval.parquet` follows the same rule: it survives `--force` on s08 unless explicitly deleted or `retrieval.failed` is present.
+
+### Debugging retriever quality
+
+To inspect what evidence a section would receive without running the full pipeline:
+
+```python
+uv run python -c "
+from llm.retriever import Retriever
+r = Retriever.load('runs/<paper_id>/s08_section_compose/retrieval.parquet')
+hits = r.retrieve('your query here', top_k=8)
+for h in hits:
+    print(h.score, h.text[:120])
+"
+```
+
+If hits look irrelevant, check:
+1. Was `retrieval.parquet` built from the correct chapter set? (check `done.yaml` in s08 for `retriever` field)
+2. Is the query text close to actual section guidance? Use the template's guidance string verbatim.
+3. Is KG entity boost helping or hurting? Try `entity_boost=[]` to isolate dense+BM25 baseline.
+
+If `retrieval.failed` is present, s08 has already logged `[degraded] keyword fallback for <paper>` — check that the embedding API key (`LLM_EMBEDDINGS_API_KEY`, which auto-inherits from `LLM_VISION_API_KEY` if unset) is valid.
+
+### Interpreting critic_flags.yaml
+
+`s08_section_compose/critic_flags.yaml` is produced by `reviewer.regex_check()` after each section is composed. Format:
+
+```yaml
+- section: "Introduction"
+  flags:
+    - span: [42, 55]
+      claim: "8.6 J/cm³"
+      problem: numeric_not_in_source
+      evidence: null
+    - span: [120, 132]
+      claim: "Fig. 99"
+      problem: fig_not_in_yaml
+      evidence: null
+```
+
+**In v1.3.4**: the critic is observe-only. Flags are recorded but do not trigger rewriting. Use `critic_flags.yaml` to audit s08 output quality before upgrading to v1.4.
+
+**In v1.4.0**: if `LAZY_PAPER_AGENT=0` (default), the regex tier still gates the LLM tier — `reviewer.llm_review()` only runs when `regex_check()` returns ≥1 flag. Check `critic_flags.yaml` to understand why an LLM critic revision was triggered.
+
+Problem codes and what they mean:
+
+| Code | Meaning |
+|---|---|
+| `numeric_not_in_source` | A numeric value (with unit) in the draft doesn't appear in any source chunk after unit normalization. |
+| `fig_not_in_yaml` | A `Fig. N` or `Table N` reference in the draft doesn't match any entry in `figures.yaml`. |
+| `formula_not_in_kg` | A chemical formula or symbol binding in the draft doesn't match any KG entity. |
+| `unit_mismatch` | Two values refer to the same quantity but with incompatible units (e.g. kV/cm vs MV/cm, failing normalization). |
+
+### Opting into the experimental pydantic-ai agent
+
+The section agent (`stages/s08_section_compose/agent.py`) is gated behind `LAZY_PAPER_AGENT=1`. To enable:
+
+```bash
+LAZY_PAPER_AGENT=1 uv run python -m cli run ... --only s08_section_compose --force
+```
+
+The agent runs up to 8 tool cycles per section (`query_kg`, `retrieve`, `check_source`, then `emit_section`). Each tool call is logged to stderr. Watch for:
+
+- `[degraded] agent fallback for <section>` — agent hit an error or iter cap; section was composed via legacy path.
+- Sections where the draft contains meta-commentary ("I will now synthesize…") — the agent returned prose about writing instead of actual section text. This is why the flag exists; the default path is stable.
+
+Do not enable `LAZY_PAPER_AGENT=1` in CI or automated batch runs until the agent output has been audited on your specific paper corpus.
+
+### Citation render modes and --debug-citations
+
+By default, `[span:doc_X:Y-Z]` citation markers are stripped from DOCX and HTML output (mode: `REMOVE`). To expose them for debugging:
+
+```bash
+uv run python -m cli run ... --debug-citations
+```
+
+This switches the citation adapter to `KEEP` mode, leaving markers in place as literal text. Use this when:
+
+- Auditing whether retrieved chunks are cited in the final prose.
+- Checking that `emit_section` correctly required ≥1 citation before accepting a draft.
+- Tracing a hallucination back to which retrieval chunk (or absence thereof) was responsible.
+
+PPTX speaker notes always carry the markers regardless of `--debug-citations`.
+
+---
+
 ## File map for orientation
 
 ```
@@ -105,10 +211,24 @@ llm/
   client.py                     # LLM class (OpenAI-compatible) + max_tokens() helper
   models.yaml                   # role -> env_prefix + default model
   prompts/*.md                  # one prompt per LLM call site
+  retriever.py                  # Retriever: build_index() + retrieve() (llama-index + bm25s + RRF)
+  citation/
+    stream_processor.py         # vendored Onyx citation processor (MIT)
+    __init__.py                 # CitationAdapter; mode switch for --debug-citations
 
 stages/_common/                 # shared helpers (yaml, paths, done-marker, images, bbox)
 stages/sNN_<name>/runner.py     # stage entrypoint; called by cli._run_one
 stages/sNN_<name>/tests/        # per-stage unit tests
+
+stages/s06_context/
+  runner.py                     # context.yaml + triggers kg_extract
+  kg_extract.py                 # instructor-driven 10-type KG → paper_kg.parquet
+
+stages/s08_section_compose/
+  runner.py                     # retriever-fed compose + reviewer orchestration
+  agent.py                      # pydantic-ai agent (LAZY_PAPER_AGENT=1)
+  reviewer.py                   # regex_check() + llm_review() (CritiqueRevision)
+  _units.py                     # unit normalization (kV/cm ↔ MV/cm, etc.)
 
 stages/s09_render/
   builder.py                    # markdown chapters -> immutable Document
@@ -121,6 +241,7 @@ stages/s09_render/
 docs/
   ARCHITECTURE.md               # per-stage contract (read after this file)
   AGENT_GUIDE.md                # you are here
+  USER_GUIDE.md                 # end-user runbook (setup, quickstart, iteration, troubleshooting)
   INTERNAL/HANDOFF.md           # production hand-off summary
   INTERNAL/superpowers/         # historical specs + plans
 
@@ -136,7 +257,7 @@ CONTRIBUTING.md                 # contribution norms
 
 ## When you're done
 
-1. `uv run pytest -q` → 158 pass, 2 deselected.
+1. `uv run pytest -q` → 225 pass, 2 deselected.
 2. End-to-end smoke on at least 2 papers (re-run `--only s09_render --force`).
 3. Update `CHANGELOG.md` Unreleased section.
 4. Commit with a clear message (explain the *why*, not just the *what*).

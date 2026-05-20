@@ -1,0 +1,286 @@
+# lazy-paper — User Guide
+
+## Who this is for
+
+You're a researcher (or their assistant) who has a scientific PDF and wants a structured, multi-format analysis document from it — without writing code. This guide walks you through setup, a first run, and how to iterate on the output.
+
+If you're an AI coding agent maintaining the repo, read `docs/AGENT_GUIDE.md` instead.
+
+---
+
+## First-time setup
+
+### 1. Install uv and Python
+
+lazy-paper uses [uv](https://github.com/astral-sh/uv) to manage its Python environment. You do **not** need a system Python install beyond what uv provides.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then clone the repo and set up the environment:
+
+```bash
+git clone https://github.com/thematteroftime/lazy-paper
+cd lazy-paper
+uv python install 3.11
+uv venv --python 3.11
+uv pip install -e ".[dev]"
+```
+
+### 2. System dependencies (macOS only)
+
+WeasyPrint (used for PDF output) needs native libraries:
+
+```bash
+brew install pango gdk-pixbuf libffi cairo
+```
+
+On Linux or Windows, use Docker instead:
+
+```bash
+docker compose build
+# then replace "uv run python -m cli run ..." with:
+docker compose run --rm lazy-paper run ...
+```
+
+### 3. Create your .env file
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` in a text editor and fill in the required tokens:
+
+| Variable | What it is | Where to get it |
+|---|---|---|
+| `MINERU_TOKEN` | MinerU cloud OCR API key | [mineru.net](https://mineru.net/) — free tier available |
+| `LLM_TEXT_API_KEY` | API key for the text LLM | [platform.deepseek.com](https://platform.deepseek.com/) or any OpenAI-compatible provider |
+| `LLM_VISION_API_KEY` | API key for the vision LLM | [dashscope.aliyun.com](https://dashscope.aliyun.com/) (Qwen-VL) |
+| `LLM_EMBEDDINGS_API_KEY` | API key for embeddings (v1.4+) | **Optional** — auto-inherits `LLM_VISION_API_KEY` if unset |
+
+You do not need a separate embeddings key if your vision provider supports `text-embedding-3-small`. DashScope (Qwen-VL provider) does, so the default `.env.example` leaves `LLM_EMBEDDINGS_API_KEY` blank.
+
+---
+
+## Five-minute quickstart
+
+Once your `.env` is filled in, run:
+
+```bash
+uv run python -m cli run \
+  --pdf "papers/your-paper.pdf" \
+  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \
+  --paper-id mypaper \
+  --lang zh \
+  --formats docx,pdf,html,pptx
+```
+
+Replace `papers/your-paper.pdf` with the path to your PDF. Replace the `--template` path with your section-outline `.docx` file (see the `templates/` folder for examples).
+
+Output lands at:
+
+```
+runs/mypaper/s09_render/
+  preview.docx
+  preview.pdf
+  preview.html
+  preview.pptx
+```
+
+The run takes 5–20 minutes depending on paper length and API latency. Each stage writes a `done.yaml` marker, so if the run is interrupted you can resume from where it stopped by running the same command again.
+
+---
+
+## Choosing an OCR backend
+
+| Backend | Flag | Best for | Notes |
+|---|---|---|---|
+| **MinerU** | `OCR_BACKEND=mineru` | Figure-heavy papers; multi-column layouts | Cloud API; requires `MINERU_TOKEN`; slightly slower |
+| **PaddleOCR-VL** | `OCR_BACKEND=paddleocr` | Text-heavy papers; fast turnaround | Cloud API; requires `PADDLEOCR_TOKEN`; default in `.env.example` |
+
+Set in `.env`, or override per-run:
+
+```bash
+OCR_BACKEND=mineru uv run python -m cli run ...
+```
+
+If your paper has many figures and the default PaddleOCR misses image bounding boxes, switch to MinerU.
+
+---
+
+## Choosing LLM providers
+
+lazy-paper uses any OpenAI-compatible endpoint. The defaults in `.env.example` are:
+
+- **Text LLM**: DeepSeek-Reasoner (chain-of-thought; good for analytical writing)
+- **Vision LLM**: Qwen-VL-Max via DashScope (strong figure understanding)
+
+To switch providers, edit these variables in `.env`:
+
+```
+LLM_TEXT_BASE_URL=https://api.deepseek.com/v1
+LLM_TEXT_MODEL=deepseek-reasoner
+LLM_TEXT_API_KEY=sk-...
+
+LLM_VISION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_VISION_MODEL=qwen-vl-max
+LLM_VISION_API_KEY=sk-...
+```
+
+Tested alternatives:
+- OpenAI: set `LLM_TEXT_BASE_URL=https://api.openai.com/v1`, `LLM_TEXT_MODEL=gpt-4o`
+- Self-hosted vLLM or Ollama: set `LLM_TEXT_BASE_URL=http://localhost:8000/v1`
+
+The vision LLM must support image input in the OpenAI messages format. The text LLM must support JSON-mode output.
+
+---
+
+## Iterating on output
+
+You don't need to re-run the whole pipeline to tweak the result. Each stage is independently re-runnable.
+
+### Inspect intermediate artifacts
+
+| Artifact | What it tells you |
+|---|---|
+| `runs/<id>/s03_chapter/chapters/` | How the PDF was split into chapters — check for mis-detected section boundaries |
+| `runs/<id>/s06_context/context.yaml` | The paper's title, research system, keywords, and abbreviations used in all downstream prompts |
+| `runs/<id>/s07_figure_analyze/fig_notes.yaml` | The vision-LLM's structured observation for each figure |
+| `runs/<id>/s08_section_compose/chapters/` | The LLM-written sections — this is the main content of DOCX/PDF/HTML |
+| `runs/<id>/s08_section_compose/critic_flags.yaml` | Quality flags raised by the regex critic (v1.4+) |
+
+### Re-run a single stage
+
+Use `--only` with `--force` to re-run just one stage:
+
+```bash
+# Re-run section composition without touching OCR or figure analysis
+uv run python -m cli run \
+  --pdf papers/mypaper.pdf \
+  --template template.docx \
+  --paper-id mypaper \
+  --only s08_section_compose \
+  --force
+
+# Re-render all formats from already-composed chapters
+uv run python -m cli run \
+  --pdf papers/mypaper.pdf \
+  --template template.docx \
+  --paper-id mypaper \
+  --only s09_render \
+  --force \
+  --formats docx,pdf,html,pptx
+```
+
+### Re-run a subset of stages
+
+```bash
+--only s08_section_compose,s09_render
+```
+
+Comma-separated stage names. Useful when you edit the template and want to re-compose + re-render without repeating OCR.
+
+### Full reset for one paper
+
+```bash
+rm -rf runs/mypaper/{s05_template,s08_section_compose,s09_render}
+uv run python -m cli run ... --paper-id mypaper
+```
+
+---
+
+## Troubleshooting
+
+### OCR missed a figure
+
+The figure image is in the PDF but didn't show up in the output.
+
+1. Check `runs/<id>/s04_figures/figures.yaml` — is the figure ID listed?
+2. If missing: switch OCR backend (`OCR_BACKEND=mineru` is better at detecting figures in dense layouts). Delete `s01_ocr/done.yaml` and re-run:
+   ```bash
+   rm runs/<id>/s01_ocr/done.yaml
+   OCR_BACKEND=mineru uv run python -m cli run ... --paper-id <id>
+   ```
+3. If present in `figures.yaml` but not in output: check `s07_figure_analyze/fig_notes.yaml` — did the vision LLM analyze it? If not, delete `s07_figure_analyze/done.yaml` and re-run:
+   ```bash
+   rm runs/<id>/s07_figure_analyze/done.yaml
+   uv run python -m cli run ... --paper-id <id> --only s07_figure_analyze,s08_section_compose,s09_render
+   ```
+
+### A chapter looks hallucinated
+
+The output section contains facts not found in the source paper.
+
+1. Check `runs/<id>/s08_section_compose/critic_flags.yaml` — look for `numeric_not_in_source` flags in that section.
+2. Read the corresponding `<slug>.prompt.md` to see what evidence was fed to the LLM.
+3. Check `runs/<id>/s06_context/context.yaml` — if the paper system/keyword field is wrong, it can bias generation. Delete `s06_context/done.yaml` and re-run context extraction.
+4. Delete the specific section's cached output and re-run s08 with `--force`:
+   ```bash
+   rm runs/<id>/s08_section_compose/chapters/<slug>.md
+   uv run python -m cli run ... --paper-id <id> --only s08_section_compose --force
+   ```
+
+### PPT layout looks wrong (bullets overflow or overlap)
+
+This is usually a rendering artifact from very long bullet text.
+
+1. Check `runs/<id>/s09_render/preview.pptx` — convert to PDF with LibreOffice and inspect:
+   ```bash
+   /Applications/LibreOffice.app/Contents/MacOS/soffice \
+     --headless --convert-to pdf --outdir /tmp/ \
+     runs/<id>/s09_render/preview.pptx
+   ```
+2. If bullets are too long, the section text in `s08_section_compose/chapters/` may have very long sentences. Re-run s08 with `--force` (the LLM is stochastic; a fresh call often produces shorter bullets).
+3. See `docs/PPT_KNOWN_ISSUES.md` for documented layout limitations and workarounds.
+
+### WeasyPrint segfaults on macOS
+
+This happens when Homebrew's native libraries aren't found.
+
+1. Verify the libraries are installed: `brew list | grep -E "pango|cairo|gdk"`.
+2. If installed but still crashing, run with the Docker image:
+   ```bash
+   docker compose build
+   docker compose run --rm lazy-paper run \
+     --pdf papers/mypaper.pdf --template template.docx \
+     --paper-id mypaper --formats docx,pdf,html,pptx
+   ```
+3. If you must run natively, ensure you're using `uv run` (not system Python). The system macOS Python 3.9 + WeasyPrint combination triggers segfaults reliably; uv's isolated Python 3.11 does not.
+
+---
+
+## Cost notes
+
+### Rough per-paper estimate
+
+For a typical 12-page materials science paper with 8 figures, using DeepSeek-Reasoner (text) + Qwen-VL-Max (vision) + DashScope embeddings:
+
+| Stage | LLM calls | Approximate cost |
+|---|---|---|
+| s06_context (context + KG) | 2 text calls | ~$0.02 |
+| s07_figure_analyze | 8 vision calls | ~$0.10–0.20 |
+| s08_section_compose (15 sections) | 15 text calls + 1 embedding | ~$0.30–0.60 |
+| s09_render (PPTX summarizer) | 17 text calls (outline + 15 + paper) | ~$0.20–0.40 |
+| **Total** | | **~$0.60–1.20 / paper** |
+
+Costs vary significantly with paper length, number of figures, and section count. Embeddings (for hybrid retrieval) are very cheap (~$0.001 for a full paper's worth of chunks).
+
+### Capping spend with LLM_MAX_TOKENS_CEILING
+
+Set `LLM_MAX_TOKENS_CEILING` in `.env` to cap every LLM call at a token budget:
+
+```
+LLM_MAX_TOKENS_CEILING=8000   # conservative
+LLM_MAX_TOKENS_CEILING=40000  # default (generous for DeepSeek-Reasoner's CoT)
+```
+
+Lowering this can cause truncated JSON responses in analytical stages (s08, s09). If you see empty or malformed output, raise the ceiling back toward 40000.
+
+### Reusing cached results
+
+Because each stage writes `done.yaml`, re-running the same paper after the first full run is nearly free — all stages are skipped. You only pay for LLM calls when:
+
+- You explicitly pass `--force`.
+- You delete a stage's `done.yaml` or output directory.
+- The PPTX summarizer's input hash changes (e.g. you changed the template, which changed the chapter titles fed to the outline LLM).
