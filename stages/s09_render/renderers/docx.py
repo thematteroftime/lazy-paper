@@ -69,7 +69,7 @@ class DocxRenderer(Renderer):
     def _write_paragraph(self, out, text: str, body_pt: float, set_ea: bool) -> None:
         p = out.add_paragraph()
         p.paragraph_format.first_line_indent = Cm(0.74)
-        self._apply_cn_font(p.add_run(text), size=body_pt, set_ea=set_ea)
+        self._apply_cn_font(p.add_run(self._process_text(text)), size=body_pt, set_ea=set_ea)
 
     def _write_figure_block(self, out, block: FigureBlock,
                             img_cm: float, set_ea: bool, lang: str) -> None:

@@ -16,7 +16,7 @@ class PdfRenderer(Renderer):
     extension: ClassVar[str] = "pdf"
 
     def render(self, doc: Document, out_path: Path) -> None:
-        html_str = HtmlRenderer().render_to_string(doc)
+        html_str = HtmlRenderer(citation_mode=self.citation_mode).render_to_string(doc)
         weasyprint.HTML(string=html_str).write_pdf(target=str(out_path))
 
 

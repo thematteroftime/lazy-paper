@@ -171,6 +171,7 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             lang=args.lang,
         )
     elif name == "s09_render":
+        from llm.citation import CitationMode
         formats = _resolve_formats_for_s09(args, out)
         _s09.run(
             compose_dir=stage_dir(run_root, paper_id, "s08_section_compose"),
@@ -185,6 +186,7 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             presenter=getattr(args, "presenter", None),
             affiliation=getattr(args, "affiliation", None),
             pptx_subtitle=getattr(args, "pptx_subtitle", None),
+            citation_mode=CitationMode.KEEP if getattr(args, "debug_citations", False) else CitationMode.REMOVE,
         )
 
 
@@ -220,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="Custom subtitle for title slide (default: derived from context.yaml keywords)")
     r.add_argument("--retry-failed", action="store_true",
                    help="In --only mode, re-run only the formats marked partial in done.yaml")
+    r.add_argument("--debug-citations", action="store_true",
+                   help="Keep [span:doc:start-end] citation markers in rendered output (default: strip)")
     args = ap.parse_args(argv)
 
     if args.cmd != "run":

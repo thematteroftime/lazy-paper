@@ -12,7 +12,7 @@
   <h2 class="chapter-heading">{{ ch.heading }}</h2>
   {% for block in ch.blocks %}
     {% if block.__class__.__name__ == 'Paragraph' %}
-      <p class="body-paragraph">{{ block.text }}</p>
+      <p class="body-paragraph">{{ render_paragraph(block.text) }}</p>
     {% elif block.__class__.__name__ == 'FigureBlock' %}
       <figure class="figure-block">
         {% for img_src in block_images(block) %}

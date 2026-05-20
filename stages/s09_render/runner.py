@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+from llm.citation import CitationMode
 from stages._common import load_yaml, mark_done
 from stages.s09_render.builder import DocumentBuilder
 from stages.s09_render.renderers import RENDERERS
@@ -69,7 +70,8 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
         pptx_template: Path | None = None,
         presenter: str | None = None,
         affiliation: str | None = None,
-        pptx_subtitle: str | None = None) -> dict:
+        pptx_subtitle: str | None = None,
+        citation_mode: CitationMode | None = None) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -89,6 +91,7 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
             raise ValueError(f"unknown format {fmt!r}; available: {sorted(RENDERERS)}")
         out_path = out_dir / f"preview.{fmt}"
         try:
+            effective_mode = citation_mode if citation_mode is not None else CitationMode.REMOVE
             if fmt == "pptx":
                 renderer = RENDERERS[fmt](summaries=summaries,
                                          outline=outline,
@@ -98,7 +101,7 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
                                          affiliation=affiliation,
                                          subtitle=resolved_subtitle)
             else:
-                renderer = RENDERERS[fmt]()
+                renderer = RENDERERS[fmt](citation_mode=effective_mode)
             renderer.render(doc, out_path)
             results[fmt] = str(out_path)
         except Exception as exc:

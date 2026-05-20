@@ -28,6 +28,7 @@ class HtmlRenderer(Renderer):
             autoescape=select_autoescape(["html", "j2"]),
         )
         env.globals["block_images"] = self._block_images
+        env.globals["render_paragraph"] = self._process_text
         styles = (_TEMPLATE_DIR / "styles.css").read_text(encoding="utf-8")
         template = env.get_template("preview.html.j2")
         return template.render(doc=doc, styles=styles)
