@@ -106,3 +106,63 @@ def regex_check(
                     break
 
     return flags
+
+
+# ─── LLM tier (v1.4.0) ───────────────────────────────────────────────────────
+
+from pydantic import Field
+import instructor
+from instructor import Mode
+
+from llm.client import LLM, max_tokens
+
+
+class CritiqueRevision(BaseModel):
+    revised_draft: str
+    quote_fidelity: int = Field(ge=1, le=4)
+    grounding: int = Field(ge=1, le=4)
+    synthesis_depth: int = Field(ge=1, le=4)
+    notes: str = ""
+
+
+_REVIEW_SYSTEM = """You are a strict factual reviewer for a single research paper.
+
+You will receive a draft section, a list of issues flagged by a regex critic,
+and the source evidence. Produce a revised draft that fixes each flagged issue
+by replacing the wrong value/reference with one that the evidence supports,
+or by removing the unsupported claim. Do NOT add new claims not in the evidence.
+
+Score quote_fidelity (1-4), grounding (1-4), synthesis_depth (1-4):
+- 4 = excellent, 1 = fails on this dimension.
+"""
+
+
+def _llm_review_call(draft: str, flags_text: str, evidence: str) -> CritiqueRevision:
+    llm = LLM(role="text")
+    client = instructor.from_openai(llm._client, mode=Mode.JSON)
+    return client.chat.completions.create(
+        model=llm.model,
+        response_model=CritiqueRevision,
+        messages=[
+            {"role": "system", "content": _REVIEW_SYSTEM},
+            {"role": "user", "content":
+                f"DRAFT:\n{draft}\n\nFLAGS:\n{flags_text}\n\nEVIDENCE:\n{evidence}"},
+        ],
+        max_tokens=max_tokens(8000),
+        temperature=0.1,
+        max_retries=2,
+    )
+
+
+def llm_review(draft: str, flags: list[Flag], evidence: str) -> CritiqueRevision:
+    """Run the LLM tier given regex flags + supporting evidence."""
+    if not flags:
+        return CritiqueRevision(
+            revised_draft=draft, quote_fidelity=4, grounding=4,
+            synthesis_depth=3, notes="no flags",
+        )
+    flags_text = "\n".join(
+        f"- {f.problem}: {f.claim}" + (f" (evidence: {f.evidence})" if f.evidence else "")
+        for f in flags
+    )
+    return _llm_review_call(draft, flags_text, evidence)

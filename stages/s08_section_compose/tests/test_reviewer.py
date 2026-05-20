@@ -59,3 +59,33 @@ def test_flag_has_evidence():
     assert flags
     assert flags[0].evidence is not None
     assert "348" in flags[0].evidence
+
+
+from unittest.mock import MagicMock, patch
+from stages.s08_section_compose.reviewer import (
+    CritiqueRevision, llm_review, Flag,
+)
+
+
+def test_llm_review_returns_pydantic_object():
+    flags = [Flag(span=(0, 10), claim="340 kV/cm", problem="numeric_not_in_source")]
+    fake = CritiqueRevision(
+        revised_draft="E_b reaches 348 kV/cm (per source).",
+        quote_fidelity=4, grounding=4, synthesis_depth=3,
+        notes="Corrected drift",
+    )
+    with patch("stages.s08_section_compose.reviewer._llm_review_call",
+               return_value=fake):
+        result = llm_review("E_b reaches 340 kV/cm.", flags, evidence="348 kV/cm in source")
+    assert result.revised_draft.startswith("E_b reaches 348")
+    assert 1 <= result.quote_fidelity <= 4
+
+
+def test_llm_review_score_validation():
+    import pytest
+    with pytest.raises(Exception):
+        CritiqueRevision(
+            revised_draft="x",
+            quote_fidelity=5,  # out of range
+            grounding=4, synthesis_depth=3, notes="",
+        )
