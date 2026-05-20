@@ -225,6 +225,126 @@ def test_render_strips_chunk_leak():
     assert "另一句" in out and "中文也要处理" in out
 
 
+def test_compose_structured_retries_when_required_all_missed(monkeypatch):
+    """v1.8: when the initial draft cites 0 required entities, a retry call
+    with a stronger 'you missed everything' system prompt should fire."""
+    from unittest.mock import MagicMock
+    from stages.s08_section_compose.structured import compose_structured
+
+    mock_llm = MagicMock()
+    mock_llm.model = "deepseek-chat"
+    mock_llm._client = MagicMock()
+
+    chunks = [
+        _make_chunk("r0", "Jiang et al. achieved 2.94 J/cm3 in Ca2+/Nb5+ system.",
+                    doc="doc_1.md", start=100, end=200),
+        _make_chunk("r1", "Generic background paragraph.",
+                    doc="doc_1.md", start=300, end=400),
+    ]
+    required = [
+        RequiredMention(
+            entity_text="Ca2+/Nb5+-codoped Bi0.5Na0.5TiO3",
+            entity_type="comparator", evidence_chunk_id=0,
+            evidence_quote="Jiang et al. achieved 2.94 J/cm3",
+            linked_values=["W_rec=2.94 J/cm³"], author_text="Jiang",
+        ),
+        RequiredMention(
+            entity_text="La(Mg1/2Zr1/2)O3", entity_type="comparator",
+            evidence_chunk_id=0, evidence_quote="Ma et al. 7.5 J/cm3",
+            linked_values=["W_rec=7.5 J/cm³"], author_text="Ma",
+        ),
+    ]
+    # First call: returns a draft that ignores the required mention.
+    bad_draft = SectionDraft(claims=[
+        GroundedClaim(text="Generic intro about AFE materials.",
+                      cited_chunk_ids=[1], cited_quote=""),
+        GroundedClaim(text="More generic content here.",
+                      cited_chunk_ids=[1], cited_quote=""),
+    ])
+    # Retry call: returns a draft that cites the required mention (chunk 0).
+    good_draft = SectionDraft(claims=[
+        GroundedClaim(text="Jiang et al. achieved W_rec=2.94 J/cm³ "
+                            "in Ca2+/Nb5+-codoped Bi0.5Na0.5TiO3.",
+                      cited_chunk_ids=[0],
+                      cited_quote="Jiang et al. achieved 2.94 J/cm3"),
+        GroundedClaim(text="Generic intro about AFE materials.",
+                      cited_chunk_ids=[1], cited_quote=""),
+        GroundedClaim(text="More generic content here.",
+                      cited_chunk_ids=[1], cited_quote=""),
+    ])
+    call_count = {"n": 0}
+    drafts = [bad_draft, good_draft]
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            d = drafts[call_count["n"]]
+            call_count["n"] += 1
+            return d
+    class _FakeChat:
+        completions = _FakeCompletions()
+    class _FakeClient:
+        chat = _FakeChat()
+
+    monkeypatch.setattr("instructor.from_openai",
+                        lambda client, mode=None: _FakeClient())
+
+    verified, _ = compose_structured(
+        mock_llm,
+        section_title="Introduction",
+        section_guidance="prior work",
+        lang_instruction="Chinese",
+        chunks=chunks,
+        required=required,
+        prior_findings="",
+    )
+    # 2 calls expected: initial + retry
+    assert call_count["n"] == 2
+    # Retry's good_draft should have been used (cites chunk 0)
+    assert any(0 in c.cited_chunk_ids for c in verified.claims)
+
+
+def test_compose_structured_no_retry_when_required_partially_covered(monkeypatch):
+    """Retry-when-empty only fires when ALL required are missed."""
+    from unittest.mock import MagicMock
+    from stages.s08_section_compose.structured import compose_structured
+
+    mock_llm = MagicMock()
+    mock_llm.model = "deepseek-chat"
+    mock_llm._client = MagicMock()
+    chunks = [_make_chunk("r0", "Jiang", "doc_1.md", 0, 10),
+              _make_chunk("r1", "Other", "doc_1.md", 100, 110)]
+    required = [
+        RequiredMention(entity_text="x", entity_type="comparator",
+                        evidence_chunk_id=0, evidence_quote="q", linked_values=[]),
+        RequiredMention(entity_text="y", entity_type="comparator",
+                        evidence_chunk_id=1, evidence_quote="q", linked_values=[]),
+    ]
+    # First (and only — no retry should fire) call cites chunk 0 → 1/2 covered
+    partial = SectionDraft(claims=[
+        GroundedClaim(text="Cites x", cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="Other content", cited_chunk_ids=[1], cited_quote=""),
+    ])
+    call_count = {"n": 0}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            call_count["n"] += 1
+            return partial
+    class _FakeChat:
+        completions = _FakeCompletions()
+    class _FakeClient:
+        chat = _FakeChat()
+    monkeypatch.setattr("instructor.from_openai",
+                        lambda client, mode=None: _FakeClient())
+
+    compose_structured(
+        mock_llm, section_title="Introduction", section_guidance="x",
+        lang_instruction="Chinese", chunks=chunks, required=required,
+    )
+    # 1 call only — partial coverage doesn't trigger retry
+    assert call_count["n"] == 1
+
+
 def test_compose_structured_uses_instructor_and_runs_verifier(monkeypatch):
     """End-to-end mock: instructor returns a SectionDraft, verifier filters,
     we get a verified draft back. No live LLM."""

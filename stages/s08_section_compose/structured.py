@@ -542,9 +542,10 @@ def compose_structured(
     else:
         # Strategy K: N independent samples at slightly varied temperatures
         # so the LLM picks different comparators across runs, then merge.
+        # Widened spread (was 0.15) to push more diversity into the pool.
         drafts: list[SectionDraft] = []
         for i in range(n):
-            temp = 0.2 + 0.15 * i  # 0.2, 0.35, 0.5...
+            temp = 0.2 + 0.2 * i  # 0.2, 0.4, 0.6...
             try:
                 drafts.append(_single_compose(
                     llm, _STRUCTURED_SYSTEM, user_msg, chunks,
@@ -556,6 +557,46 @@ def compose_structured(
                 # Otherwise tolerate a single failed sample
                 continue
         draft = _merge_drafts(drafts)
+
+    # v1.8 retry-when-empty: if the draft completely ignored the required
+    # mentions list (LLM sampling discretion — happened in 2/3 KL runs on
+    # meng2024), issue one more call with an explicit "you missed everything"
+    # amendment. Lifts the variance floor without raising the cost ceiling.
+    if required and len(required) >= 2:
+        still_missing = missing_required(required, draft)
+        # Trigger only when ALL required were ignored — partial coverage
+        # is much harder to "force-add" without disrupting good prose.
+        if len(still_missing) == len(required):
+            retry_system = _STRUCTURED_SYSTEM + (
+                "\n\n## CRITICAL — REQUIRED MENTIONS WERE NOT CITED\n"
+                "Your previous draft attempted this section but FAILED to "
+                "cite ANY of the required mentions listed below. This is the "
+                "single most important correction.\n\n"
+                "You MUST write a dedicated GroundedClaim for EACH required "
+                "mention in the user's 'Required mentions' block. For each:\n"
+                "  - Use the author's 'X et al.' form when author_text is "
+                "given\n"
+                "  - Quote or paraphrase the entity_quote into cited_quote\n"
+                "  - Set cited_chunk_ids to the evidence_chunk_id\n"
+                "  - Embed any linked_values verbatim in the prose\n\n"
+                "Do NOT skip any required mention. Output will be checked "
+                "automatically."
+            )
+            try:
+                retry_draft = _single_compose(
+                    llm, retry_system, user_msg, chunks,
+                    max_retries=max_retries, temperature=0.3,
+                )
+                retry_missing = missing_required(required, retry_draft)
+                if len(retry_missing) < len(still_missing):
+                    print(f"[s08] retry-when-empty: lifted coverage "
+                          f"from 0/{len(required)} to "
+                          f"{len(required) - len(retry_missing)}/{len(required)}",
+                          flush=True)
+                    draft = retry_draft
+            except Exception as exc:
+                print(f"[s08] retry-when-empty failed: {exc!r}; keeping "
+                      f"original draft", flush=True)
 
     chunks_by_id = {i: c for i, c in enumerate(chunks)}
     accepted, rejected = verify_section_draft(draft, chunks_by_id)
