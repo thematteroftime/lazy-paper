@@ -35,6 +35,14 @@ dependencies = [
     "jinja2>=3.1",
     "weasyprint>=62",
     "python-pptx>=0.6.23",
+    # v1.4: PaperDB + agent + reviewer
+    "llama-index-core>=0.11,<0.13",
+    "llama-index-retrievers-bm25>=0.4",
+    "bm25s>=0.2",
+    "instructor>=1.5",
+    "pydantic-ai-slim[openai]>=1.0,<2",
+    "pyarrow>=15",
+    "numpy>=1.26",
 ]
 
 [project.urls]
@@ -64,6 +72,7 @@ packages = [
     "stages.s09_render",
     "stages.s09_render.renderers",
     "llm",
+    "llm.citation",
 ]
 
 [tool.setuptools.package-data]

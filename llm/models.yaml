@@ -13,3 +13,8 @@ text:
   default_base_url: https://api.deepseek.com/v1
   default_model: deepseek-chat
   supports_images: false
+embeddings:
+  env_prefix: LLM_EMBEDDINGS
+  default_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  default_model: text-embedding-3-small
+  supports_images: false
