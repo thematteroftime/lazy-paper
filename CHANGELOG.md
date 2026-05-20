@@ -11,17 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Strategy K (best-of-N merge) + Strategy L (KG-v3 author extraction)
 
-Two new env-gated strategies; their combination (KL) is the new
-benchmark-recovery champion. Per the scriptable harness at
-`scripts/evaluate.py` (see `docs/TEST_FRAMEWORK.md`):
+Two new env-gated strategies. KL (their combination) **occasionally hits
+13/17** on the meng2024 benchmark-recovery test — matching v1.3.3's
+unconstrained-context baseline. But variance across runs is wide:
 
-| Test case | v1.6 J | **v1.7 KL** |
-|---|---|---|
-| meng2024 ch01 benchmark recovery | 9/17 | **13/17** |
-| meng2024 ch10 synthesis specificity | 4/5 | 2/5 ⚠ |
-| yang2025 ch01 fabrication resistance | 3/3 | 3/3 |
-| ali2025_flash ch14 comparison depth | 4/5 | 4/5 |
-| **Total** | **20/30** | **22/30** |
+**T1 (meng2024 ch01 benchmark recovery, 3 KL runs):**
+mean **5.0/17**, stdev **6.9**, range **1 – 13**.
+
+Compare to **J (3 prior runs)**: mean **6.3/16**, stdev **1.5**, range **5 – 8**.
+
+**KL is NOT the new default — J remains the better default.** KL ships
+as opt-in (`LAZY_PAPER_BEST_OF_N=2 LAZY_PAPER_KG_PROMPT=paper_kg_v3.md`)
+for users who want to roll for occasional 13/17 outputs.
+
+Full validation per-paper:
+
+| Test case | KL score |
+|---|---|
+| T1 meng2024 ch01 (3 runs) | 13 / 1 / 1 (mean 5.0) |
+| T2 yang2025 ch01 fabrication resistance | 3/3 ✓ |
+| T3 meng2024 ch10 synthesis specificity (3 runs) | 2 / 3 / 4 (mean 3.0) ⚠ |
+| T4 ali2025_flash ch14 comparison depth | 4/5 |
+| T5 fu2020 ch01 basic | 3/4 |
+| T6 chai2026 ch01 basic | 4/4 ✓ |
+
+See `docs/v1_7_validation_results.md` for full analysis + v1.8 candidates
+to address KL's high-variance floor.
 
 Enable in production:
 
