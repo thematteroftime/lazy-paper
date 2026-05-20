@@ -8,7 +8,10 @@ from pathlib import Path
 import yaml
 
 from llm.client import LLM, max_tokens
+from llm.paper_kg import PaperKG
+from llm.retriever import Retriever
 from stages._common import dump_yaml, mark_done, slugify
+from stages.s08_section_compose.reviewer import regex_check
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "section_compose.md"
 
@@ -223,21 +226,54 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
     user_tpl = user_tpl.replace("{lang_instruction}", lang_text)
     paper_context_str = yaml.safe_dump(context, allow_unicode=True, sort_keys=False)
 
+    # v1.4: PaperDB load (soft-degrade to v1.3.3 behavior on failure)
+    kg: PaperKG | None = None
+    retriever: Retriever | None = None
+    kg_path = context_dir / "paper_kg.parquet"
+    if kg_path.exists() and not (context_dir / "kg_extract.failed").exists():
+        try:
+            kg = PaperKG.from_parquet(kg_path)
+        except Exception as exc:
+            print(f"[s08] kg load failed: {exc!r}; degrading", flush=True)
+    retr_path = out_dir / "retrieval.parquet"
+    try:
+        if not retr_path.exists():
+            Retriever().build(chapters_dir=chapters_dir, out_path=retr_path)
+        retriever = Retriever.load(retr_path)
+    except Exception as exc:
+        print(f"[s08] retriever build failed: {exc!r}; using keyword fallback", flush=True)
+        retriever = None
+
+    # Source docs cache for reviewer
+    source_docs: dict[str, str] = {
+        p.name: p.read_text(encoding="utf-8")
+        for p in sorted(chapters_dir.glob("chapter_*.md"))
+    }
+
     llm = LLM(role="text")
     written: list[str] = []
+    all_flags: dict[str, list[dict]] = {}
+
     for idx, node in enumerate(template):
         title_cn = node["title"]
         title_en = node["title"]
         guidance = node.get("guidance", "")
-
-        # --- SUBSTITUTE {paper.X} placeholders BEFORE building the LLM prompt ---
         guidance = substitute_placeholders(guidance, paper_data)
         title_cn = substitute_placeholders(title_cn, paper_data)
-
         hints = node.get("hints", {})
         keywords = re.findall(r"[A-Za-z一-鿿]{3,}", f"{title_cn} {guidance}")
 
-        excerpts = _relevant_chapter_excerpts(chapters_dir, keywords)
+        # v1.4: retriever query (top-8 hybrid) replaces keyword excerpts
+        if retriever is not None:
+            entity_spans = []
+            if kg is not None:
+                entity_spans = [e.source_span for e in kg.entities
+                                if any(k.lower() in e.text.lower() for k in keywords)]
+            chunks = retriever.retrieve(guidance, top_k=8, entity_spans=entity_spans)
+            excerpts = "\n\n---\n\n".join(c.text for c in chunks)[:15000]
+        else:
+            excerpts = _relevant_chapter_excerpts(chapters_dir, keywords)
+
         notes_block = _relevant_fig_notes(fig_notes, figures, keywords)
 
         user_msg = (user_tpl
@@ -263,11 +299,28 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                        ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        composed = response.content.strip()
+
+        # v1.4: observe-only critic
+        if kg is not None:
+            flags = regex_check(composed, source_docs, kg=kg, fig_yaml=figures)
+            if flags:
+                all_flags[basename] = [f.model_dump() for f in flags]
+                print(f"[critic-observe] {basename}: {len(flags)} flags", flush=True)
+
         md_file = out_chapters / f"{basename}.md"
         heading = f"# {title_cn}\n\n"
-        md_file.write_text(heading + response.content.strip() + "\n", encoding="utf-8")
+        md_file.write_text(heading + composed + "\n", encoding="utf-8")
         written.append(md_file.name)
 
+    if all_flags:
+        dump_yaml(out_dir / "critic_flags.yaml", all_flags)
+
     dump_yaml(out_dir / "written.yaml", written)
-    mark_done(out_dir, {"sections": len(written)})
+    mark_done(out_dir, {
+        "sections": len(written),
+        "retriever": "ok" if retriever else "degraded",
+        "kg": "ok" if kg else "missing",
+        "flagged_sections": len(all_flags),
+    })
     return {"sections": len(written)}

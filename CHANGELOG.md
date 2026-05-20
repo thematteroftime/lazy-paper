@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.4] — 2026-05-20
+
+### Added
+- PaperKG extraction in s06_context (10-type closed schema via `instructor`).
+- Hybrid retriever (llama-index chunking + bm25s sparse + DashScope dense + RRF) in `llm/retriever.py`.
+- Reviewer regex tier (`stages/s08_section_compose/reviewer.py`) — observe-only, writes `critic_flags.yaml`.
+- `LLM_EMBEDDINGS_*` env vars (default DashScope `text-embedding-3-small`).
+
+### Changed
+- s08 evidence source: keyword-scored excerpts → top-8 hybrid retrieval (with KG entity-span boost).
+- s08 `done.yaml` now records `retriever`, `kg`, `flagged_sections`.
+
+### Compatibility
+- Soft-degrade on every new sub-step. Setting `LLM_EMBEDDINGS_API_KEY=` blank reverts s08 to v1.3.3 keyword behavior.
+- Rollback: `git checkout v1.3.3`.
+
 ## [1.3.3] - 2026-05-20
 
 Section-divider layout becomes truly dynamic. v1.3.2 prevented over-truncation
