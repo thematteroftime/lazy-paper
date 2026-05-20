@@ -18,6 +18,7 @@ Problem = Literal[
     "fig_not_in_yaml",
     "formula_not_in_kg",
     "unit_mismatch",
+    "entity_coverage_missing",  # Strategy A: source entity missing from draft
 ]
 
 

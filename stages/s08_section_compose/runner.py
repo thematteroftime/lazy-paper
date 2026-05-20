@@ -209,17 +209,69 @@ def _zh_ratio(text: str) -> float:
     return len(_CHINESE.findall(body)) / len(body)
 
 
+def _build_retrieval_query(title: str, guidance: str, kg, keywords: list[str]) -> str:
+    """Strategy C: expand the retrieval query beyond raw guidance.
+
+    Adds section title + (when KG is available) the text of any KG entity
+    whose tokens overlap the section title/guidance. This surfaces source
+    chunks the retriever might miss when guidance is short or generic.
+    """
+    parts = [title, guidance]
+    if kg is not None:
+        try:
+            from stages.s08_section_compose.coverage import entities_in_scope
+            scoped = entities_in_scope(title, guidance, kg)
+            # cap to first 20 entity texts to keep query bounded
+            parts.extend(e.text for e in scoped[:20])
+        except Exception:
+            pass
+    parts.extend(keywords[:10])
+    return " ; ".join(p for p in parts if p)
+
+
 def _legacy_compose(llm, system_tpl, user_tpl, paper_context_str, node, idx,
                     title_cn, title_en, guidance, hints, keywords,
                     chapters_dir, fig_notes, figures, retriever,
                     out_dir, basename, lang: str = "zh",
-                    prior_findings: str = "") -> str:
-    """v1.3.x prompt-stuffed compose path. Used as agent fallback or when no PaperDB."""
+                    prior_findings: str = "", kg=None) -> str:
+    """v1.3.x prompt-stuffed compose path. Used as agent fallback or when no PaperDB.
+
+    Env knobs (all opt-in):
+      LAZY_PAPER_QUERY_EXPAND=1  Strategy C — expanded query + top_k 15 + 25K context
+      LAZY_PAPER_TWO_STEP=1      Strategy B — outline → expand pipeline (2 LLM calls/section)
+    """
+    expand_query = os.environ.get("LAZY_PAPER_QUERY_EXPAND") == "1"
+    two_step = os.environ.get("LAZY_PAPER_TWO_STEP") == "1"
+    top_k = 15 if expand_query else 8
+    excerpt_cap = 25000 if expand_query else 15000
+
+    chunks_for_two_step = []
     if retriever is not None:
-        chunks = retriever.retrieve(guidance, top_k=8)
-        excerpts = "\n\n---\n\n".join(c.text for c in chunks)[:15000]
+        query = (_build_retrieval_query(title_cn, guidance, kg, keywords)
+                 if expand_query else guidance)
+        chunks_for_two_step = retriever.retrieve(query, top_k=top_k)
+        excerpts = "\n\n---\n\n".join(c.text for c in chunks_for_two_step)[:excerpt_cap]
     else:
         excerpts = _relevant_chapter_excerpts(chapters_dir, keywords)
+
+    # Strategy B short-circuits the rest of the prompt-stuffed path.
+    if two_step and retriever is not None and chunks_for_two_step:
+        from stages.s08_section_compose.two_step import compose_two_step
+        try:
+            composed = compose_two_step(
+                llm=llm, section_title=title_cn, section_guidance=guidance,
+                chunks=chunks_for_two_step, lang=lang,
+            )
+            (out_dir / f"{basename}.two_step.outline.md").write_text(
+                f"# Two-step compose used for {basename}\n", encoding="utf-8"
+            )
+            if composed.strip():
+                return composed
+            print(f"[s08] two-step compose returned empty for {basename}; "
+                  f"falling back to single-shot", flush=True)
+        except Exception as exc:
+            print(f"[s08] two-step compose failed for {basename}: {exc!r}; "
+                  f"falling back to single-shot", flush=True)
     notes_block = _relevant_fig_notes(fig_notes, figures, keywords)
     user_msg = (user_tpl
                 .replace("{paper_context}", paper_context_str)
@@ -369,7 +421,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                     title_cn, title_en, guidance, hints, keywords,
                     chapters_dir, fig_notes, figures, retriever,
                     out_dir, basename, lang=lang,
-                    prior_findings=prior_findings_block,
+                    prior_findings=prior_findings_block, kg=kg,
                 )
         else:
             composed = _legacy_compose(
@@ -377,13 +429,32 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                 title_cn, title_en, guidance, hints, keywords,
                 chapters_dir, fig_notes, figures, retriever,
                 out_dir, basename, lang=lang,
-                prior_findings=prior_findings_block,
+                prior_findings=prior_findings_block, kg=kg,
             )
 
-        # Critic — regex tier always; LLM tier only when flags > 0
+        # Critic — regex tier always; coverage critic (Strategy A) gated by env.
         flags = []
         if kg is not None:
             flags = regex_check(composed, source_docs, kg=kg, fig_yaml=figures)
+
+            # Strategy A: coverage critic — flag in-scope KG entities missing from draft
+            if os.environ.get("LAZY_PAPER_COVERAGE") == "1":
+                from stages.s08_section_compose.coverage import (
+                    entities_in_scope, coverage_missing, truncate_for_flag,
+                )
+                scope = entities_in_scope(title_cn, guidance, kg)
+                missing = truncate_for_flag(coverage_missing(composed, scope))
+                if missing:
+                    for e in missing:
+                        flags.append(Flag(
+                            span=(0, 0),
+                            claim=f"{e.type}: {e.text}",
+                            problem="entity_coverage_missing",
+                            evidence=f"[{e.source_span[0]}] (KG entity)",
+                        ))
+                    print(f"[critic-coverage] {basename}: {len(missing)} entities "
+                          f"in scope but missing from draft", flush=True)
+
             if flags:
                 from stages.s08_section_compose.reviewer import llm_review
                 evidence = "\n".join(
