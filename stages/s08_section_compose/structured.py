@@ -608,9 +608,31 @@ def missing_required(
     required: list[RequiredMention],
     draft: SectionDraft,
 ) -> list[RequiredMention]:
-    """Return the subset of `required` whose evidence_chunk_id is not cited
-    by ANY claim in `draft`. Used for the soft-warn audit log per design."""
-    cited: set[int] = set()
-    for c in draft.claims:
-        cited.update(c.cited_chunk_ids)
-    return [r for r in required if r.evidence_chunk_id not in cited]
+    """Return the subset of `required` whose ENTITY TEXT is not actually
+    present in the draft's prose.
+
+    Earlier (v1.7) impl checked whether the entity's `evidence_chunk_id`
+    was cited by any claim — but a claim can cite a chunk and still write
+    generic content that doesn't include the comparator. The content-based
+    check (substring + distinctive-token match + author-name match,
+    same logic as coverage.py) is the only reliable way to know if the
+    LLM ACTUALLY mentioned the required entity.
+    """
+    from stages.s08_section_compose.coverage import _distinctive_tokens
+    full_text = " ".join(c.text for c in draft.claims).lower()
+    out: list[RequiredMention] = []
+    for r in required:
+        ent_lower = r.entity_text.lower()
+        if ent_lower in full_text:
+            continue
+        distinctive = _distinctive_tokens(r.entity_text)
+        if distinctive and any(t in full_text for t in distinctive):
+            continue
+        if r.author_text:
+            # Word-boundary check to avoid e.g. "Ma" matching inside "materials"
+            import re as _re
+            if _re.search(rf"\b{_re.escape(r.author_text)}\b", full_text,
+                          flags=_re.IGNORECASE):
+                continue
+        out.append(r)
+    return out

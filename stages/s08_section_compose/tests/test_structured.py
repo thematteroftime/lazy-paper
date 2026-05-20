@@ -188,25 +188,33 @@ def test_select_top_required_prefers_distinctive_text():
 
 # ─── Day-2: compose pipeline + missing_required audit ────────────────────────
 
-def test_missing_required_audits_uncited_entities():
-    """If a required entity's evidence_chunk_id isn't cited by any claim,
-    it shows up in the missing_required audit."""
+def test_missing_required_audits_entities_not_in_prose():
+    """If a required entity's distinctive text is missing from the draft
+    prose, it shows up — even when the entity's evidence chunk WAS cited."""
     from stages.s08_section_compose.structured import missing_required
     required = [
-        RequiredMention(entity_text="Cited entity", entity_type="comparator",
-                        evidence_chunk_id=0, evidence_quote="q",
-                        linked_values=[]),
-        RequiredMention(entity_text="Uncited entity", entity_type="comparator",
-                        evidence_chunk_id=5, evidence_quote="q",
-                        linked_values=[]),
+        RequiredMention(
+            entity_text="Ca2+/Nb5+-codoped Bi0.5Na0.5TiO3",
+            entity_type="comparator", evidence_chunk_id=0,
+            evidence_quote="q", linked_values=[], author_text="Jiang",
+        ),
+        RequiredMention(
+            entity_text="some-other-rare-formula-XYZ",
+            entity_type="comparator", evidence_chunk_id=1,
+            evidence_quote="q", linked_values=[], author_text="Smith",
+        ),
     ]
+    # Draft cites BOTH chunks but only writes about the first comparator
     draft = SectionDraft(claims=[
-        GroundedClaim(text="Mentions chunk 0", cited_chunk_ids=[0], cited_quote=""),
-        GroundedClaim(text="Mentions chunk 1", cited_chunk_ids=[1], cited_quote=""),
+        GroundedClaim(
+            text="Jiang et al. reported W_rec=2.94 in Ca2+/Nb5+-codoped material.",
+            cited_chunk_ids=[0, 1], cited_quote=""),
+        GroundedClaim(text="Generic background paragraph.",
+                      cited_chunk_ids=[1], cited_quote=""),
     ])
     missing = missing_required(required, draft)
-    assert len(missing) == 1
-    assert missing[0].entity_text == "Uncited entity"
+    assert len(missing) == 1, f"expected 1 missing, got {len(missing)}"
+    assert missing[0].entity_text == "some-other-rare-formula-XYZ"
 
 
 def test_render_strips_chunk_leak():
