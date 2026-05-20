@@ -1,6 +1,7 @@
 """KG extraction sub-step of s06_context (one LLM call per paper)."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import instructor
@@ -9,8 +10,18 @@ from instructor import Mode
 from llm.client import LLM, max_tokens
 from llm.paper_kg import PaperKG
 
-_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "paper_kg.md"
+_PROMPTS_DIR = Path(__file__).resolve().parents[2] / "llm" / "prompts"
 _MAX_CHARS = 30_000
+
+
+def _prompt_path() -> Path:
+    """Allow env override of the KG-extraction prompt.
+
+    Set LAZY_PAPER_KG_PROMPT=paper_kg_v2.md to try the more aggressive
+    comparator-extraction prompt that explicitly handles literature
+    benchmark patterns ('X et al. reported …').
+    """
+    return _PROMPTS_DIR / os.environ.get("LAZY_PAPER_KG_PROMPT", "paper_kg.md")
 
 
 def _gather_source(chapters_dir: Path) -> str:
@@ -56,7 +67,7 @@ def build_paper_kg(*, chapters_dir: Path, out_dir: Path) -> PaperKG | None:
         (out_dir / "kg_extract.failed").write_text("no source chapters", encoding="utf-8")
         return None
     try:
-        template_text = _PROMPT_PATH.read_text(encoding="utf-8")
+        template_text = _prompt_path().read_text(encoding="utf-8")
         system, user = _split_prompt(template_text, paper_text)
         kg = _extract_via_llm(system, user)
         kg.to_parquet(out_dir / "paper_kg.parquet")

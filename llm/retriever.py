@@ -52,7 +52,15 @@ class Retriever:
         self.bm25: bm25s.BM25 | None = None
 
     def build(self, *, chapters_dir: Path, out_path: Path,
-              chunk_size: int = 400, overlap: int = 80) -> Path:
+              chunk_size: int | None = None,
+              overlap: int | None = None) -> Path:
+        # Strategy G: env-overridable chunk size + overlap.
+        # Defaults 400/80 give precise retrieval; 2000/400 give richer context.
+        if chunk_size is None:
+            chunk_size = int(os.environ.get("LAZY_PAPER_CHUNK_SIZE", "400"))
+        if overlap is None:
+            overlap = int(os.environ.get("LAZY_PAPER_CHUNK_OVERLAP",
+                                          str(min(400, chunk_size // 5))))
         splitter = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
         docs: list[Document] = []
         doc_offsets: dict[str, int] = {}

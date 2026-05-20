@@ -242,14 +242,27 @@ def _legacy_compose(llm, system_tpl, user_tpl, paper_context_str, node, idx,
     averaged 1932 vs 1791 bytes, with the fewest critic flags).
 
     Env knobs (opt-in only):
-      LAZY_PAPER_TWO_STEP=1  experimental — outline → expand pipeline (2 LLM
-                             calls/section). Caused per-section size regression
-                             on meng2024; kept for further development.
+      LAZY_PAPER_TWO_STEP=1     experimental — outline → expand pipeline.
+      LAZY_PAPER_WHOLE_PAPER=1  Strategy I — skip retriever entirely and
+                                pass the full cleaned source corpus
+                                (capped at 50K chars to stay within
+                                DeepSeek-Reasoner's 64K context). The
+                                LLM is given a "focus" instruction to
+                                identify the relevant subsection rather
+                                than try to summarize the whole paper.
     """
     two_step = os.environ.get("LAZY_PAPER_TWO_STEP") == "1"
+    whole_paper = os.environ.get("LAZY_PAPER_WHOLE_PAPER") == "1"
 
     chunks_for_two_step = []
-    if retriever is not None:
+    if whole_paper:
+        # Strategy I: read the cleaned source corpus and feed it whole.
+        clean_dir = chapters_dir.parent.parent / "s02_clean"
+        pieces: list[str] = []
+        for p in sorted(clean_dir.glob("doc_*.md")):
+            pieces.append(f"=== {p.name} ===\n" + p.read_text(encoding="utf-8"))
+        excerpts = "\n\n".join(pieces)[:50000]
+    elif retriever is not None:
         query = _build_retrieval_query(title_cn, guidance, kg, keywords)
         chunks_for_two_step = retriever.retrieve(query, top_k=15)
         excerpts = "\n\n---\n\n".join(c.text for c in chunks_for_two_step)[:25000]
@@ -286,10 +299,31 @@ def _legacy_compose(llm, system_tpl, user_tpl, paper_context_str, node, idx,
                 .replace("{chapter_excerpts}", excerpts)
                 .replace("{fig_notes_block}", notes_block)
                 .replace("{prior_findings}", prior_findings or "（本节为首节，无前文要点）"))
+    # Strategy I: amend system prompt with "focus" instruction so the LLM
+    # picks the relevant ~paragraphs from the whole paper rather than
+    # trying to synthesize across the entire document.
+    effective_system = system_tpl
+    if whole_paper:
+        effective_system = system_tpl + (
+            "\n\n## WHOLE-PAPER MODE\n"
+            "The {chapter_excerpts} block below contains the ENTIRE cleaned "
+            "source paper, not pre-filtered chunks. For THIS section, your "
+            "task is two-step:\n"
+            "1. Mentally identify the 1–3 source paragraphs most relevant to "
+            "this section's title + guidance. State the doc names you used "
+            "in a comment-style first line (e.g. '> grounded in doc_5.md + "
+            "doc_12.md').\n"
+            "2. Write the section body grounded ONLY in those paragraphs. "
+            "Do NOT pad with content from unrelated parts of the paper. "
+            "Do NOT compress the whole paper into this section.\n"
+            "Hallucination check: every number / chemical formula in your "
+            "draft MUST appear in the source paragraphs you cited."
+        )
     (out_dir / f"{basename}.prompt.md").write_text(
-        f"# SYSTEM\n{system_tpl}\n\n# USER\n{user_msg}", encoding="utf-8"
+        f"# SYSTEM\n{effective_system}\n\n# USER\n{user_msg}", encoding="utf-8"
     )
-    response = llm.chat(system=system_tpl, user=user_msg, max_tokens=max_tokens(12000))
+    response = llm.chat(system=effective_system, user=user_msg,
+                        max_tokens=max_tokens(12000))
 
     # Post-LLM language guard: if zh was requested but the draft came out
     # mostly English (LLM defaulting to source-paper language), retry once
