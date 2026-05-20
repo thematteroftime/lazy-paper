@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -300,9 +301,15 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         slug = slugify(title_cn, maxlen=30)
         basename = f"{idx + 1:02d}-{slug}"
 
-        # v1.4.0: section agent (with KG + retriever); fall back on failure
+        # v1.4: prompt-stuffed compose with retriever-fed evidence. The
+        # tool-using agent (stages.s08_section_compose.agent) is experimental
+        # and disabled by default — set LAZY_PAPER_AGENT=1 to opt in. Live
+        # runs showed the LLM occasionally returning meta-commentary instead
+        # of section prose when given a tool-using agent loop; the
+        # retriever-fed compose path delivers the quality win without that
+        # failure mode. Reviewer + KG + citations remain active either way.
         composed: str
-        if retriever is not None and kg is not None:
+        if os.environ.get("LAZY_PAPER_AGENT") == "1" and retriever is not None and kg is not None:
             try:
                 from stages.s08_section_compose.agent import run_section_agent
                 prior_bullet = written[-1] if written else ""
