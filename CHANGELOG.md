@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-05-20
+
+### Added — Strategy J (Perplexity pre-injection + Onyx rendering)
+
+Env-gated by `LAZY_PAPER_STRUCTURED=1`. The strongest grounding pipeline
+shipped so far. On meng2024 ch01 it lifts the "Jiang/Ma/Zhang/Tang
+competitor literature benchmark" recovery from **0/16** (v1.4.2 default)
+or **4.5/16** (v1.5 Strategy E mean) to **6.33/16** mean across 3 runs
+(range 5–8). Floor lifted from 3 → 5.
+
+Architecture (see `docs/v1_6_strategy_j_design.md` for details):
+- **Pre-injection (Perplexity-style):** retrieved chunks pre-labeled
+  with 0-based IDs in the USER message; a `field_validator` on
+  `cited_chunk_ids` rejects any ID not in the retrieved set at
+  Pydantic parse time. The LLM cannot hallucinate a citation that
+  wasn't in its context.
+- **instructor + Pydantic strict mode** (`Mode.MD_JSON` for DeepSeek
+  R1 reasoning compatibility). One LLM call per section returns a
+  `SectionDraft` with a list of `GroundedClaim` objects.
+- **Required-mentions list (KG-v2 + coverage):** for survey-style
+  sections (Introduction / Comparison / Discussion / etc.) the top-5
+  most-distinctive comparator + claim entities from the KG are
+  injected as a "Required mentions" block telling the LLM these are
+  facts the section MUST cite. Soft-warn audit (`structured_audit`
+  flag in `critic_flags.yaml`) when the final draft fails to cite any.
+- **Verifier gate (ClarityArc-style):** each `cited_quote` is fuzzy-
+  matched against its declared chunk via longest-contiguous-match
+  ratio ≥ 0.85 (exact-substring → 1.0). Quotes that don't match are
+  rejected post-hoc; if too many reject, the draft falls back to the
+  unverified original (soft-degrade).
+- **Onyx-vendored rendering** stays the same; `SectionDraft.render(mode=REMOVE|KEEP|HYPERLINK)`
+  assembles claims into prose with optional `[span:doc:start-end]`
+  markers.
+- **Regex critic skipped when J ran:** the verifier gate already
+  validates grounding. Running the LaTeX-blind regex critic on top
+  was destroying J's structured numeric content (it false-flagged
+  `2.94 J/cm³` because source has it as `$2 . 9 4 \mathrm{J/cm}^{3}$`,
+  and the LLM revisor "fixed" by deleting). Critic now gated on
+  `not structured_used`.
+
+### Changed
+- KG extraction `max_tokens` raised 16000 → 32000 (v2 prompt
+  extracts ~2× more entities than v1; instructor's
+  `IncompleteOutputException` was firing more frequently).
+
+### Files added
+- `stages/s08_section_compose/structured.py` (315 LOC) —
+  `GroundedClaim`, `SectionDraft`, `RequiredMention`,
+  `compose_structured()`, `verify_section_draft()`,
+  `build_required_mentions()`, `select_top_required()`,
+  `missing_required()`.
+- `stages/s08_section_compose/tests/test_structured.py` (220 LOC) —
+  13 unit tests (validator, verifier, builder, top-N, mocked compose).
+
+### Notes
+- Mean still below v1.3.3's 13/16 (the unconstrained-context-stuffing
+  baseline). Each J run picks 2-3 of the 4 comparators, with different
+  subsets each run. Union of 3 runs covers all 4. v1.7 candidate
+  "best-of-N + merge" could close this gap.
+- The author names ("Jiang", "Ma", "Zhang", "Tang") still don't appear;
+  the LLM consistently uses the chemical formulas + values pattern
+  instead. To recover author attribution, KG-v3 prompt would need to
+  extract `author` as a separate entity type linked to comparator.
+
 ## [1.4.2] — 2026-05-20
 
 ### Changed
