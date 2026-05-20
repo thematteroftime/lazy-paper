@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-05-20
+
+### Added
+- Section composer agent (`pydantic-ai-slim`) with 4 tools: `query_kg`, `retrieve`, `check_source`, `emit_section`.
+- Reviewer LLM tier (`instructor` + `CritiqueRevision`) with dimensional scoring.
+- Vendored Onyx `citation_processor.py` (MIT) at `llm/citation/stream_processor.py`; see `THIRD_PARTY_NOTICES.md`.
+- Citation rendering in DOCX + HTML with 3 modes (HYPERLINK / KEEP / REMOVE).
+- `--debug-citations` CLI flag exposes `[span:...]` markers.
+- `findings.yaml` per-paper memory (write-only stub for v1.5).
+
+### Changed
+- s08 default path: agent loop (max 8 iters) → reviewer regex → reviewer LLM if flagged → write.
+- Soft-degrade per-section: agent failure falls back to v1.3.4 legacy compose; reviewer failure soft-accepts the draft.
+
+### Compatibility
+- Hard cutover; rollback = `git checkout v1.3.4` or `v1.3.3`.
+- PaperDB artifacts in `runs/<paper>/` are forward-compatible with v1.3.4.
+
 ## [1.3.4] — 2026-05-20
 
 ### Added
