@@ -73,10 +73,16 @@ def regex_check(
 
     # Figure references must be in figures.yaml
     known_figs = {str(f.get("fig_id", "")).strip() for f in fig_yaml}
+    _NUM_TAIL = re.compile(r"(\d+)[a-z]?\b")
     for m in _FIG_REF.finditer(draft):
         ref = m.group(0).strip()
-        # Accept "Fig. 2" matching "Fig. 2" or "Fig. 2a" → check loosely
-        if not any(ref.split()[1].rstrip("abcdefghij") in k for k in known_figs):
+        # Extract the numeric portion robustly — "Fig. 2", "Fig.2", "Fig.2a"
+        # all map to "2"; missing numbers skip the check.
+        num_match = _NUM_TAIL.search(ref)
+        if not num_match:
+            continue
+        num = num_match.group(1)
+        if not any(num in k for k in known_figs):
             flags.append(Flag(
                 span=(m.start(), m.end()),
                 claim=ref,

@@ -29,12 +29,16 @@ class Chunk:
 
 
 def _embed_texts(texts: list[str]) -> np.ndarray:
-    """Batch-embed via DashScope text-embedding-3-small."""
+    """Batch-embed via the configured embeddings endpoint.
+
+    DashScope (Qwen text-embedding-v3) caps batch size at 10. We batch
+    accordingly; OpenAI-compatible endpoints with larger limits absorb the
+    smaller batches without trouble.
+    """
     llm = LLM(role="embeddings")
-    # DashScope batch limit is 25; chunk into batches
     out: list[list[float]] = []
-    for i in range(0, len(texts), 25):
-        batch = texts[i:i + 25]
+    for i in range(0, len(texts), 10):
+        batch = texts[i:i + 10]
         resp = llm._client.embeddings.create(model=llm.model, input=batch)
         out.extend([d.embedding for d in resp.data])
     return np.asarray(out, dtype=np.float32)
