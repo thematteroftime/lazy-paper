@@ -184,3 +184,78 @@ def test_select_top_required_prefers_distinctive_text():
         evidence_chunk_id=0, evidence_quote="q", linked_values=[])
     capped = select_top_required([short, long_chem], cap=1)
     assert capped[0] is long_chem
+
+
+# ─── Day-2: compose pipeline + missing_required audit ────────────────────────
+
+def test_missing_required_audits_uncited_entities():
+    """If a required entity's evidence_chunk_id isn't cited by any claim,
+    it shows up in the missing_required audit."""
+    from stages.s08_section_compose.structured import missing_required
+    required = [
+        RequiredMention(entity_text="Cited entity", entity_type="comparator",
+                        evidence_chunk_id=0, evidence_quote="q",
+                        linked_values=[]),
+        RequiredMention(entity_text="Uncited entity", entity_type="comparator",
+                        evidence_chunk_id=5, evidence_quote="q",
+                        linked_values=[]),
+    ]
+    draft = SectionDraft(claims=[
+        GroundedClaim(text="Mentions chunk 0", cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="Mentions chunk 1", cited_chunk_ids=[1], cited_quote=""),
+    ])
+    missing = missing_required(required, draft)
+    assert len(missing) == 1
+    assert missing[0].entity_text == "Uncited entity"
+
+
+def test_compose_structured_uses_instructor_and_runs_verifier(monkeypatch):
+    """End-to-end mock: instructor returns a SectionDraft, verifier filters,
+    we get a verified draft back. No live LLM."""
+    from unittest.mock import MagicMock
+    from stages.s08_section_compose.structured import compose_structured
+
+    mock_llm = MagicMock()
+    mock_llm.model = "deepseek-chat"
+    mock_llm._client = MagicMock()
+    chunks = [
+        _make_chunk("r0", "Source paragraph one: Ca2+/Nb5+-codoped material achieves 2.94 J/cm3.",
+                    doc="doc_1.md", start=0, end=100),
+        _make_chunk("r1", "Source paragraph two: synthesis via tape-casting.",
+                    doc="doc_1.md", start=100, end=200),
+    ]
+    fake_draft = SectionDraft(claims=[
+        GroundedClaim(text="Jiang reported 2.94 J/cm3.",
+                      cited_chunk_ids=[0],
+                      cited_quote="Ca2+/Nb5+-codoped material achieves 2.94"),
+        GroundedClaim(text="Prepared via tape-casting.",
+                      cited_chunk_ids=[1],
+                      cited_quote="synthesis via tape-casting"),
+        GroundedClaim(text="A fabricated claim.",
+                      cited_chunk_ids=[0],
+                      cited_quote="This quote is not in source at all"),
+    ])
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            return fake_draft
+    class _FakeChat:
+        completions = _FakeCompletions()
+    class _FakeClient:
+        chat = _FakeChat()
+
+    monkeypatch.setattr("instructor.from_openai",
+                        lambda client, mode=None: _FakeClient())
+
+    verified, rejected = compose_structured(
+        mock_llm,
+        section_title="Introduction",
+        section_guidance="prior work",
+        lang_instruction="Chinese",
+        chunks=chunks,
+        required=[],
+        prior_findings="",
+    )
+    assert len(verified.claims) == 2  # 1 rejected by verifier
+    assert len(rejected) == 1
+    assert "fabricated" in rejected[0]["text"]

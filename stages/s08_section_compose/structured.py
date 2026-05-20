@@ -314,3 +314,134 @@ def select_top_required(
         return len(text) + 0.5 * digit_chars
     ranked = sorted(mentions, key=score, reverse=True)
     return ranked[:cap]
+
+
+# ─── compose pipeline (Day-2) ────────────────────────────────────────────────
+
+
+_STRUCTURED_SYSTEM = """You are composing one section of a research-paper deep analysis.
+
+You have been given a numbered list of source chunks in the USER message.
+Every claim in your output MUST cite at least one chunk by its 0-based ID,
+and you may ONLY cite chunks from this list. Citing a chunk ID outside the
+list will cause your output to be rejected.
+
+Some entities are listed under "Required mentions" — these are facts the
+section MUST cover. For each, write a GroundedClaim that:
+  - includes the entity's verbatim text (chemical formula / author name)
+  - includes the linked numeric value when given (e.g. "W_rec=2.94 J/cm³")
+  - sets cited_chunk_ids to the evidence_chunk_id given for that entity
+  - sets cited_quote to a verbatim slice from that chunk
+
+For other claims (not required, just supporting the section's argument):
+  - cite ≥1 chunk that supports the claim
+  - cited_quote may be verbatim or empty (empty skips verification)
+  - keep prose in the requested language (Chinese unless the user says English)
+
+Quote-then-claim discipline (for the verifier):
+  - When you set cited_quote, copy it verbatim from the cited chunk — the
+    verifier fuzzy-matches against the chunk text and rejects paraphrased
+    quotes.
+  - For Chinese chunks, copy CJK + ASCII as-is; do not transliterate.
+
+Output a SectionDraft JSON object matching the schema. Aim for 4–8 claims
+unless guidance demands more.
+
+Length / language / quantitative rules from the base section_compose prompt
+still apply — see the USER message for {lang_instruction} and other hints.
+"""
+
+
+def _format_chunks_block(chunks: list["Chunk"]) -> str:
+    """Build the numbered chunks block for the USER message."""
+    lines: list[str] = []
+    for i, c in enumerate(chunks):
+        preview = c.text.replace("\n", " ")[:1200]
+        lines.append(
+            f"[{i}] ({c.doc_name} chars {c.char_start}-{c.char_end})\n"
+            f"    {preview}"
+        )
+    return "\n".join(lines)
+
+
+def _format_required_block(required: list[RequiredMention]) -> str:
+    if not required:
+        return "(none — no required entities for this section)"
+    lines: list[str] = []
+    for r in required:
+        vals = f"  linked_values: {', '.join(r.linked_values)}\n" if r.linked_values else ""
+        lines.append(
+            f"- {r.entity_type}: \"{r.entity_text}\"\n"
+            f"  evidence_chunk_id: {r.evidence_chunk_id}\n"
+            f"  evidence_quote: \"{r.evidence_quote[:200]}\"\n"
+            f"{vals}"
+        )
+    return "\n".join(lines)
+
+
+def compose_structured(
+    llm,
+    *,
+    section_title: str,
+    section_guidance: str,
+    lang_instruction: str,
+    chunks: list["Chunk"],
+    required: list[RequiredMention],
+    prior_findings: str = "",
+    paper_context: str = "",
+    max_retries: int = 3,
+) -> tuple["SectionDraft", list[dict]]:
+    """Day-2 entry point: instructor call → SectionDraft → verifier gate.
+
+    Returns the verified SectionDraft (claims filtered to those whose
+    cited_quote matched their chunk) + a list of rejected_log dicts for
+    audit. Raises if instructor fails after max_retries.
+    """
+    import instructor
+    from instructor import Mode
+
+    chunks_block = _format_chunks_block(chunks)
+    required_block = _format_required_block(required)
+    user_msg = (
+        f"## Section to write\n"
+        f"- Title: {section_title}\n"
+        f"- Guidance: {section_guidance}\n"
+        f"- Language: {lang_instruction}\n\n"
+        f"## Paper context\n{paper_context}\n\n"
+        f"## Available chunks (cite ONLY these 0-based IDs)\n{chunks_block}\n\n"
+        f"## Required mentions (you MUST cover each)\n{required_block}\n\n"
+        f"## Already established in prior sections (refer back, do not restate)\n"
+        f"{prior_findings or '(this is the first section)'}\n\n"
+        f"Emit the SectionDraft JSON now."
+    )
+
+    client = instructor.from_openai(llm._client, mode=Mode.MD_JSON)
+    allowed = set(range(len(chunks)))
+    draft = client.chat.completions.create(
+        model=llm.model,
+        response_model=SectionDraft,
+        validation_context={"allowed_chunk_ids": allowed},
+        messages=[
+            {"role": "system", "content": _STRUCTURED_SYSTEM},
+            {"role": "user", "content": user_msg},
+        ],
+        max_retries=max_retries,
+        temperature=0.2,
+    )
+
+    chunks_by_id = {i: c for i, c in enumerate(chunks)}
+    accepted, rejected = verify_section_draft(draft, chunks_by_id)
+    verified = SectionDraft(claims=accepted) if len(accepted) >= 2 else draft
+    return verified, rejected
+
+
+def missing_required(
+    required: list[RequiredMention],
+    draft: SectionDraft,
+) -> list[RequiredMention]:
+    """Return the subset of `required` whose evidence_chunk_id is not cited
+    by ANY claim in `draft`. Used for the soft-warn audit log per design."""
+    cited: set[int] = set()
+    for c in draft.claims:
+        cited.update(c.cited_chunk_ids)
+    return [r for r in required if r.evidence_chunk_id not in cited]

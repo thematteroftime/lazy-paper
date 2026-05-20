@@ -431,15 +431,65 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
             if prior_section_claims else ""
         )
 
-        # v1.4: prompt-stuffed compose with retriever-fed evidence. The
-        # tool-using agent (stages.s08_section_compose.agent) is experimental
-        # and disabled by default — set LAZY_PAPER_AGENT=1 to opt in. Live
-        # runs showed the LLM occasionally returning meta-commentary instead
-        # of section prose when given a tool-using agent loop; the
-        # retriever-fed compose path delivers the quality win without that
-        # failure mode. Reviewer + KG + citations remain active either way.
+        # v1.6 Strategy J: structured compose with pre-injection (gated).
+        # When LAZY_PAPER_STRUCTURED=1 and we have both KG + retriever, build
+        # required-mentions + chunk list + run the instructor flow with the
+        # verifier gate. This is the highest-grounding path; falls back to
+        # _legacy_compose on any exception.
         composed: str
-        if os.environ.get("LAZY_PAPER_AGENT") == "1" and retriever is not None and kg is not None:
+        structured_used = False
+        if (os.environ.get("LAZY_PAPER_STRUCTURED") == "1"
+                and retriever is not None and kg is not None):
+            try:
+                from stages.s08_section_compose.structured import (
+                    build_required_mentions, select_top_required,
+                    compose_structured, missing_required,
+                )
+                query = _build_retrieval_query(title_cn, guidance, kg, keywords)
+                chunks = retriever.retrieve(query, top_k=15)
+                required_all = build_required_mentions(
+                    section_title=title_cn, section_guidance=guidance,
+                    kg=kg, source_docs=source_docs, retrieved_chunks=chunks,
+                )
+                required = select_top_required(required_all, cap=5)
+                lang_text = LANG_INSTRUCTIONS.get(lang, LANG_INSTRUCTIONS["zh"])
+                draft, rejected = compose_structured(
+                    llm,
+                    section_title=title_cn,
+                    section_guidance=guidance,
+                    lang_instruction=lang_text,
+                    chunks=chunks,
+                    required=required,
+                    prior_findings=prior_findings_block,
+                    paper_context=paper_context_str[:3000],
+                )
+                composed = draft.render(mode="REMOVE")
+                # Soft-warn audit: required mentions the LLM didn't cover
+                still_missing = missing_required(required, draft)
+                if still_missing or rejected:
+                    note = {
+                        "missing_required": [r.entity_text for r in still_missing],
+                        "verifier_rejected": rejected,
+                    }
+                    all_flags.setdefault(basename, []).append(
+                        {"problem": "structured_audit", **note}
+                    )
+                    print(f"[critic-structured] {basename}: "
+                          f"{len(still_missing)} missing required, "
+                          f"{len(rejected)} verifier rejects", flush=True)
+                # Audit file for the draft
+                (out_dir / f"{basename}.structured.json").write_text(
+                    draft.model_dump_json(indent=2), encoding="utf-8",
+                )
+                structured_used = True
+            except Exception as exc:
+                print(f"[s08] structured compose failed for {basename}: "
+                      f"{exc!r}; falling back to legacy", flush=True)
+
+        if structured_used:
+            pass  # composed set above
+        elif (os.environ.get("LAZY_PAPER_AGENT") == "1"
+                and retriever is not None and kg is not None):
             try:
                 from stages.s08_section_compose.agent import run_section_agent
                 prior_bullet = written[-1] if written else ""
