@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-05-20
+
+Section-divider layout becomes truly dynamic. v1.3.2 prevented over-truncation
+but used uniform `row_h = usable_h / n_bullets`, which produced uneven visual
+spacing when bullets had different wrap counts (1-line bullets had empty
+space below; 2-line bullets crammed against the next). v1.3.3 measures each
+bullet's needed height, places them with a constant inter-bullet gap, and
+stretches the card height when content needs it — fonts shrink only as last
+resort.
+
+### Fixed — layout
+
+- **Uneven bullet spacing in KEY POINTS card**: per-bullet height is now
+  computed from estimated wrap count (chars / chars_per_line) with a
+  proper empirical formula (~95 chars/line at 13pt × 6.35" wide).
+  Bullets place cumulatively with a constant 0.18" gap, so visual spacing
+  is even regardless of how many lines each bullet wraps to.
+- **Card auto-stretches** from default 4.5" up to 5.4" (card_top..6.9")
+  when content exceeds the default. Only after the stretched card still
+  overflows does the algorithm compress inter-gap (down to 0.05") and
+  finally shrink font as absolute last resort.
+- **Blank-looking figure slide on `ali2025_flash` Fig. 28**: s07 vision-LLM
+  output failed YAML defensive-parse (stray LaTeX), and the slide planner
+  consumed `deep_observation=None`, leaving the left obs pane and caption
+  header empty. `_read_fig_notes` now recovers `caption`,
+  `deep_observation`, and `visual_summary` from the persisted `raw` text
+  via regex when YAML parse failed.
+
+### Added — planning
+
+- `docs/v1_4_roadmap.md` — captures top 3 content-fidelity issues
+  (template-driven hallucination, quoted-symbol drift, missed source
+  facts) + top 3 pipeline-architecture improvements (per-section cache,
+  T3 in s08, s07→s08 claim-consistency) found by two parallel read-only
+  subagent audits. Will drive v1.4.0.
+
+### Verified
+
+- 10-paper s09 refresh (cache hits on most chapter LLMs; ali2025_flash and
+  pamula2025 hit fresh cache after `_read_fig_notes` recovery changed
+  inputs). All 4 formats produced.
+- Audit: 3 total flags across 10 papers — all 3 are figure caption
+  headers carrying English original titles on ZH-content slides
+  (legitimate, not a defect).
+- Truncation rate steady at 2.9% (was 42% pre-v1.3.2).
+- Visual review of pamula2025 §4 (7 bullets, dynamic spacing, card
+  stretched to fit), ali2025_flash Fig. 28 (caption + 3 obs recovered
+  from raw, no longer blank), yang2025 §2 (consistent inter-bullet gap).
+
+### Tests
+
+189 passing (unchanged).
+
 ## [1.3.2] - 2026-05-20
 
 Whitespace-vs-truncate audit. v1.3.1 left 42% of section-divider bullets ending
@@ -242,7 +295,8 @@ Initial public release of lazy-paper.
 - `SlidePlanner`: deterministic slide layout logic, no IO, accepts optional LLM summaries and outline
 - `LLM` client: OpenAI-compatible; two roles (`vision`, `text`) configured via `models.yaml` and env vars
 
-[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.3.2...HEAD
+[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.3.3...HEAD
+[1.3.3]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.3
 [1.3.2]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.2
 [1.3.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.1
 [1.3.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.0

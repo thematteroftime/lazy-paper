@@ -161,8 +161,33 @@ def _read_chapters(compose_dir: Path) -> dict[str, str]:
 
 
 def _read_fig_notes(fig_notes_dir: Path) -> list[dict]:
+    """Load figure-analysis notes, recovering text fields from `raw` when
+    the YAML parse failed (v1.3.3: prevents blank figure slides).
+
+    s07 stores `error: 'yaml-parse: defensive parse failed'` + `raw: <text>`
+    when the vision-LLM output couldn't be parsed cleanly (often because
+    of stray LaTeX). The text fields are still inside `raw`; extract them
+    with a regex so the slide planner has captions / observations to show.
+    """
+    import re as _re
     path = fig_notes_dir / "fig_notes.yaml"
-    return load_yaml(path) or []
+    notes = load_yaml(path) or []
+    recovered = []
+    for n in notes:
+        if not isinstance(n, dict):
+            continue
+        if n.get("error") and n.get("raw") and not n.get("deep_observation"):
+            raw = n["raw"]
+            # Recover key text fields with line-anchored regex (DOTALL so
+            # multi-line values are captured up to the next `field:` line).
+            for key in ("caption", "deep_observation", "visual_summary"):
+                m = _re.search(
+                    rf"^{key}:\s*(.+?)(?=\n[a-z_]+:|\Z)", raw, _re.MULTILINE | _re.DOTALL,
+                )
+                if m and not n.get(key):
+                    n[key] = m.group(1).strip().strip('"').strip()
+        recovered.append(n)
+    return recovered
 
 
 def _write_bundle(compose_dir: Path, fig_notes: list[dict], out_dir: Path) -> Path:

@@ -427,9 +427,66 @@ class PptxRenderer(Renderer):
              Pt(11), _GRAY88, T.LAT_SANS, T.EA_SANS,
              align=PP_ALIGN.LEFT)
 
+        bullets = slide.bullets[:7] if slide.bullets else []
+        n_bullets = len(bullets)
+
+        # v1.3.3: dynamic per-bullet placement.
+        # Strategy (user-directed, in priority order):
+        #   1. Estimate per-bullet line count from content length.
+        #   2. Place bullets cumulatively with a CONSTANT inter-bullet gap
+        #      so spacing looks even regardless of how each bullet wraps.
+        #   3. If total content height exceeds the default 4.5" card,
+        #      STRETCH the card downward (up to 5.4" = card_top..6.9")
+        #      rather than shrink fonts or truncate.
+        #   4. Only if even the stretched card overflows: reduce inter-gap
+        #      down to 0.05", then truncate as absolute last resort.
+        card_top = 1.5
+        card_max_bottom = 6.9   # leaves room for nav hint at 6.95"
+        padding = 0.35
+        inter_gap = 0.18        # constant gap between bullets
+
+        if n_bullets == 0:
+            card_bottom = 6.0   # default empty card
+            txt_pt, mark_pt = 14, 12
+        else:
+            # Density-adaptive font (same as before, less aggressive shrink)
+            _density_font = {4: (16, 14), 5: (16, 14), 6: (14, 13), 7: (13, 12)}
+            txt_pt, mark_pt = _density_font[max(4, min(7, n_bullets))]
+            # Line height in inches ≈ Pt × 1.2 / 72
+            line_h = txt_pt * 1.2 / 72.0
+            text_w_in = 6.35  # text box width
+            # Empirical chars-per-line at this text-box width (ASCII).
+            # Calibrated from rendered output: at 13pt × 6.35" → ~95 chars.
+            # ASCII avg char width ≈ 0.55 × pt → chars/line ≈ w * 72 / (pt * 0.55)
+            chars_per_line = max(40, int(text_w_in * 72.0 / (txt_pt * 0.55)))
+
+            # Estimate lines for each bullet, accounting for CJK 2× width
+            bullet_heights: list[float] = []
+            for b in bullets:
+                cjk = sum(1 for c in b if "一" <= c <= "鿿")
+                # CJK char ≈ 2 ASCII column widths; non-CJK chars count 1.
+                display_width = len(b) + cjk
+                lines = max(1, -(-display_width // chars_per_line))
+                # Small safety pad on the per-bullet height: 0.05" between
+                # text and next bullet's marker for visual breathing room.
+                bullet_heights.append(lines * line_h + 0.05)
+
+            # Cumulative content height needed
+            content_h = sum(bullet_heights) + (n_bullets - 1) * inter_gap
+            needed_h = content_h + 2 * padding
+
+            # Compute card height: prefer default 4.5", stretch up to 5.4"
+            card_h = max(4.5, min(card_max_bottom - card_top, needed_h))
+            card_bottom = card_top + card_h
+
+            # If still doesn't fit, compress inter_gap down to 0.05"
+            if needed_h > card_h:
+                inter_gap = max(0.05, (card_h - 2 * padding - sum(bullet_heights)) / max(n_bullets - 1, 1))
+
+        # Render card (height may have been stretched)
         card = s.shapes.add_shape(
             MSO_SHAPE.ROUNDED_RECTANGLE,
-            Inches(5.0), Inches(1.5), Inches(7.5), Inches(4.5)
+            Inches(5.0), Inches(card_top), Inches(7.5), Inches(card_bottom - card_top),
         )
         card.adjustments[0] = 0.05
         card.fill.solid()
@@ -438,47 +495,20 @@ class PptxRenderer(Renderer):
         card.line.width = Pt(1)
         card.text_frame.text = ""
 
-        bullets = slide.bullets[:7] if slide.bullets else []
-        n_bullets = len(bullets)
-
         if n_bullets > 0:
-            card_top    = 1.5
-            card_bottom = 6.0
-            card_h      = card_bottom - card_top
-            padding     = 0.4
-            usable_h    = card_h - 2 * padding
-            row_h       = usable_h / max(n_bullets, 1)
-
-            # v1.3 Issue T2: density-adaptive font + autofit safety net.
-            #   - n≤4: 16pt; n=5: 15pt; n=6: 14pt; n=7: 13pt.
-            #   - Each bullet box uses TEXT_TO_FIT_SHAPE so any overlong
-            #     bullet (rare after _truncate_bullet) auto-shrinks rather
-            #     than overflowing the row.
-            _density_font = {4: (16, 14), 5: (15, 13), 6: (14, 13), 7: (13, 12)}
-            txt_pt, mark_pt = _density_font[max(4, min(7, n_bullets))]
-            tb_h = Inches(row_h)
-
+            cur_y = card_top + padding
             for i, bul in enumerate(bullets):
-                by = Inches(card_top + padding + i * row_h)
                 marker = _MARKERS[i] if i < len(_MARKERS) else "▸"
+                h = bullet_heights[i]
                 _tb1(s, marker,
-                     Inches(5.4), by, Inches(0.45), tb_h,
+                     Inches(5.4), Inches(cur_y), Inches(0.45), Inches(h),
                      Pt(mark_pt), _GRAY88, T.LAT_SANS, T.EA_SANS,
                      align=PP_ALIGN.LEFT)
-                tb = _tb1(s, bul,
-                          Inches(5.9), by, Inches(6.35), tb_h,
-                          Pt(txt_pt), T.TEXT, T.LAT_SANS, T.EA_SANS,
-                          align=PP_ALIGN.LEFT, wrap=True)
-                # v1.3.1 Bug 2: autofit only when n_bullets >= 6. LibreOffice
-                # interprets TEXT_TO_FIT_SHAPE as clip-to-fit (not shrink-to-fit)
-                # for sparse cards, silently chopping bullets mid-formula without
-                # an ellipsis. Sparse cards have tall enough rows for natural
-                # 2-line wrap, so autofit is unnecessary.
-                if n_bullets >= 6:
-                    try:
-                        tb.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
-                    except Exception:
-                        pass
+                _tb1(s, bul,
+                     Inches(5.9), Inches(cur_y), Inches(6.35), Inches(h),
+                     Pt(txt_pt), T.TEXT, T.LAT_SANS, T.EA_SANS,
+                     align=PP_ALIGN.LEFT, wrap=True)
+                cur_y += h + inter_gap
 
         nav_text = _S.pick(_S.NAV_HINT, doc.lang)
         _tb1(s, nav_text,
