@@ -84,7 +84,12 @@ class SectionDraft(BaseModel):
         the end reader regardless of citation mode).
         """
         import re as _re
-        _CHUNK_LEAK = _re.compile(r"\s*[（(\[]\s*chunk\s*\d+(?:\s*[,，]\s*\d+)*\s*[)）\]]")
+        # Two leak forms observed:
+        #   "(chunk 11)" / "（chunk 11，12）" — explicit-word form
+        #   "[2,5]" / "[0, 3]" — bare-bracket numeric list (no word)
+        _CHUNK_LEAK = _re.compile(
+            r"\s*[（(\[]\s*(?:chunk\s*)?\d+(?:\s*[,，]\s*\d+)*\s*[)）\]]"
+        )
         parts: list[str] = []
         for c in self.claims:
             sentence = c.text.strip()
