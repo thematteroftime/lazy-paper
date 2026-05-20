@@ -209,6 +209,22 @@ def test_missing_required_audits_uncited_entities():
     assert missing[0].entity_text == "Uncited entity"
 
 
+def test_render_strips_chunk_leak():
+    """LLM sometimes leaks '(chunk 11)' literal references; render() strips."""
+    d = SectionDraft(claims=[
+        GroundedClaim(text="A claim with leakage (chunk 11).",
+                      cited_chunk_ids=[11], cited_quote=""),
+        GroundedClaim(text="另一句 [chunk 3, 5] 中文也要处理。",
+                      cited_chunk_ids=[3, 5], cited_quote=""),
+        GroundedClaim(text="(chunk 1) at start.",
+                      cited_chunk_ids=[1], cited_quote=""),
+    ])
+    out = d.render(mode="REMOVE")
+    assert "chunk" not in out.lower()
+    assert "A claim with leakage" in out
+    assert "另一句" in out and "中文也要处理" in out
+
+
 def test_compose_structured_uses_instructor_and_runs_verifier(monkeypatch):
     """End-to-end mock: instructor returns a SectionDraft, verifier filters,
     we get a verified draft back. No live LLM."""

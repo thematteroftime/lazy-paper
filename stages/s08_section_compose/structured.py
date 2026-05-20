@@ -77,10 +77,18 @@ class SectionDraft(BaseModel):
         KEEP: appends [span:doc:start-end] to each sentence.
         HYPERLINK: same as KEEP but the renderer will pass through to
         llm/citation/__init__.process_text() for HTML hyperlink resolution.
+
+        Also strips literal "(chunk N)" / "[chunk N]" patterns the LLM may
+        have leaked into prose (it tends to copy the chunk-ID list directly
+        when asked to "cite IDs" — those leaks should never be visible to
+        the end reader regardless of citation mode).
         """
+        import re as _re
+        _CHUNK_LEAK = _re.compile(r"\s*[（(\[]\s*chunk\s*\d+(?:\s*[,，]\s*\d+)*\s*[)）\]]")
         parts: list[str] = []
         for c in self.claims:
             sentence = c.text.strip()
+            sentence = _CHUNK_LEAK.sub("", sentence)
             if mode in ("KEEP", "HYPERLINK") and chunks_by_id:
                 markers = []
                 for cid in c.cited_chunk_ids:
