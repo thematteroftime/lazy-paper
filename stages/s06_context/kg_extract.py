@@ -1,0 +1,61 @@
+"""KG extraction sub-step of s06_context (one LLM call per paper)."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import instructor
+from instructor import Mode
+
+from llm.client import LLM, max_tokens
+from llm.paper_kg import PaperKG
+
+_PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "paper_kg.md"
+_MAX_CHARS = 30_000
+
+
+def _gather_source(chapters_dir: Path) -> str:
+    parts: list[str] = []
+    for p in sorted(chapters_dir.glob("chapter_*.md")):
+        parts.append(f"=== {p.name} ===\n" + p.read_text(encoding="utf-8"))
+    return "\n\n".join(parts)[:_MAX_CHARS]
+
+
+def _split_prompt(template_text: str, paper_text: str) -> tuple[str, str]:
+    sys_idx = template_text.index("SYSTEM:") + len("SYSTEM:")
+    usr_idx = template_text.index("USER:")
+    system = template_text[sys_idx:usr_idx].strip()
+    user = template_text[usr_idx + len("USER:"):].strip().replace("{paper_text}", paper_text)
+    return system, user
+
+
+def _extract_via_llm(system: str, user: str) -> PaperKG:
+    llm = LLM(role="text")
+    client = instructor.from_openai(llm._client, mode=Mode.JSON)
+    return client.chat.completions.create(
+        model=llm.model,
+        response_model=PaperKG,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        max_tokens=max_tokens(8000),
+        temperature=0.0,
+        max_retries=2,
+    )
+
+
+def build_paper_kg(*, chapters_dir: Path, out_dir: Path) -> PaperKG | None:
+    """Returns the KG on success, None on failure (writes `kg_extract.failed`)."""
+    paper_text = _gather_source(chapters_dir)
+    if not paper_text.strip():
+        (out_dir / "kg_extract.failed").write_text("no source chapters", encoding="utf-8")
+        return None
+    template_text = _PROMPT_PATH.read_text(encoding="utf-8")
+    system, user = _split_prompt(template_text, paper_text)
+    try:
+        kg = _extract_via_llm(system, user)
+    except Exception as exc:  # instructor parse error after retries
+        (out_dir / "kg_extract.failed").write_text(repr(exc), encoding="utf-8")
+        return None
+    kg.to_parquet(out_dir / "paper_kg.parquet")
+    return kg
