@@ -113,12 +113,18 @@ class RequiredMention(BaseModel):
 
     Soft-enforced: if the final SectionDraft doesn't cite it, we log to
     critic_flags.yaml but still ship the chapter.
+
+    v1.7: `author_text` is populated when the KG-v3 prompt extracted an
+    `author` entity linked to this comparator via `cited_by_paper`. The
+    compose prompt then asks the LLM to use the form "<author> et al."
+    rather than the bare chemical formula.
     """
     entity_text: str
     entity_type: str
     evidence_chunk_id: int
     evidence_quote: str
     linked_values: list[str] = Field(default_factory=list)
+    author_text: str = ""  # v1.7: linked author entity, if any
 
 
 # ─── verifier gate ───────────────────────────────────────────────────────────
@@ -256,6 +262,36 @@ def _linked_values_for_entity(
     return out
 
 
+def _author_for_comparator(
+    comparator: "Entity",
+    kg: "PaperKG",
+) -> str:
+    """v1.7 / KG-v3: find the `author` entity linked to this comparator
+    via `cited_by_paper` (or `cited_by`) relation. Returns the author's
+    text (e.g. 'Jiang') or '' if not in the KG.
+    """
+    for rel in kg.relations:
+        if rel.object != comparator.id:
+            continue
+        if rel.predicate not in ("cited_by_paper", "cited_by", "authored_by"):
+            continue
+        author = next((e for e in kg.entities
+                       if e.id == rel.subject and e.type == "author"), None)
+        if author:
+            return author.text
+    # Also try the reverse direction (comparator as subject)
+    for rel in kg.relations:
+        if rel.subject != comparator.id:
+            continue
+        if rel.predicate not in ("authored_by", "first_author", "cited_from"):
+            continue
+        author = next((e for e in kg.entities
+                       if e.id == rel.object and e.type == "author"), None)
+        if author:
+            return author.text
+    return ""
+
+
 def build_required_mentions(
     *,
     section_title: str,
@@ -295,12 +331,15 @@ def build_required_mentions(
         chunk_idx = _find_chunk_for_entity_span(e, retrieved_chunks)
         if chunk_idx is None:
             continue
+        author_text = (_author_for_comparator(e, kg)
+                       if e.type == "comparator" else "")
         out.append(RequiredMention(
             entity_text=e.text,
             entity_type=e.type,
             evidence_chunk_id=chunk_idx,
             evidence_quote=_evidence_quote(e, source_docs),
             linked_values=_linked_values_for_entity(e, kg),
+            author_text=author_text,
         ))
     return out
 
@@ -336,7 +375,11 @@ list will cause your output to be rejected.
 
 Some entities are listed under "Required mentions" — these are facts the
 section MUST cover. For each, write a GroundedClaim that:
-  - includes the entity's verbatim text (chemical formula / author name)
+  - includes the entity's verbatim text (chemical formula)
+  - **when an `author` field is given, introduce the comparator using
+    "<Author> et al." form**, e.g. "Jiang et al. reported W_rec=2.94 J/cm³
+    in Ca²⁺/Nb⁵⁺-codoped Bi₀.₅Na₀.₅TiO₃". Author attribution is required
+    when provided; do not skip it.
   - includes the linked numeric value when given (e.g. "W_rec=2.94 J/cm³")
   - sets cited_chunk_ids to the evidence_chunk_id given for that entity
   - sets cited_quote to a verbatim slice from that chunk
@@ -378,13 +421,68 @@ def _format_required_block(required: list[RequiredMention]) -> str:
     lines: list[str] = []
     for r in required:
         vals = f"  linked_values: {', '.join(r.linked_values)}\n" if r.linked_values else ""
+        author = (f"  author: \"{r.author_text} et al.\"  "
+                  f"(use this form when introducing the comparator in prose)\n"
+                  if r.author_text else "")
         lines.append(
             f"- {r.entity_type}: \"{r.entity_text}\"\n"
+            f"{author}"
             f"  evidence_chunk_id: {r.evidence_chunk_id}\n"
             f"  evidence_quote: \"{r.evidence_quote[:200]}\"\n"
             f"{vals}"
         )
     return "\n".join(lines)
+
+
+def _single_compose(
+    llm, system: str, user_msg: str, chunks: list["Chunk"],
+    max_retries: int, temperature: float,
+) -> "SectionDraft":
+    """One instructor + SectionDraft call. Helper for compose_structured."""
+    import instructor
+    from instructor import Mode
+    client = instructor.from_openai(llm._client, mode=Mode.MD_JSON)
+    allowed = set(range(len(chunks)))
+    return client.chat.completions.create(
+        model=llm.model,
+        response_model=SectionDraft,
+        validation_context={"allowed_chunk_ids": allowed},
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_msg},
+        ],
+        max_retries=max_retries,
+        temperature=temperature,
+    )
+
+
+def _merge_drafts(drafts: list["SectionDraft"], max_claims: int = 14) -> "SectionDraft":
+    """Strategy K: union-merge multiple drafts.
+
+    Greedy: accept claims in order, skipping any whose cited_chunk_ids are
+    a subset of an already-accepted claim's IDs (the existing claim
+    already covers that evidence). Caps at max_claims.
+
+    This preserves coverage from EACH run while removing direct duplicates
+    — the bet is that different sampling runs cite different comparator
+    chunks, and union-merging them lifts the per-paper recovery.
+    """
+    accepted_claims: list[GroundedClaim] = []
+    seen_id_sets: list[frozenset[int]] = []
+    for d in drafts:
+        for c in d.claims:
+            id_set = frozenset(c.cited_chunk_ids)
+            # skip if a prior accepted claim already cites a superset of these IDs
+            if any(id_set <= s and id_set for s in seen_id_sets):
+                continue
+            accepted_claims.append(c)
+            seen_id_sets.append(id_set)
+            if len(accepted_claims) >= max_claims:
+                return SectionDraft(claims=accepted_claims)
+    if len(accepted_claims) < 2:
+        # Fall back to whatever the first draft produced rather than failing
+        return drafts[0]
+    return SectionDraft(claims=accepted_claims)
 
 
 def compose_structured(
@@ -399,15 +497,19 @@ def compose_structured(
     paper_context: str = "",
     max_retries: int = 3,
 ) -> tuple["SectionDraft", list[dict]]:
-    """Day-2 entry point: instructor call → SectionDraft → verifier gate.
+    """instructor call → SectionDraft → verifier gate.
+
+    Strategy K (env `LAZY_PAPER_BEST_OF_N`, default 1): when set to N>1,
+    run the LLM N times with slightly different temperature and union-
+    merge the resulting drafts. Lifts per-paper benchmark coverage at
+    Nx LLM cost; DeepSeek input caching makes the chunk-list overhead
+    almost free across the N calls.
 
     Returns the verified SectionDraft (claims filtered to those whose
     cited_quote matched their chunk) + a list of rejected_log dicts for
     audit. Raises if instructor fails after max_retries.
     """
-    import instructor
-    from instructor import Mode
-
+    import os as _os
     chunks_block = _format_chunks_block(chunks)
     required_block = _format_required_block(required)
     user_msg = (
@@ -423,19 +525,27 @@ def compose_structured(
         f"Emit the SectionDraft JSON now."
     )
 
-    client = instructor.from_openai(llm._client, mode=Mode.MD_JSON)
-    allowed = set(range(len(chunks)))
-    draft = client.chat.completions.create(
-        model=llm.model,
-        response_model=SectionDraft,
-        validation_context={"allowed_chunk_ids": allowed},
-        messages=[
-            {"role": "system", "content": _STRUCTURED_SYSTEM},
-            {"role": "user", "content": user_msg},
-        ],
-        max_retries=max_retries,
-        temperature=0.2,
-    )
+    n = max(1, int(_os.environ.get("LAZY_PAPER_BEST_OF_N", "1")))
+    if n == 1:
+        draft = _single_compose(llm, _STRUCTURED_SYSTEM, user_msg, chunks,
+                                max_retries, temperature=0.2)
+    else:
+        # Strategy K: N independent samples at slightly varied temperatures
+        # so the LLM picks different comparators across runs, then merge.
+        drafts: list[SectionDraft] = []
+        for i in range(n):
+            temp = 0.2 + 0.15 * i  # 0.2, 0.35, 0.5...
+            try:
+                drafts.append(_single_compose(
+                    llm, _STRUCTURED_SYSTEM, user_msg, chunks,
+                    max_retries, temperature=temp,
+                ))
+            except Exception:
+                if not drafts:
+                    raise
+                # Otherwise tolerate a single failed sample
+                continue
+        draft = _merge_drafts(drafts)
 
     chunks_by_id = {i: c for i, c in enumerate(chunks)}
     accepted, rejected = verify_section_draft(draft, chunks_by_id)

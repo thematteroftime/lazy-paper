@@ -1,4 +1,8 @@
-"""PaperKG: closed 10-type entity/relation graph for one paper."""
+"""PaperKG: closed 10/11-type entity/relation graph for one paper.
+
+`author` was added in v1.7 (KG-v3 prompt). Backward-compatible: parquets
+written by v1/v2 prompts deserialize fine.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +15,7 @@ from pydantic import BaseModel, Field
 EntityType = Literal[
     "material", "dopant", "parameter", "value", "unit",
     "figure", "table", "claim", "method", "comparator",
+    "author",  # v1.7 / KG-v3
 ]
 
 
