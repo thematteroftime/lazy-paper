@@ -91,3 +91,72 @@ class Retriever:
             "vector": [v.tolist() for v in (self.vectors if self.vectors is not None else np.zeros((0, 0)))],
         })
         pq.write_table(tbl, out_path)
+
+    @classmethod
+    def load(cls, parquet_path: Path) -> "Retriever":
+        tbl = pq.read_table(parquet_path).to_pylist()
+        r = cls()
+        r.chunks = [
+            Chunk(id=row["id"], text=row["text"], doc_name=row["doc_name"],
+                  char_start=row["char_start"], char_end=row["char_end"])
+            for row in tbl
+        ]
+        r.vectors = np.asarray([row["vector"] for row in tbl], dtype=np.float32)
+        r.bm25 = bm25s.BM25()
+        r.bm25.index(bm25s.tokenize([c.text for c in r.chunks]))
+        return r
+
+    def retrieve(self, query: str, top_k: int = 8,
+                 entity_spans: Sequence[tuple[str, int, int]] | None = None,
+                 ) -> list[Chunk]:
+        """Hybrid dense + sparse via RRF; optional span overlap boost."""
+        top_k = min(top_k, 12)
+        if not self.chunks:
+            return []
+
+        # Dense scoring (cosine on normalized vectors)
+        q_vec = _embed_texts([query])[0]
+        v = self.vectors
+        denom = (np.linalg.norm(v, axis=1) * np.linalg.norm(q_vec)) + 1e-9
+        dense_scores = (v @ q_vec) / denom
+
+        # Sparse scoring (BM25)
+        tokenized = bm25s.tokenize([query])
+        bm25_k = min(top_k * 2, len(self.chunks))
+        sparse_results, sparse_scores = self.bm25.retrieve(tokenized, k=bm25_k)
+        sparse_idx = list(sparse_results[0])
+        sparse_score_map = {idx: float(sparse_scores[0][i])
+                            for i, idx in enumerate(sparse_idx)}
+
+        # RRF fusion: each rank contributes 1 / (60 + rank)
+        dense_ranks = np.argsort(-dense_scores)[:top_k * 2]
+        rrf: dict[int, float] = {}
+        for rank, idx in enumerate(dense_ranks):
+            rrf[int(idx)] = rrf.get(int(idx), 0.0) + 1.0 / (60 + rank + 1)
+        for rank, idx in enumerate(sparse_idx):
+            rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (60 + rank + 1)
+
+        # Entity boost: chunks whose char range overlaps any entity span
+        if entity_spans:
+            for idx, c in enumerate(self.chunks):
+                for (doc, s, e) in entity_spans:
+                    if c.doc_name == doc and not (e < c.char_start or s > c.char_end):
+                        rrf[idx] = rrf.get(idx, 0.0) + 0.05  # decisive bump
+                        break
+
+        ranked = sorted(rrf.items(), key=lambda kv: -kv[1])[:top_k]
+        return [self.chunks[i] for i, _ in ranked]
+
+    def check_claim(self, claim: str, expected_value: str | None = None) -> dict:
+        """Substring lookup across all chunks. Returns {found, span, evidence}."""
+        needle = (expected_value or claim).strip()
+        for c in self.chunks:
+            idx = c.text.find(needle)
+            if idx >= 0:
+                return {
+                    "found": True,
+                    "span": (c.doc_name, c.char_start + idx,
+                             c.char_start + idx + len(needle)),
+                    "evidence": c.text[max(0, idx - 40):idx + len(needle) + 40],
+                }
+        return {"found": False, "span": None, "evidence": None}
