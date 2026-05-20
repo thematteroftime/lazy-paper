@@ -33,23 +33,42 @@ def _tokens(text: str) -> set[str]:
     return out
 
 
+# Section-title keywords that justify pulling in ALL comparators from the KG.
+# These are the sections that survey prior work or compare against literature.
+_COMPARATOR_SECTION_KEYWORDS = {
+    "introduction", "background", "prior", "comparison", "literature",
+    "related", "review", "discussion", "limitations", "conclusion",
+    # zh equivalents
+    "引言", "背景", "对比", "比较", "综述", "讨论", "结论",
+}
+
+
 def entities_in_scope(section_title: str, section_guidance: str,
                       kg: PaperKG) -> list[Entity]:
     """Heuristic: an entity is "in scope" for this section if any of its text
     tokens overlaps the section title or guidance.
 
-    Always-in-scope types ('material', 'parameter', 'value', 'unit') are
-    less restrictive — they're paper-level facts that most sections may
-    reference. 'figure'/'table' are scoped to direct mentions. 'comparator'
-    and 'claim' must overlap to count.
+    Three layers of "always in scope":
+      - 'material' + 'parameter': paper-level facts most sections reference.
+      - 'comparator' + 'claim': pulled in for survey/discussion sections
+        (Introduction, Comparison with Prior Work, Discussion, etc.) where
+        the LLM needs to enumerate prior literature. Without this, the
+        comparator entities (e.g. "Ca2+/Nb5+-codoped Bi0.5Na0.5TiO3" from
+        Jiang et al.) would never match section keywords like "Introduction"
+        and would silently drop out of coverage checks.
+      - 'figure'/'table': always require explicit token overlap.
     """
     section_tokens = _tokens(section_title + " " + section_guidance)
     if not section_tokens:
         return []
+    title_lower = section_title.lower()
+    pulls_comparators = any(kw in title_lower for kw in _COMPARATOR_SECTION_KEYWORDS)
     in_scope: list[Entity] = []
     for e in kg.entities:
         if e.type in ("material", "parameter"):
-            # paper-wide; always considered in scope for content sections
+            in_scope.append(e)
+            continue
+        if pulls_comparators and e.type in ("comparator", "claim"):
             in_scope.append(e)
             continue
         ent_tokens = _tokens(e.text)
@@ -93,5 +112,11 @@ def coverage_summary(scope: list[Entity], missing: list[Entity]) -> dict:
 
 def truncate_for_flag(missing: list[Entity]) -> list[Entity]:
     """Cap the number of missing entities surfaced as flags so the LLM
-    critic's prompt stays focused."""
-    return missing[:_MAX_FLAGS_PER_SECTION]
+    critic's prompt stays focused. Prioritize the rare, high-value types
+    (comparator, claim, method, dopant) so they don't get evicted by the
+    cap when many parameter/material entities are also missing."""
+    priority = {"comparator": 0, "claim": 1, "method": 2, "dopant": 3,
+                "table": 4, "figure": 5, "material": 6, "parameter": 7,
+                "value": 8, "unit": 9}
+    ranked = sorted(missing, key=lambda e: priority.get(e.type, 99))
+    return ranked[:_MAX_FLAGS_PER_SECTION]
