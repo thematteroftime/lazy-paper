@@ -474,29 +474,46 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
             flags = regex_check(composed, source_docs, kg=kg, fig_yaml=figures)
 
             # Strategy A: coverage critic — flag in-scope KG entities missing from draft
+            missing_entities = []
             if os.environ.get("LAZY_PAPER_COVERAGE") == "1":
                 from stages.s08_section_compose.coverage import (
                     entities_in_scope, coverage_missing, truncate_for_flag,
                 )
                 scope = entities_in_scope(title_cn, guidance, kg)
-                missing = truncate_for_flag(coverage_missing(composed, scope))
-                if missing:
-                    for e in missing:
+                missing_entities = truncate_for_flag(coverage_missing(composed, scope))
+                if missing_entities:
+                    for e in missing_entities:
                         flags.append(Flag(
                             span=(0, 0),
                             claim=f"{e.type}: {e.text}",
                             problem="entity_coverage_missing",
                             evidence=f"[{e.source_span[0]}] (KG entity)",
                         ))
-                    print(f"[critic-coverage] {basename}: {len(missing)} entities "
-                          f"in scope but missing from draft", flush=True)
+                    print(f"[critic-coverage] {basename}: {len(missing_entities)} "
+                          f"entities in scope but missing from draft", flush=True)
 
             if flags:
                 from stages.s08_section_compose.reviewer import llm_review
-                evidence = "\n".join(
+                # Build evidence: retrieved chunks + the source spans of any
+                # missing entities (so the LLM critic can see where each missing
+                # comparator/claim was originally cited).
+                evidence_parts = [
                     f"[{c.doc_name}] {c.text[:200]}"
                     for c in (retriever.retrieve(guidance, top_k=4) if retriever else [])
-                )
+                ]
+                for e in missing_entities:
+                    doc, start, end = e.source_span
+                    src = source_docs.get(doc, "")
+                    if src:
+                        # widen the window so the LLM sees enough surrounding context
+                        ctx_start = max(0, start - 150)
+                        ctx_end = min(len(src), end + 250)
+                        snippet = src[ctx_start:ctx_end].replace("\n", " ").strip()
+                        evidence_parts.append(
+                            f"[entity ↔ {doc}:{start}-{end}] {e.text}\n"
+                            f"  source context: ...{snippet}..."
+                        )
+                evidence = "\n".join(evidence_parts)
                 try:
                     rev = llm_review(composed, flags, evidence)
                     composed = rev.revised_draft

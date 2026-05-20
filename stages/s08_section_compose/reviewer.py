@@ -152,9 +152,27 @@ class CritiqueRevision(BaseModel):
 _REVIEW_SYSTEM = """You are a strict factual reviewer for a single research paper.
 
 You will receive a draft section, a list of issues flagged by a regex critic,
-and the source evidence. Produce a revised draft that fixes each flagged issue
-by replacing the wrong value/reference with one that the evidence supports,
-or by removing the unsupported claim. Do NOT add new claims not in the evidence.
+and the source evidence. Produce a revised draft that fixes EACH flag.
+
+Flag-type handling (this is critical — different flag types want different fixes):
+
+* `numeric_not_in_source` / `unit_mismatch` — the draft contains a value the
+  source does not support. FIX by replacing with the correct value from the
+  evidence, or remove the unsupported claim if no supporting value exists.
+
+* `fig_not_in_yaml` / `formula_not_in_kg` — the draft references something
+  outside the paper's known set. FIX by removing the reference (or replacing
+  with one that exists in evidence).
+
+* `entity_coverage_missing` — the source documents the paper cites a
+  comparator / fact / method that the current draft FAILED to mention.
+  **You MUST ADD a sentence (or short paragraph) that integrates the missing
+  entity, grounded in the evidence below.** This is the opposite of the
+  numeric flags — you are required to extend the draft to cover the
+  flagged entity. Use the entity name verbatim. If the evidence contains
+  a numeric value linked to that entity (e.g. "Jiang et al. ... W_rec=2.94
+  J/cm³"), include the value with its unit. Keep the target language
+  consistent with the rest of the draft.
 
 Score quote_fidelity (1-4), grounding (1-4), synthesis_depth (1-4):
 - 4 = excellent, 1 = fails on this dimension.
