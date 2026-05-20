@@ -12,7 +12,7 @@ from llm.client import LLM, max_tokens
 from llm.paper_kg import PaperKG
 from llm.retriever import Retriever
 from stages._common import dump_yaml, mark_done, slugify
-from stages.s08_section_compose.reviewer import regex_check
+from stages.s08_section_compose.reviewer import Flag, regex_check
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "section_compose.md"
 
