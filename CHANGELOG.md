@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-05-21
+
+### Added — Strategy K (best-of-N merge) + Strategy L (KG-v3 author extraction)
+
+Two new env-gated strategies; their combination (KL) is the new
+benchmark-recovery champion. Per the scriptable harness at
+`scripts/evaluate.py` (see `docs/TEST_FRAMEWORK.md`):
+
+| Test case | v1.6 J | **v1.7 KL** |
+|---|---|---|
+| meng2024 ch01 benchmark recovery | 9/17 | **13/17** |
+| meng2024 ch10 synthesis specificity | 4/5 | 2/5 ⚠ |
+| yang2025 ch01 fabrication resistance | 3/3 | 3/3 |
+| ali2025_flash ch14 comparison depth | 4/5 | 4/5 |
+| **Total** | **20/30** | **22/30** |
+
+Enable in production:
+
+```bash
+LAZY_PAPER_STRUCTURED=1 \
+LAZY_PAPER_KG_PROMPT=paper_kg_v3.md \
+LAZY_PAPER_BEST_OF_N=2 \
+uv run python -m cli run ...
+```
+
+### Strategy K — best-of-N merge
+
+`LAZY_PAPER_BEST_OF_N=N` runs structured compose N times at temperatures
+0.2, 0.35, 0.5, ... and union-merges via round-robin interleave; dedupe
+on claim-text prefix (120 chars) only — two claims citing the same chunk
+with different prose both survive. Caps at SectionDraft.claims max (14).
+DeepSeek input caching keeps the chunk-list overhead almost free across
+the N calls.
+
+### Strategy L — KG-v3 + author extraction
+
+`LAZY_PAPER_KG_PROMPT=paper_kg_v3.md` extends the closed entity schema
+with `author` as the 11th type. The prompt requires every cited
+`comparator` to also yield a first-author surname `author` entity
+linked via `cited_by_paper`. `RequiredMention.author_text` surfaces
+this to compose, which now asks the LLM to introduce comparators in
+"X et al." form rather than bare chemical formulas.
+
+`llm/paper_kg.py:EntityType` extended to include "author" (backward
+compatible — v1/v2 parquets just won't have any author entities).
+
+### Added — `scripts/evaluate.py` test harness
+
+Replaces ad-hoc grep with 4 explicit `TestCase` definitions:
+- T1 benchmark recovery (meng2024 ch01, 17 pts)
+- T2 fabrication resistance (yang2025 ch01, 3 pts)
+- T3 synthesis specificity (meng2024 ch10, 5 pts)
+- T4 comparison depth (ali2025_flash ch14, 5 pts)
+
+Plus citation-accuracy scorer (when `structured.json` present) via
+fuzzy quote-match against chunk text, source-normalized for OCR
+digit-spacing and LaTeX escapes. Markdown table to stderr; JSON to
+stdout. Auto-detects paper id from run-dir suffix.
+
+### Added — `docs/TEST_FRAMEWORK.md`
+
+286-line manual: harness usage, scoring rules, current strategy
+scorecards, recommended workflow for shipping a new strategy.
+
+### Changed
+- `_CHUNK_LEAK` regex now strips bare bracket form `[2,5]` / `[0,3]`
+  in addition to `(chunk N)` parenthesis form (K's live run leaked
+  the bracket form — LLM inlined the chunk-ID list literally).
+
+### Known limitations
+- KL regresses on T3 (meng2024 ch10 synthesis 4→2). Required-mentions
+  list emphasizes survey-section citations, which crowds out
+  synthesis-detail prose. Synthesis was never the headline defect —
+  not blocking. v1.8 candidate: section-type-aware required-mentions
+  caps.
+- Strategy K alone (without L) scored 1/17 on T1 — both runs avoided
+  bare chemical-formula comparators. K provides value ONLY when
+  combined with L's author entities.
+
+### Files added
+- `llm/prompts/paper_kg_v3.md` (~40 LOC)
+- `scripts/evaluate.py` (~420 LOC)
+- `docs/TEST_FRAMEWORK.md` (~286 LOC)
+
 ## [1.6.0] — 2026-05-20
 
 ### Added — Strategy J (Perplexity pre-injection + Onyx rendering)
