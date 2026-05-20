@@ -19,6 +19,15 @@ class SearchDoc(BaseModel):
 
 
 class CitationInfo(BaseModel):
-    """Emitted by the stream processor when it identifies a citation marker."""
-    citation_num: int
+    """Emitted by the stream processor when it identifies a citation marker.
+
+    Field name matches the vendored Onyx `stream_processor.py` constructor
+    site (which uses `citation_number=num`); aliased so external callers can
+    still use the shorter `citation_num` when constructing directly.
+    """
+    citation_number: int
     document_id: str
+
+    @property
+    def citation_num(self) -> int:  # backwards-compat alias
+        return self.citation_number

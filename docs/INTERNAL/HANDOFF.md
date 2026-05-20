@@ -1,6 +1,8 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 189/189 pass · **End-to-end verified on 5 papers** (he2023, ali2025_flash, yang2025, liu2022, pan2025) · **Last release:** v1.3.3 (2026-05-20)
+> **Status:** shipped · **Tests:** 228/228 pass · **End-to-end verified on 13 papers** (3 known-defect + 10 random corpus) · **Last release:** v1.4.1 (2026-05-20)
+>
+> v1.4.x adds a PaperDB layer (KG + hybrid retrieval), a two-tier reviewer (regex + instructor LLM), and Onyx-vendored citation processing. The pydantic-ai section agent is **gated behind `LAZY_PAPER_AGENT=1`** because live runs revealed it occasionally returns meta-commentary instead of section prose; the retriever-fed `_legacy_compose` path is the default. See CHANGELOG.md for the full v1.4.0 → v1.4.1 trail.
 
 This is the doc to read first if you are picking the project up cold — whether you are a human maintainer or an AI agent. It tells you what exists, what works, what's been verified, and where to make changes.
 

@@ -7,8 +7,8 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.4.0-blue"></a>
-  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-225%20passing-22c55e"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.4.1-blue"></a>
+  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-228%20passing-22c55e"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
@@ -123,7 +123,7 @@ Output lands at `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`.
 | Renderers | `python-docx`, `python-pptx`, `weasyprint`, `jinja2` | one stateless renderer per format |
 | Config | `pyyaml`, `python-dotenv` | YAML artifacts + `.env` credentials |
 | HTTP | `requests` | OCR API calls |
-| Dev | `pytest>=8` | 225 tests |
+| Dev | `pytest>=8` | 228 tests |
 
 ## Quality controls (v1.4)
 
@@ -166,7 +166,7 @@ For OCR: `OCR_BACKEND=mineru` (recommended for figure-heavy papers) or `OCR_BACK
 ## Tests
 
 ```bash
-uv run pytest -q          # 225 tests
+uv run pytest -q          # 228 tests
 uv run pytest -m live     # live LLM smoke tests (real keys)
 ```
 
@@ -177,7 +177,7 @@ uv run pytest -m live     # live LLM smoke tests (real keys)
   author  = {thematteroftime},
   title   = {lazy-paper: PDF research papers to multi-format deep analysis},
   url     = {https://github.com/thematteroftime/lazy-paper},
-  version = {1.3.0},
+  version = {1.4.1},
   year    = {2026}
 }
 ```

@@ -45,17 +45,22 @@ def _extract_via_llm(system: str, user: str) -> PaperKG:
 
 
 def build_paper_kg(*, chapters_dir: Path, out_dir: Path) -> PaperKG | None:
-    """Returns the KG on success, None on failure (writes `kg_extract.failed`)."""
+    """Returns the KG on success, None on failure (writes `kg_extract.failed`).
+
+    All failure modes — empty input, prompt-template malformation, LLM error,
+    parquet write error — are caught and recorded in the marker file. The
+    s06 runner must never abort because of a KG failure.
+    """
     paper_text = _gather_source(chapters_dir)
     if not paper_text.strip():
         (out_dir / "kg_extract.failed").write_text("no source chapters", encoding="utf-8")
         return None
-    template_text = _PROMPT_PATH.read_text(encoding="utf-8")
-    system, user = _split_prompt(template_text, paper_text)
     try:
+        template_text = _PROMPT_PATH.read_text(encoding="utf-8")
+        system, user = _split_prompt(template_text, paper_text)
         kg = _extract_via_llm(system, user)
-    except Exception as exc:  # instructor parse error after retries
+        kg.to_parquet(out_dir / "paper_kg.parquet")
+        return kg
+    except Exception as exc:  # template parse, LLM, pyarrow — any failure
         (out_dir / "kg_extract.failed").write_text(repr(exc), encoding="utf-8")
         return None
-    kg.to_parquet(out_dir / "paper_kg.parquet")
-    return kg

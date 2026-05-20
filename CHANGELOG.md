@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-05-20
+
+### Added
+- **Cross-section findings memory**: s08 prompt now includes a `{prior_findings}` block listing first-sentence summaries of the last 8 composed sections, with a "do not restate verbatim — refer back, build on, or contrast" instruction. Eliminates cross-chapter content overlap (e.g., the chemical-formula repetition observed in meng2024 v1.4.0 across ch01/ch03/ch10).
+- **Language-guard retry**: composer post-checks the zh-character ratio of each section; when `--lang zh` was requested but the draft is < 30% Chinese and > 100 chars (LLM defaulted to source-paper language), it retries once with a hard "OUTPUT MUST BE WRITTEN IN CHINESE" system-prompt amendment.
+
+### Validated
+- meng2024 v1.4.1 vs v1.4.0: 30-char cross-chapter overlap dropped 35 → 4 windows (no 3-chapter overlaps remain); ch05 Chinese ratio 0% → 62.5%.
+
 ## [1.4.0] — 2026-05-20
 
 ### Added
@@ -336,7 +345,10 @@ Initial public release of lazy-paper.
 - `SlidePlanner`: deterministic slide layout logic, no IO, accepts optional LLM summaries and outline
 - `LLM` client: OpenAI-compatible; two roles (`vision`, `text`) configured via `models.yaml` and env vars
 
-[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.3.3...HEAD
+[Unreleased]: https://github.com/thematteroftime/lazy-paper/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.4.1
+[1.4.0]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.4.0
+[1.3.4]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.4
 [1.3.3]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.3
 [1.3.2]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.2
 [1.3.1]: https://github.com/thematteroftime/lazy-paper/releases/tag/v1.3.1

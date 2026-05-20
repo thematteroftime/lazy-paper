@@ -193,22 +193,26 @@ Output language (Chinese/English) is controlled by `--lang` via `LANG_INSTRUCTIO
 
 For each section node in `template.yaml`:
 
-1. **Evidence retrieval**: load `Retriever` from `retrieval.parquet` and call `retriever.retrieve(section.guidance, top_k=8, entity_boost=[e.id for e in kg.scoped_to(section)])`. The RRF-fused ranked list of chunks (dense cosine + BM25 sparse) is boosted for chunks whose character spans overlap with KG entity spans relevant to this section. Falls back to legacy keyword excerpts if `retrieval.failed` or `kg_extract.failed` marker is present.
+1. **Evidence retrieval**: load `Retriever` from `retrieval.parquet` and call `retriever.retrieve(guidance, top_k=8)`. The default `_legacy_compose` path passes no `entity_boost`; only the optional agent path may pass entity IDs for boost. The RRF-fused ranked list of chunks combines dense cosine + BM25 sparse. Falls back to keyword excerpts if `retrieval.failed` or `kg_extract.failed` marker is present.
 
-2. **Composition**: calls `LLM(role="text")` with the `llm/prompts/section_compose.md` prompt, injecting paper context, section metadata, retrieved evidence chunks, and figure notes.
+2. **Cross-section context (v1.4.1)**: a rolling first-sentence summary of the last 8 composed sections is threaded into the `{prior_findings}` slot of the compose prompt with a "do not restate verbatim — refer back, build on, or contrast" instruction. Eliminates verbatim cross-chapter repetition (e.g., the chemical-formula problem observed in meng2024 v1.4.0).
 
-3. **Regex critic (observe-only)**: `reviewer.regex_check(draft, source_docs, kg, fig_yaml)` scans the draft for:
+3. **Composition**: calls `LLM(role="text")` with the `llm/prompts/section_compose.md` prompt, injecting paper context, section metadata, retrieved evidence chunks, figure notes, and `{prior_findings}`.
+
+4. **Language guard (v1.4.1)**: when `--lang zh` is set, the composer post-checks the Chinese-character ratio of the draft. If < 30% and length > 100 chars (LLM defaulted to the source paper's English), it retries once with a hard "OUTPUT MUST BE WRITTEN IN CHINESE" system-prompt amendment.
+
+5. **Regex critic**: `reviewer.regex_check(draft, source_docs, kg, fig_yaml)` scans the draft for:
    - numeric values not found in source documents (with unit normalization via `_units.normalize()`)
    - `Fig. N` / `Table N` references not present in `figures.yaml`
    - chemical formulas or symbol bindings not present in the KG
 
-   Any `Flag` objects produced are appended to `critic_flags.yaml`. In v1.3.4 the critic is **observe-only** — it records flags but does not trigger rewriting.
+   Any `Flag` objects produced are appended to `critic_flags.yaml`.
 
-4. **LLM critic (v1.4.0)**: if `reviewer.regex_check()` produces flags, `reviewer.llm_review(draft, flags, evidence)` is called. The reviewer uses `instructor` with `response_model=CritiqueRevision`, which carries `revised_draft`, `quote_fidelity`, `grounding`, `synthesis_depth` (all 1–4 Likert scores), and `notes`. The revised draft replaces the original. A second regex pass runs; any remaining flags are soft-accepted with a logged warning.
+6. **LLM critic**: if `reviewer.regex_check()` produces flags, `reviewer.llm_review(draft, flags, evidence)` is called. The reviewer uses `instructor` with `response_model=CritiqueRevision`, which carries `revised_draft`, `quote_fidelity`, `grounding`, `synthesis_depth` (all 1–4 Likert scores), and `notes`. The revised draft replaces the original. A second regex pass runs; any remaining flags are soft-accepted with a logged warning.
 
-5. **Findings stub**: `findings.append_verified_claims(section.title, claims)` appends verified claims from the reviewed draft to `findings.yaml` (write-only in v1.4; consumed by a future cross-chapter coherence agent in v1.5).
+7. **Findings stub**: `findings.append_verified_claims(section.title, claims)` appends verified claims from the reviewed draft to `findings.yaml` (write-only in v1.4; consumed by a future cross-chapter coherence agent in v1.5).
 
-6. Write the chapter Markdown to `chapters/<slug>.md`.
+8. Write the chapter Markdown to `chapters/<slug>.md`. If `composed` is empty (both compose attempts failed), a placeholder marker is written instead so downstream stages don't silently emit a heading-only chapter.
 
 #### Optional pydantic-ai agent path (experimental, env-gated)
 

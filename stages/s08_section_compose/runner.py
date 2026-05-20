@@ -241,9 +241,10 @@ def _legacy_compose(llm, system_tpl, user_tpl, paper_context_str, node, idx,
     # mostly English (LLM defaulting to source-paper language), retry once
     # with a system-prompt amendment that hard-enforces Chinese.
     composed = response.content.strip()
-    if lang == "zh" and len(composed) > 100 and _zh_ratio(composed) < 0.3:
+    ratio = _zh_ratio(composed)
+    if lang == "zh" and len(composed) > 100 and ratio < 0.3:
         print(f"[s08] {basename}: zh requested but draft is mostly English "
-              f"(zh ratio {_zh_ratio(composed):.2f}); retrying", flush=True)
+              f"(zh ratio {ratio:.2f}); retrying", flush=True)
         forced_system = (system_tpl
                          + "\n\n## HARD LANGUAGE OVERRIDE\n"
                          "OUTPUT MUST BE WRITTEN IN CHINESE (中文) PROSE. "
@@ -321,6 +322,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
     written: list[str] = []
     all_flags: dict[str, list[dict]] = {}
     prior_section_claims: list[str] = []  # accumulated across sections (v1.4.1)
+    agent_actually_ran = False  # true iff at least one section used the agent path
 
     for idx, node in enumerate(template):
         title_cn = node["title"]
@@ -358,6 +360,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                     kg=kg, retriever=retriever,
                     prior_bullet=prior_bullet, max_iters=8,
                 )
+                agent_actually_ran = True
             except Exception as exc:
                 print(f"[s08] agent failed for {basename}: {exc!r}; legacy compose",
                       flush=True)
@@ -417,6 +420,11 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         if first_sentence:
             prior_section_claims.append(f"§{idx + 1} {title_cn}: {first_sentence}")
 
+        if not composed.strip():
+            print(f"[s08] WARNING: {basename} produced empty content; "
+                  f"writing placeholder marker", flush=True)
+            composed = "（本节生成失败，未能从源论文中提取到对应内容。）"
+
         md_file = out_chapters / f"{basename}.md"
         heading = f"# {title_cn}\n\n"
         md_file.write_text(heading + composed + "\n", encoding="utf-8")
@@ -426,12 +434,18 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         dump_yaml(out_dir / "critic_flags.yaml", all_flags)
 
     agent_enabled = os.environ.get("LAZY_PAPER_AGENT") == "1"
+    if agent_actually_ran:
+        agent_status = "active"
+    elif agent_enabled and kg and retriever:
+        agent_status = "enabled_but_unused"  # opted in, but every call failed
+    else:
+        agent_status = "disabled"
     dump_yaml(out_dir / "written.yaml", written)
     mark_done(out_dir, {
         "sections": len(written),
         "retriever": "ok" if retriever else "degraded",
         "kg": "ok" if kg else "missing",
-        "agent": "enabled" if (agent_enabled and kg and retriever) else "disabled",
+        "agent": agent_status,
         "flagged_sections": len(all_flags),
     })
     return {"sections": len(written)}

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Sequence
@@ -31,14 +32,14 @@ class Chunk:
 def _embed_texts(texts: list[str]) -> np.ndarray:
     """Batch-embed via the configured embeddings endpoint.
 
-    DashScope (Qwen text-embedding-v3) caps batch size at 10. We batch
-    accordingly; OpenAI-compatible endpoints with larger limits absorb the
-    smaller batches without trouble.
+    DashScope (Qwen text-embedding-v3) caps batch size at 10. Override
+    via env `LLM_EMBEDDINGS_BATCH_SIZE` if your endpoint allows larger.
     """
     llm = LLM(role="embeddings")
+    batch_size = int(os.environ.get("LLM_EMBEDDINGS_BATCH_SIZE", "10"))
     out: list[list[float]] = []
-    for i in range(0, len(texts), 10):
-        batch = texts[i:i + 10]
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
         resp = llm._client.embeddings.create(model=llm.model, input=batch)
         out.extend([d.embedding for d in resp.data])
     return np.asarray(out, dtype=np.float32)
@@ -114,7 +115,7 @@ class Retriever:
                  entity_spans: Sequence[tuple[str, int, int]] | None = None,
                  ) -> list[Chunk]:
         """Hybrid dense + sparse via RRF; optional span overlap boost."""
-        top_k = min(top_k, 12)
+        top_k = max(1, min(top_k, 12))
         if not self.chunks:
             return []
 
