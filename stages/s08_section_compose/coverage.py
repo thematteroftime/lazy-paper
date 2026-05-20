@@ -33,6 +33,39 @@ def _tokens(text: str) -> set[str]:
     return out
 
 
+# Common materials-science terms that match many entities trivially —
+# matching on these alone shouldn't count an entity as "covered".
+_STOP_TOKENS = {
+    "based", "ceramics", "ceramic", "rfe", "afe", "rafe", "pnr", "pnrs",
+    "nbt", "ferroelectric", "antiferroelectric", "relaxor", "energy",
+    "storage", "ceramic", "doping", "doped", "modified", "performance",
+    "system", "material", "materials", "phase", "loop", "loops",
+}
+
+
+def _distinctive_tokens(text: str) -> set[str]:
+    """Tokens worth requiring a draft to match. Excludes generic vocabulary
+    and prefers chemical-formula-shaped strings (mixed letters+digits or
+    5+ char alphanum). For "Ca2+/Nb5+-codoped Bi0.5Na0.5TiO3-based RFE
+    ceramics" this returns {"ca2", "nb5", "codoped", "bi0", "na0", "tio3"}
+    rather than including generic "based"/"ceramics"/"rfe"."""
+    out: set[str] = set()
+    for m in re.finditer(r"[A-Za-z0-9.+/_-]{3,}", text):
+        tok = m.group(0).lower()
+        # filter stop-tokens
+        if tok in _STOP_TOKENS:
+            continue
+        # require either chemical-formula shape (letter+digit mix) or 5+ chars
+        has_digit = any(c.isdigit() for c in tok)
+        has_letter = any(c.isalpha() for c in tok)
+        if (has_digit and has_letter) or len(tok) >= 5:
+            out.add(tok)
+    # Plus 4+ char CJK runs (longer is more distinctive)
+    for m in re.finditer(r"[一-鿿]{4,}", text):
+        out.add(m.group(0))
+    return out
+
+
 # Section-title keywords that justify pulling in ALL comparators from the KG.
 # These are the sections that survey prior work or compare against literature.
 _COMPARATOR_SECTION_KEYWORDS = {
@@ -78,19 +111,26 @@ def entities_in_scope(section_title: str, section_guidance: str,
 
 
 def coverage_missing(draft: str, scope_entities: Iterable[Entity]) -> list[Entity]:
-    """Return entities whose text does not appear (case-insensitive) in the draft."""
+    """Return entities whose distinctive text-tokens don't appear in the draft.
+
+    Matching rule: an entity is "covered" iff
+      (a) its full text appears verbatim in the draft, OR
+      (b) at least one of its DISTINCTIVE tokens appears in the draft.
+
+    Distinctive = a chemical-formula-shaped token (mixed alphanum) or 5+ char
+    word, EXCLUDING common stop-words like "RFE", "based", "ceramics" that
+    would otherwise produce false covered-positives.
+    """
     draft_lower = draft.lower()
     missing: list[Entity] = []
     for e in scope_entities:
-        # any non-trivial token of the entity text appearing counts as covered
         ent_text = e.text.strip()
         if not ent_text:
             continue
-        # full string match first, then any 3+ char token
         if ent_text.lower() in draft_lower:
             continue
-        ent_tokens = [t for t in _tokens(ent_text) if len(t) >= 3]
-        if ent_tokens and any(t in draft_lower for t in ent_tokens):
+        distinctive = _distinctive_tokens(ent_text)
+        if distinctive and any(t in draft_lower for t in distinctive):
             continue
         missing.append(e)
     return missing
