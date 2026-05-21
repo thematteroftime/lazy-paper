@@ -6,6 +6,7 @@ imgs/<filename>.jpg) so downstream stages don't care which OCR was used.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import time
@@ -17,10 +18,11 @@ import requests
 
 from stages._common import mark_done
 
-BATCH_URL = "https://mineru.net/api/v4/file-urls/batch"
-RESULTS_URL = "https://mineru.net/api/v4/extract-results/batch/{batch_id}"
-POLL_INTERVAL_S = 10
-MAX_POLL_S = 600
+_BASE = os.environ.get("MINERU_BASE_URL", "https://mineru.net/api/v4")
+BATCH_URL = f"{_BASE}/file-urls/batch"
+RESULTS_URL = f"{_BASE}/extract-results/batch/{{batch_id}}"
+POLL_INTERVAL_S = int(os.environ.get("MINERU_POLL_S", "10"))
+MAX_POLL_S = int(os.environ.get("MINERU_TIMEOUT_S", "1800"))
 
 
 class MinerUError(RuntimeError):
@@ -87,7 +89,18 @@ def _download_and_extract(zip_url: str, dest: Path) -> Path:
         with zip_path.open("wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
+    # Zip-slip guard: refuse absolute paths or '..' segments. Without this,
+    # a malicious or MITM'd zip could write outside `dest`.
+    dest_resolved = dest.resolve()
     with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.namelist():
+            target = (dest / member).resolve()
+            try:
+                target.relative_to(dest_resolved)
+            except ValueError as exc:
+                raise MinerUError(
+                    f"refusing unsafe zip entry: {member!r}"
+                ) from exc
         zf.extractall(dest)
     return dest
 

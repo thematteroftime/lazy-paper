@@ -136,20 +136,6 @@ def coverage_missing(draft: str, scope_entities: Iterable[Entity]) -> list[Entit
     return missing
 
 
-def coverage_summary(scope: list[Entity], missing: list[Entity]) -> dict:
-    """One-line summary for done.yaml / critic_flags.yaml."""
-    n_scope = len(scope)
-    n_missing = len(missing)
-    ratio = (n_scope - n_missing) / n_scope if n_scope else 1.0
-    return {
-        "in_scope": n_scope,
-        "covered": n_scope - n_missing,
-        "missing": n_missing,
-        "ratio": round(ratio, 2),
-        "below_threshold": ratio < _COVERAGE_THRESHOLD,
-    }
-
-
 def truncate_for_flag(missing: list[Entity]) -> list[Entity]:
     """Cap the number of missing entities surfaced as flags so the LLM
     critic's prompt stays focused. Prioritize the rare, high-value types

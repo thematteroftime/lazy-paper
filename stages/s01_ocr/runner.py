@@ -17,9 +17,13 @@ from stages.s01_ocr import mineru as _mineru
 
 _IMG_TAG = re.compile(r'<img[^>]*src="([^"]+)"', re.IGNORECASE)
 
-API = "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
-MODEL = "PaddleOCR-VL-1.5"
+API = os.environ.get(
+    "PADDLEOCR_BASE_URL", "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
+)
+MODEL = os.environ.get("PADDLEOCR_MODEL", "PaddleOCR-VL-1.5")
 OPT = {k: False for k in ("useDocOrientationClassify", "useDocUnwarping", "useChartRecognition")}
+_PADDLEOCR_TIMEOUT_S = int(os.environ.get("PADDLEOCR_TIMEOUT_S", "1800"))
+_PADDLEOCR_POLL_S = int(os.environ.get("PADDLEOCR_POLL_S", "5"))
 
 
 def upscale_images(*, pdf: Path, ocr_dir: Path, target_dpi: int = 300,
@@ -207,10 +211,18 @@ def _run_paddleocr(*, pdf: Path, out_dir: Path, token: str) -> dict:
                    data={"model": MODEL, "optionalPayload": json.dumps(OPT)},
                    files={"file": f}, timeout=600)
     if not r.ok:
-        raise SystemExit(r.text)
+        # Don't echo r.text — upstream gateways occasionally include
+        # request headers/payload, which can leak the API token.
+        raise SystemExit(f"paddleocr HTTP {r.status_code}")
     job_id = r.json()["data"]["jobId"]
     poll_url = f"{API}/{job_id}"
+    deadline = time.monotonic() + _PADDLEOCR_TIMEOUT_S
     while True:
+        if time.monotonic() > deadline:
+            raise SystemExit(
+                f"paddleocr poll timed out after {_PADDLEOCR_TIMEOUT_S}s "
+                f"(set PADDLEOCR_TIMEOUT_S to extend)"
+            )
         j = s.get(poll_url, headers=h, timeout=60).json()["data"]
         if j["state"] == "done":
             text = s.get(j["resultUrl"]["jsonUrl"], timeout=120).text
@@ -218,7 +230,7 @@ def _run_paddleocr(*, pdf: Path, out_dir: Path, token: str) -> dict:
         if j["state"] == "failed":
             raise SystemExit(j.get("errorMsg", j))
         print(j["state"], file=sys.stderr)
-        time.sleep(5)
+        time.sleep(_PADDLEOCR_POLL_S)
     n = 0
     for line in text.strip().split("\n"):
         line = line.strip()

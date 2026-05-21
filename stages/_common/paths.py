@@ -7,7 +7,8 @@ from pathlib import Path
 
 def slugify(text: str, maxlen: int = 50) -> str:
     s = _re.sub(r"[^\w一-鿿-]+", "_", text.strip(), flags=_re.UNICODE)
-    s = s.strip("_")
+    # Strip leading dots/underscores so `.env` etc. can't become a path target.
+    s = s.strip("._")
     return s[:maxlen] if s else "untitled"
 
 

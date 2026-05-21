@@ -1,6 +1,6 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 250/250 pass · **End-to-end verified on 13+ papers** (3 known-defect + 10 random corpus + v1.8 stability validation) · **Last release:** v1.8.1 (2026-05-21)
+> **Status:** shipped · **Tests:** 250/250 pass · **End-to-end verified on 13+ papers** (10-paper v1.8.2 corpus + 3-paper v1.8.1 stability validation) · **Last release:** v1.8.2 (2026-05-21)
 >
 > **v1.8.1 makes Strategy KL the recommended high-quality default.** Fixes
 > two compose-side bugs that caused v1.7 KL's 1 – 13 variance: (a) the
@@ -83,10 +83,26 @@ Docker users: `docker compose build && docker compose run --rm lazy-paper run --
 | `LLM_TEXT_MODEL` | No | `deepseek-reasoner` | Text model name |
 | `LLM_MAX_TOKENS_CEILING` | No | `40000` | Caps `max_tokens` for every LLM call (single knob to constrain spend or quota) |
 | `LAZY_PAPER_STRUCTURED` | No | unset | `1` enables instructor-based structured compose with verifier (recommended for v1.8.1+) |
-| `LAZY_PAPER_KG_PROMPT` | No | `paper_kg.md` | KG-extraction prompt file. Use `paper_kg_v3.md` for author-entity extraction in Strategy L |
+| `LAZY_PAPER_KG_PROMPT` | No | `paper_kg.md` | KG-extraction prompt file. Use `paper_kg_v3.md` for author-entity extraction (Strategy L) |
 | `LAZY_PAPER_BEST_OF_N` | No | `1` | Number of independent draft samples per section. `2` enables Strategy K best-of-N merge |
 | `LAZY_PAPER_VERIFIER_THRESHOLD` | No | `0.85` | Minimum quote-vs-chunk substring/fuzzy match score |
 | `LAZY_PAPER_RETRY_THRESHOLD` | No | `0.5` | Post-verify coverage at or below which the retry-when-empty call fires. `0` disables retries |
+| `LAZY_PAPER_AGENT` | No | unset | `1` enables the experimental pydantic-ai tool-calling agent compose path |
+| `LAZY_PAPER_TWO_STEP` | No | unset | `1` enables the experimental outline→expand two-step compose path |
+| `LAZY_PAPER_WHOLE_PAPER` | No | unset | `1` injects the whole paper text into each section compose (high cost) |
+| `LAZY_PAPER_COVERAGE` | No | unset | `1` adds entity-coverage flags to `critic_flags.yaml` |
+| `LAZY_PAPER_CHUNK_SIZE` | No | `400` | Retriever chunk size (chars) |
+| `LAZY_PAPER_CHUNK_OVERLAP` | No | derived | Retriever chunk overlap |
+| `LAZY_PAPER_HIERARCHICAL` | No | unset | `1` enables parent-child hierarchical retrieval |
+| `LAZY_PAPER_PARENT_SIZE` | No | `2000` | Parent chunk size when hierarchical retrieval is on |
+| `LAZY_PAPER_PARENT_OVERLAP` | No | `200` | Parent chunk overlap |
+| `MINERU_BASE_URL` | No | `https://mineru.net/api/v4` | MinerU API base URL (override for self-hosted/proxy) |
+| `MINERU_TIMEOUT_S` | No | `1800` | Hard deadline for MinerU polling (large PDFs may need more) |
+| `MINERU_POLL_S` | No | `10` | MinerU poll interval |
+| `PADDLEOCR_BASE_URL` | No | `https://paddleocr.aistudio-app.com/api/v2/ocr/jobs` | PaddleOCR API endpoint |
+| `PADDLEOCR_MODEL` | No | `PaddleOCR-VL-1.5` | PaddleOCR model name |
+| `PADDLEOCR_TIMEOUT_S` | No | `1800` | Hard deadline for PaddleOCR polling |
+| `PADDLEOCR_POLL_S` | No | `5` | PaddleOCR poll interval |
 
 ---
 

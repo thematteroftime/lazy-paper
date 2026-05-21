@@ -41,8 +41,11 @@ class _ContextResolver:
             if path.exists():
                 try:
                     self._ctx = load_yaml(path) or {}
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Context is best-effort metadata for the renderer;
+                    # fall through with fallbacks rather than crash.
+                    print(f"[s09] context.yaml unreadable: {exc!r}",
+                          flush=True)
 
     def title(self, fallback: str) -> str:
         t = self._ctx.get("title")
@@ -106,7 +109,11 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
             results[fmt] = str(out_path)
         except Exception as exc:
             partial = True
-            results[fmt] = {"error": repr(exc)}
+            # Persist a compact error so done.yaml stays small and doesn't
+            # leak prompt fragments or URLs from upstream HTTP excs.
+            results[fmt] = {
+                "error": f"{type(exc).__name__}: {str(exc)[:200]}"
+            }
             print(f"[s09_render] WARNING: {fmt} render failed: {exc}. "
                   f"Other formats continue.", file=sys.stderr, flush=True)
 

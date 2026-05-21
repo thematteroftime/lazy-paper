@@ -10,22 +10,91 @@
 
 Stages are idempotent: if `done.yaml` exists the stage is skipped by default. The `--force` flag bypasses this check. The `--only <stage>` flag runs exactly one stage, relying on previous stages' existing outputs.
 
+### Data flow at a glance
+
+```mermaid
+flowchart LR
+    PDF[PDF in]
+    TPL[outline.docx]
+    PDF --> S01[s01_ocr<br/>MinerU / Paddle]
+    S01 --> S02[s02_clean<br/>strip headers]
+    S02 --> S03[s03_chapter<br/>chapterize]
+    S03 --> S04[s04_figures<br/>pair img↔caption]
+    TPL --> S05[s05_template<br/>parse outline]
+    S03 --> S06[s06_context<br/>+ KG instructor]
+    S04 --> S06
+    S04 --> S07[s07_figure_analyze<br/>Vision LLM]
+    S06 --> S08
+    S07 --> S08[s08_section_compose<br/>retriever + Strategy KL]
+    S05 --> S08
+    S08 --> S09[s09_render<br/>4 renderers]
+    S09 --> DOCX[preview.docx]
+    S09 --> PDFo[preview.pdf]
+    S09 --> HTML[preview.html]
+    S09 --> PPTX[preview.pptx]
+
+    classDef ocr fill:#fef3c7,stroke:#92400e
+    classDef llm fill:#dbeafe,stroke:#1e3a8a
+    classDef det fill:#dcfce7,stroke:#166534
+    classDef render fill:#fce7f3,stroke:#831843
+    class S01,S02,S03,S04 det
+    class S05 det
+    class S06,S07,S08 llm
+    class S09 render
+```
+
+Green = deterministic (no LLM). Blue = LLM-driven. Pink = renderer.
+
+### On-disk layout
+
 ```
 runs/<paper_id>/
-  s01_ocr/            doc_*.md + imgs/*.jpg
-  s02_clean/          doc_*.md (cleaned) + imgs/ (copied)
-  s03_chapter/        chapters/chapter_*.md + manifest.yaml
-  s04_figures/        figures.yaml + mentions.yaml + imgs/ (upscaled+merged)
-  s05_template/       template.yaml
-  s06_context/        context.yaml + paper_kg.parquet + paper_context.{prompt.md,response.json}
-  s07_figure_analyze/ fig_notes.yaml + <fig_id>.{prompt.md,response.json}
-  s08_section_compose/ chapters/*.md + retrieval.parquet + critic_flags.yaml + findings.yaml
-                        + <slug>.{prompt.md,response.json}
-  s09_render/         preview.{docx,pdf,html,pptx} + done.yaml + llm_cache/
+  s01_ocr/             doc_*.md + imgs/*.jpg
+  s02_clean/           doc_*.md (cleaned) + imgs/ (copied)
+  s03_chapter/         chapters/chapter_*.md + manifest.yaml
+  s04_figures/         figures.yaml + mentions.yaml + imgs/ (upscaled+merged)
+  s05_template/        template.yaml
+  s06_context/         context.yaml + paper_kg.parquet + paper_kg.rel.parquet
+                       + paper_context.{prompt.md,response.json}
+  s07_figure_analyze/  fig_notes.yaml + <fig_id>.{prompt.md,response.json}
+  s08_section_compose/ chapters/*.md + retrieval.parquet + critic_flags.yaml
+                       + findings.yaml + <slug>.{prompt.md,response.json,structured.json}
+  s09_render/          preview.{docx,pdf,html,pptx} + done.yaml + llm_cache/
+                       + mypaper_bundle/   (assembled markdown + figures)
   meta.yaml
 ```
 
-Entry point: `cli.py::main` — parses args, resolves env vars, iterates `STAGE_ORDER`, calls `_run_one()` per stage.
+Every LLM call writes both prompt and response to disk. Re-running a single stage with `--force --only <stage>` regenerates only that stage's output and downstream deltas — useful for iterating on prompt edits without re-running OCR.
+
+### Strategy KL compose (the v1.8.1 recommended path)
+
+When `LAZY_PAPER_STRUCTURED=1 LAZY_PAPER_KG_PROMPT=paper_kg_v3.md LAZY_PAPER_BEST_OF_N=2`:
+
+```mermaid
+flowchart TD
+    A[section guidance] --> B[build_retrieval_query<br/>title + guidance + KG-scoped tokens]
+    B --> C[retriever.retrieve<br/>top_k=15, RRF dense+BM25]
+    D[paper_kg.parquet<br/>11 entity types] --> E[build_required_mentions<br/>survey-section comparators<br/>+ author via cited_by_paper]
+    E --> F[select_top_required<br/>cap=5, len + digit-density]
+    C --> G[best-of-N compose<br/>N=2 instructor calls<br/>temps 0.2, 0.4]
+    F --> G
+    G --> H[_merge_drafts<br/>round-robin interleave<br/>120-char prefix dedupe]
+    H --> I[verify_section_draft<br/>4-tier quote match:<br/>exact / icase / normalized / fuzzy]
+    I --> J{post-verify<br/>coverage ≥<br/>RETRY_THRESHOLD?}
+    J -- yes --> K[draft.render<br/>strip chunk-id leaks]
+    J -- no --> L[one retry call<br/>strengthened prompt<br/>temp=0.3]
+    L --> M[verify again]
+    M --> K
+    K --> N[chapters/&lt;slug&gt;.md<br/>+ structured.json audit]
+
+    classDef cache fill:#fef9c3,stroke:#854d0e
+    classDef llm fill:#dbeafe,stroke:#1e3a8a
+    class G,L llm
+```
+
+The verifier's 4-tier match (`structured.py::_quote_in_chunk` + `stages/_common/normalize.py::normalize_ocr_latex`) is what made v1.8.1's stability win possible: LaTeX-form OCR like `$W _ { \mathrm { rec } }$` normalizes to `w_{rec}` so a verbatim LLM quote matches even when source whitespace differs. See `docs/v1_8_validation_results.md` for the root-cause story.
+
+Entry point: `cli.py::main` — parses args, resolves env vars, slugifies `--paper-id` (defends against path traversal), iterates `STAGE_ORDER`, calls `_run_one()` per stage.
 
 ## Stages
 

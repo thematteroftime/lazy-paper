@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.2] — 2026-05-21
+
+### Fixed — security + flow hardening (driven by 3-subagent audit)
+
+A redundancy / security / hardcodes triple-audit surfaced fixable
+issues. v1.8.2 ships the must-fix subset; speculative refactors are
+deferred to v1.9.
+
+**Security:**
+- **HIGH — `--paper-id` path traversal** (`cli.py:234`): now always
+  slugifies the user value, defending against `--paper-id
+  "../../tmp/x"` writing outside `runs/`.
+- **MEDIUM — zip-slip in MinerU extractor** (`stages/s01_ocr/mineru.py`):
+  validates each `ZipInfo.filename` against `dest.resolve()` and
+  refuses absolute paths or `..` segments.
+- **LOW — error message redaction**: PaddleOCR HTTP errors no longer
+  echo the response body (`r.text`) which can include upstream
+  gateway headers; s09 render failures persist
+  `type(exc).__name__ + str(exc)[:200]` instead of full `repr(exc)`.
+
+**Flow:**
+- **PaddleOCR infinite poll**: added `PADDLEOCR_TIMEOUT_S` deadline
+  (default 1800s). The previous loop had no timeout and could hang
+  forever on a stuck job.
+- **Silent exception swallows removed** in `stages/s08_section_compose/runner.py::_build_retrieval_query` and `stages/s09_render/runner.py::PaperContext.__init__`. Both now log + fall back gracefully.
+
+**Maintainability:**
+- Shared `stages/_common/normalize.py` consolidates the OCR/LaTeX
+  text normalizer that v1.8.1 introduced in `structured.py`.
+- Dead `coverage_summary()` deleted from `stages/s08_section_compose/coverage.py`.
+- `stages/s06_context/kg_extract.py` docstring now points at
+  `paper_kg_v3.md` (the v1.7+ recommended prompt) instead of the
+  removed `paper_kg_v2.md`.
+
+### Added — env-overridable OCR knobs
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MINERU_BASE_URL` | `https://mineru.net/api/v4` | self-hosted/proxied MinerU |
+| `MINERU_TIMEOUT_S` | `1800` | hard deadline for MinerU poll |
+| `MINERU_POLL_S` | `10` | poll interval |
+| `PADDLEOCR_BASE_URL` | `https://paddleocr.aistudio-app.com/api/v2/ocr/jobs` | self-hosted Paddle |
+| `PADDLEOCR_MODEL` | `PaddleOCR-VL-1.5` | pin model version |
+| `PADDLEOCR_TIMEOUT_S` | `1800` | hard deadline for Paddle poll |
+| `PADDLEOCR_POLL_S` | `5` | poll interval |
+
+### Validated — 10-paper corpus
+
+Full coverage across 10 papers (5 with TestCases + 5 generic
+pipeline-success). All 10 produced 15/15 chapters with substantive
+output. The v1.8.1 retry-when-empty mechanism fires on 4 of the 9
+newly-validated papers, confirming it's load-bearing.
+
+The single outlier (ali2025_flash ch14 = 0/5) is analyzed in
+`docs/v1_8_2_corpus_validation.md` as LLM sampling variance, not a
+regression — v1.7 KL also varied widely on long survey sections.
+
+### Architecture diagrams
+
+`docs/ARCHITECTURE.md` now includes:
+- **Pipeline data flow** (Mermaid flowchart, color-coded by stage class).
+- **Strategy KL compose flow** (the v1.8.1 verifier + retry pipeline,
+  including the 4-tier quote match).
+
+Test count: 250/250 passing (unchanged).
+
 ## [1.8.1] — 2026-05-21
 
 ### Fixed — KL stability win (mean 5.0 → 15.0 on meng2024)

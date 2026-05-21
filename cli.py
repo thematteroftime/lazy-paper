@@ -231,7 +231,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     load_dotenv(Path.cwd() / ".env", override=False)
-    paper_id = args.paper_id or slugify(Path(args.pdf).stem)
+    # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
+    # would otherwise let outputs land outside runs/.
+    paper_id = slugify(args.paper_id) if args.paper_id else slugify(Path(args.pdf).stem)
     run_root = Path(args.runs_dir)
     run_root.mkdir(parents=True, exist_ok=True)
 

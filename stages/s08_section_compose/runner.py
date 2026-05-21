@@ -223,8 +223,9 @@ def _build_retrieval_query(title: str, guidance: str, kg, keywords: list[str]) -
             scoped = entities_in_scope(title, guidance, kg)
             # cap to first 20 entity texts to keep query bounded
             parts.extend(e.text for e in scoped[:20])
-        except Exception:
-            pass
+        except Exception as exc:
+            # Query expansion is best-effort; fall back to base query.
+            print(f"[s08] query expansion skipped: {exc!r}", flush=True)
     parts.extend(keywords[:10])
     return " ; ".join(p for p in parts if p)
 

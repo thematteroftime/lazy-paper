@@ -17,9 +17,12 @@ _MAX_CHARS = 30_000
 def _prompt_path() -> Path:
     """Allow env override of the KG-extraction prompt.
 
-    Set LAZY_PAPER_KG_PROMPT=paper_kg_v2.md to try the more aggressive
-    comparator-extraction prompt that explicitly handles literature
-    benchmark patterns ('X et al. reported …').
+    Default is the 10-type closed schema (`paper_kg.md`). Strategy KL
+    (v1.8.1 recommended) sets `LAZY_PAPER_KG_PROMPT=paper_kg_v3.md` to
+    add an 11th `author` entity type linked to each `comparator` via the
+    `cited_by_paper` relation — this is what lets the section composer
+    introduce comparators as "<Author> et al." instead of bare chemical
+    formulas.
     """
     return _PROMPTS_DIR / os.environ.get("LAZY_PAPER_KG_PROMPT", "paper_kg.md")
 

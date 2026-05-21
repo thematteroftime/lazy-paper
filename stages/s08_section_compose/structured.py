@@ -135,28 +135,7 @@ class RequiredMention(BaseModel):
 # ─── verifier gate ───────────────────────────────────────────────────────────
 
 
-_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+")
-_LATEX_DELIM_RE = re.compile(r"[\$\{\}]")
-_OCR_DIGIT_SPACE_RE = re.compile(r"(\d)\s+(?=[\d.])")
-_OCR_DIGIT_DOT_RE = re.compile(r"(\d)\s+\.\s+(?=\d)")
-_WHITESPACE_RE = re.compile(r"\s+")
-
-
-def _normalize_for_match(text: str) -> str:
-    """Normalize OCR/LaTeX quirks so quote-vs-chunk substring matching works.
-
-    Source PDFs often have LaTeX-form math (`$W _ { \\mathrm { rec } }$`)
-    and OCR digit-spacing (`5 . 0 0`). The LLM tends to copy these into
-    cited_quote literally; if we substring-match the raw forms we miss
-    valid quotes whose only divergence is whitespace inside the LaTeX.
-    Lowercases the result so comparisons are case-insensitive.
-    """
-    s = _LATEX_CMD_RE.sub(" ", text)
-    s = _LATEX_DELIM_RE.sub(" ", s)
-    s = _OCR_DIGIT_DOT_RE.sub(r"\1.", s)
-    s = _OCR_DIGIT_SPACE_RE.sub(r"\1", s)
-    s = _WHITESPACE_RE.sub(" ", s)
-    return s.lower().strip()
+from stages._common.normalize import normalize_ocr_latex as _normalize_for_match  # noqa: E402
 
 
 def _quote_in_chunk(quote: str, chunk_text: str,
