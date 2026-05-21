@@ -766,22 +766,49 @@ def compose_structured(
             flush=True,
         )
         if post_cov <= retry_threshold:
+            # v1.9: precise per-entity diagnosis. Instead of a generic
+            # "you missed required mentions" reminder, list each missing
+            # entity with the specific anchor (author surname OR a key
+            # value) the LLM must include. This is the
+            # informed-retry pattern from OpenScholar / LitLLM — the
+            # model can't choose to skip an entity when the diagnosis
+            # tells it exactly which token to write.
+            missing_diag_lines = []
+            for r in post_missing:
+                anchor_hints = []
+                if r.author_text:
+                    anchor_hints.append(
+                        f"\"{r.author_text} et al.\" or \"{r.author_text} 等人\""
+                    )
+                for v in r.linked_values:
+                    # linked_values shape: "W_rec=2.94 J/cm³"
+                    anchor_hints.append(f"\"{v}\"")
+                anchor_str = " OR ".join(anchor_hints) if anchor_hints else \
+                    f"the entity text \"{r.entity_text}\""
+                missing_diag_lines.append(
+                    f"  - **{r.entity_type}**: {r.entity_text[:70]!r}\n"
+                    f"      → write a claim containing {anchor_str}\n"
+                    f"      → evidence chunk: [{r.evidence_chunk_id}]"
+                )
+            missing_diag = "\n".join(missing_diag_lines)
             retry_system = _STRUCTURED_SYSTEM + (
-                "\n\n## CRITICAL — REQUIRED MENTIONS MISSING FROM PRIOR DRAFT\n"
-                "Your previous draft missed most of the required mentions "
-                "listed in the user message. Writing a dedicated "
-                "GroundedClaim for EACH required mention is the single most "
-                "important correction.\n\n"
-                "For each entry in the 'Required mentions' block:\n"
-                "  - Use the author's '<Author> et al.' form when "
-                "author_text is given\n"
-                "  - Copy the entity_quote VERBATIM into cited_quote — do "
-                "NOT paraphrase the quote\n"
-                "  - Set cited_chunk_ids to [evidence_chunk_id]\n"
-                "  - Embed any linked_values verbatim in the prose\n\n"
-                "Quote discipline: cited_quote must be a verbatim substring "
-                "of the chunk's content. The verifier rejects quotes that "
-                "don't match. Output will be checked automatically."
+                "\n\n## CRITICAL — SPECIFIC REQUIRED MENTIONS MISSING\n"
+                f"Your previous draft covered "
+                f"{len(required) - len(post_missing)}/{len(required)} "
+                f"required entities. The following entities are NOT yet "
+                f"covered — your next draft MUST include each, with the "
+                f"specific anchor token shown:\n\n"
+                f"{missing_diag}\n\n"
+                "Rules:\n"
+                "  - Write ONE GroundedClaim per missing entity above.\n"
+                "  - Each claim's text MUST contain the listed anchor token "
+                "verbatim (author surname OR numeric value).\n"
+                "  - Copy a slice from the evidence chunk into cited_quote, "
+                "verbatim (the verifier substring-matches; LaTeX and OCR "
+                "whitespace are auto-normalized).\n"
+                "  - Set cited_chunk_ids to the evidence chunk index given.\n"
+                "  - PRESERVE existing well-covered claims from the prior "
+                "draft; add the missing ones, do not regenerate everything."
             )
             try:
                 retry_draft = _single_compose(

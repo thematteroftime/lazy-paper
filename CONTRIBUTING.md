@@ -14,7 +14,7 @@ cp .env.example .env  # add your API keys
 ## Running tests
 
 ```bash
-uv run pytest             # 250 tests, ~25s
+uv run pytest             # 253 tests, ~25s
 uv run pytest -m live     # live LLM smoke tests (skipped by default)
 ```
 

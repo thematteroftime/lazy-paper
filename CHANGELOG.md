@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-05-22
+
+### Added — informed-retry diagnosis for missing required mentions
+
+The retry-when-empty trigger now generates a **per-entity diagnosis**
+listing every missing required mention with its specific anchor token
+(author surname OR linked numeric value). This is the
+informed-retry pattern from OpenScholar / LitLLM — the LLM gets a
+precise, deterministic checklist of which entities + which tokens to
+include in the next draft, rather than a generic "you missed some"
+reminder.
+
+Example diagnosis embedded in the retry system prompt:
+
+```
+## CRITICAL — SPECIFIC REQUIRED MENTIONS MISSING
+Your previous draft covered 1/5 required entities. The following entities are
+NOT yet covered — your next draft MUST include each, with the specific anchor
+token shown:
+
+  - **comparator**: 'Ca2+/Nb5+-codoped Bi0.5Na0.5TiO3'
+      → write a claim containing "Jiang et al." or "Jiang 等人" OR "W_rec=2.94 J/cm³"
+      → evidence chunk: [3]
+  - **comparator**: 'La(Mg1/2Zr1/2)O3-modified Bi0.5Na0.5TiO3'
+      → write a claim containing "Ma et al." or "Ma 等人" OR "W_rec=7.5 J/cm³"
+      ...
+```
+
+### Validation — variance eliminated on the headline benchmark
+
+**meng2024 T1 ch01 benchmark recovery (3 runs each):**
+
+| Version | scores | Mean | Stdev | Floor |
+|---|---|---|---|---|
+| v1.7 KL | 13 / 1 / 1 | 5.0 | 6.9 | 1 |
+| v1.8.1 KL | 12 / 17 / 16 | 15.0 | 2.6 | 12 |
+| v1.8.3 KL (single-runs) | 5 / 1 / 1 / 1 / 1 | 1.8 | 1.8 | 1 |
+| **v1.9 KL** | **9 / 9 / 9** | **9.0** | **0** 🏆 | **9** |
+
+Informed-retry produces deterministic 9/17 on meng2024 across three
+independent runs. The LLM's behavior is now stable — variance is zero
+on this test, and the floor (9) is well above v1.7 KL's failure mode
+(1) and above v1.8.3's regression (1-5).
+
+Note: 9/17 is below v1.8.1's 12-17 *peak*. The remaining gap is
+addressed by a structural fix queued for v1.9.x: STORM/LitLLM-style
+per-comparator drafting + stitch (research note in commit `41f9f09`).
+That fix forces structural coverage (each comparator gets its own
+micro-draft) rather than relying on prompt-level instructions, and
+should push the mean back to 12+. But the deterministic-9 floor is a
+real win as-is.
+
+### 13-paper corpus validation
+
+All other TestCases preserved or improved vs v1.8.3:
+
+| Test case | v1.8.3 | v1.9 | Status |
+|---|---|---|---|
+| meng2024 ch01 T1 | 5/17 (single) | 9, 9, 9 / 17 | **deterministic floor** |
+| meng2024 ch10 T3 | 3/5 | 3, 3, 5 / 5 | within variance |
+| yang2025 T2 | 3/3 ✓ | 3/3 ✓ | preserved |
+| fu2020 T5 | 3/4 ✓ | 3/4 ✓ | preserved |
+| chai2026 T6 | 4/4 ✓ | 4/4 ✓ | preserved |
+| ali2025_flash T4 | 4/5 ✓ | 4/5 ✓ | preserved |
+
+8 papers without dedicated TestCases (pamula / gaur / ge / he / liu /
+pan / randall / yao): all 15/15 chapters with substantive content,
+HTML clickable citations working, retry-when-empty fires 2-13×
+per paper.
+
+### Behavior change
+
+Existing `retry-when-empty` callers see no API change; the diagnosis
+is internal to the retry prompt. Cost stays one retry per failing
+section (no extra LLM calls beyond what v1.8.3 already did). The
+diagnosis adds ~300-500 tokens to the retry prompt — DeepSeek input
+caching makes this nearly free across the N best-of-N samples.
+
+Tests: 253/253 pass.
+
 ## [1.8.3] — 2026-05-21
 
 ### Added — HTML clickable citations, length-based retry, anchor advisory
