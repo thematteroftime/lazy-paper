@@ -143,16 +143,17 @@ Output lands at `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`.
 | Renderers | `python-docx`, `python-pptx`, `weasyprint`, `jinja2` | one stateless renderer per format |
 | Config | `pyyaml`, `python-dotenv` | YAML artifacts + `.env` credentials |
 | HTTP | `requests` | OCR API calls |
-| Dev | `pytest>=8` | 228 tests |
+| Dev | `pytest>=8` | 250 tests |
 
-## Quality controls (v1.4)
+## Quality controls
 
 - **Quantitative validation**: every PPT chapter bullet must carry ≥1 numeric anchor; closing-slide takes ≥3 quantitative bullets + a comparative takeaway. Enforced post-LLM via regex; non-conforming responses trigger retry.
 - **Critique-vs-description**: figure observations rejected when all-descriptive ("shows / depicts") with no critique markers ("limitation / missing / should").
 - **Layout robustness**: outline rows are dynamically sized to wrap-count; KEY POINTS bullet font + length scale with density (16pt ↔ 13pt); figure observation height shrinks rather than overflows.
-- **Closed 10-type KG**: `instructor`-driven extraction of material / dopant / parameter / value / unit / figure / table / claim / method / comparator entities — every extracted entity carries a `source_span` tying it back to the exact passage.
-- **Hybrid retrieval (RRF + entity boost)**: dense cosine + BM25 sparse results fused via Reciprocal Rank Fusion; chunks overlapping with KG entity spans are boosted, pulling relevant passages toward top-8 evidence.
-- **Observe-only regex critic + LLM critic**: after composition, `reviewer.regex_check()` flags numeric, figure, and unit mismatches. In v1.4 the LLM critic (`instructor` + `CritiqueRevision`) runs only when regex flags appear — minimizing cost while targeting the highest-risk prose.
+- **Closed 11-type KG**: `instructor`-driven extraction of material / dopant / parameter / value / unit / figure / table / claim / method / comparator / author entities — every extracted entity carries a `source_span` tying it back to the exact passage.
+- **Hybrid retrieval (RRF + entity boost)**: dense cosine + BM25 sparse results fused via Reciprocal Rank Fusion; chunks overlapping with KG entity spans are boosted, pulling relevant passages toward top evidence.
+- **Two-tier critic**: a regex critic flags numeric / figure / unit mismatches; the LLM critic only fires when regex flags appear, minimizing cost while targeting the highest-risk prose.
+- **Strategy KL (opt-in, recommended for benchmark recovery)**: structured composer + per-claim verifier + retry-when-empty. The verifier re-checks each quote against the source (LaTeX/OCR normalization) and rejects hallucinated citations; one strengthened retry fires when post-verify coverage is low. See `docs/USER_GUIDE.md` for the env-var combo.
 - **Citation markers rendered or stripped by mode**: `[span:...]` markers are stripped by default (clean prose); pass `--debug-citations` to expose them for attribution auditing.
 - **Single env knob to cap LLM cost**: `LLM_MAX_TOKENS_CEILING` (default 40000) clamps every call site.
 
@@ -186,7 +187,7 @@ For OCR: `OCR_BACKEND=mineru` (recommended for figure-heavy papers) or `OCR_BACK
 ## Tests
 
 ```bash
-uv run pytest -q          # 228 tests
+uv run pytest -q          # 250 tests
 uv run pytest -m live     # live LLM smoke tests (real keys)
 ```
 
@@ -197,7 +198,7 @@ uv run pytest -m live     # live LLM smoke tests (real keys)
   author  = {thematteroftime},
   title   = {lazy-paper: PDF research papers to multi-format deep analysis},
   url     = {https://github.com/thematteroftime/lazy-paper},
-  version = {1.4.1},
+  version = {1.8.2},
   year    = {2026}
 }
 ```

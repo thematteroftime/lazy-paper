@@ -1,5 +1,11 @@
 # v1.7.0 KL Strategy — Validation Results
 
+> **Superseded by v1.8.1.** This report documents v1.7 KL's high-variance
+> behavior (floor 1/17). The variance was fixed in v1.8.1 — see
+> [`v1_8_validation_results.md`](./v1_8_validation_results.md) for the
+> follow-up and [`v1_8_2_corpus_validation.md`](./v1_8_2_corpus_validation.md)
+> for the broader corpus result. Page retained as historical record.
+
 Run 2026-05-21 via the v1.7 scriptable harness (`scripts/evaluate.py` +
 `docs/TEST_FRAMEWORK.md`). Seven KL runs across five papers; comparison
 against three prior J runs on meng2024.

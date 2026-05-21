@@ -143,16 +143,17 @@ uv run python -m cli run \
 | 渲染器 | `python-docx`、`python-pptx`、`weasyprint`、`jinja2` | 每种格式一个无状态渲染器 |
 | 配置 | `pyyaml`、`python-dotenv` | YAML 工件 + `.env` 凭证 |
 | HTTP | `requests` | OCR API 调用 |
-| 开发 | `pytest>=8` | 228 个测试 |
+| 开发 | `pytest>=8` | 250 个测试 |
 
-## 质量守护（v1.4）
+## 质量守护
 
 - **量化内容校验**：PPT 每条章节 bullet 必含 ≥1 个数字锚点；收尾页 ≥3 条量化 bullet + 含比较的 takeaway。LLM 后正则强制，违规触发重试。
 - **批判 vs 描述**：figure 观察若全为描述性动词（"shows / depicts"）且无批判标记（"limitation / missing / should"）则拒绝。
 - **布局鲁棒**：目录行高按 takeaway 换行数动态计算；KEY POINTS 字号与截断阈值随密度变化（16pt ↔ 13pt）；figure 观察块超界时缩字号而非溢出。
-- **闭包 10 类 KG**：`instructor` 驱动的 material / dopant / parameter / value / unit / figure / table / claim / method / comparator 实体抽取，每个实体附 `source_span` 回溯原文位置。
-- **混合检索（RRF + 实体 boost）**：稠密余弦 + BM25 稀疏结果经 RRF 融合；与 KG 实体 span 重叠的分块排名提升，将相关段落拉入 top-8 证据集。
-- **观察模式 regex critic + LLM critic**：合成后 `reviewer.regex_check()` 标记数值/图表/单位异常。v1.4 中 LLM critic（`instructor` + `CritiqueRevision`）仅在 regex 命中时触发，将成本集中在最高风险段落。
+- **闭包 11 类 KG**：`instructor` 驱动的 material / dopant / parameter / value / unit / figure / table / claim / method / comparator / author 实体抽取，每个实体附 `source_span` 回溯原文位置。
+- **混合检索（RRF + 实体 boost）**：稠密余弦 + BM25 稀疏结果经 RRF 融合；与 KG 实体 span 重叠的分块排名提升，将相关段落拉入 top 证据集。
+- **两层 critic**：regex critic 标记数值/图表/单位异常；LLM critic 仅在 regex 命中时触发，将成本集中在最高风险段落。
+- **Strategy KL（opt-in，推荐用于文献基准恢复）**：结构化作者 + 逐 claim 校验器 + retry-when-empty。校验器在 LaTeX/OCR 规范化后再比对引用 vs 源文本，剔除幻觉引用；post-verify 覆盖率过低时触发一次加强提示的重试。env-var 组合见 `docs_zh/USER_GUIDE.md`。
 - **引用标记按模式渲染或剥除**：`[span:...]` 标记默认剥除（干净散文）；传 `--debug-citations` 暴露标记供来源审计。
 - **一个 env 旋钮控 LLM 花费**：`LLM_MAX_TOKENS_CEILING`（默认 40000）给所有调用点上限。
 
@@ -186,7 +187,7 @@ OCR：`OCR_BACKEND=mineru`（推荐识图密集）或 `OCR_BACKEND=paddleocr`。
 ## 测试
 
 ```bash
-uv run pytest -q          # 228 个测试
+uv run pytest -q          # 250 个测试
 uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 ```
 
@@ -197,7 +198,7 @@ uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
   author  = {thematteroftime},
   title   = {lazy-paper: PDF research papers to multi-format deep analysis},
   url     = {https://github.com/thematteroftime/lazy-paper},
-  version = {1.4.1},
+  version = {1.8.2},
   year    = {2026}
 }
 ```

@@ -126,19 +126,33 @@ template.docx ── s05_template ───────────────�
 
 ---
 
-## 5. Verified state (as of v1.1.0)
+## 5. Verified state
 
-| Paper | Chapters | Figures | PPT slides | Outline groups | Verified |
-|---|---|---|---|---|---|
-| he2023 | 15 | 8 | 12 | 4 | ✓ |
-| ali2025_flash | 15 | 26 | 25 | 5 | ✓ |
-| yang2025 | 15 | 7 | 12 | 5 | ✓ |
-| liu2022 | 15 | 12 | 14 | 5 | ✓ |
-| pan2025 | 15 | 7 | 12 | 5 | ✓ |
+End-to-end validated on a 13-paper corpus under Strategy KL (v1.8.1+). Most
+recent comprehensive run: 2026-05-21, full report in
+`docs/v1_8_2_corpus_validation.md`.
 
-All five also produce DOCX/PDF/HTML cleanly (verified up to v15). Output paths: `runs/<paper_id>/s09_render/preview.pptx`.
+| Paper | Pipeline | Notable score |
+|---|---|---|
+| meng2024 (3 runs) | 15/15 chapters each | T1 benchmark recovery 12 / 17 / 16 (mean 15.0, floor 12) |
+| yang2025 | 15/15 | T2 fabrication-resistance 3/3 ✓ |
+| fu2020 | 15/15 | T5 basic 3/4 ✓ |
+| chai2026 | 15/15 | T6 basic 4/4 ✓ |
+| ali2025_flash | 15/15 | T4 comparison depth 0/5 ⚠ (LLM sampling variance; see corpus report) |
+| gaur2022 | 15/15 | generic ✓ (retry-when-empty fires 2×) |
+| ge2025 | 15/15 | generic ✓ (retry 2×) |
+| he2023 | 15/15 | generic ✓ |
+| liu2022 | 15/15 | generic ✓ |
+| pamula2025 | 15/15 | generic ✓ (retry 3×) |
+| pan2025 | 15/15 | generic ✓ (retry 2×) |
+| randall2021 | 15/15 | generic ✓ |
+| yao2022 | 15/15 | generic ✓ |
 
-**Tests**: 189 unit + integration (2 deselected `-m live`). Run with `uv run pytest -q`.
+DOCX + HTML are always produced. PDF / PPTX are produced only when the
+`--formats` flag includes them; the v181 corpus runs above produced docx+html
+only. Output path: `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}`.
+
+**Tests**: 250 (2 deselected `-m live`). Run with `uv run pytest -q`.
 
 ---
 

@@ -136,27 +136,29 @@ The vision LLM must support image input in the OpenAI messages format. The text 
 
 ---
 
-<!-- audit: added in v1.8.2 docs sweep — Strategy KL is the recommended high-quality default since v1.8.1 but was previously only documented in HANDOFF/CHANGELOG -->
-## Recommended high-quality mode: Strategy KL (v1.8.1+)
+## Recommended high-quality mode: Strategy KL
 
-For benchmark-quality section composition with literature-citation recovery, enable **Strategy KL**. It combines an instructor-based structured composer + verifier, the v3 KG prompt (extracts author / comparator / cited-by-paper entities), and best-of-N sample merging. Validated on the v1.8.2 10-paper corpus; mean coverage 15.0/17 on the meng2024 benchmark (floor 12, range 12–17).
+Switch on **Strategy KL** when you want literature-citation recovery on benchmark-style papers. The mode re-checks every quote against the source (with LaTeX/OCR normalization) and runs two drafts per section, keeping the better one. It then issues one strengthened retry if post-verification coverage of required mentions is low.
 
 Add these lines to `.env`:
 
 ```
-LAZY_PAPER_STRUCTURED=1             # instructor-based compose + verifier
-LAZY_PAPER_KG_PROMPT=paper_kg_v3.md # author + comparator + cited_by_paper entities
+LAZY_PAPER_STRUCTURED=1             # structured compose + per-claim verifier
+LAZY_PAPER_KG_PROMPT=paper_kg_v3.md # extracts author + comparator + cited_by_paper
 LAZY_PAPER_BEST_OF_N=2              # 2 samples per section, round-robin merge
 LAZY_PAPER_VERIFIER_THRESHOLD=0.85  # min quote-vs-chunk match score
 LAZY_PAPER_RETRY_THRESHOLD=0.5      # post-verify coverage ≤ X triggers one retry
 ```
 
 Trade-offs:
-- **Cost**: best-of-N=2 roughly doubles s08 LLM spend (the most expensive stage). Total per-paper cost goes from ~$0.60–1.20 to ~$0.90–1.80.
-- **Latency**: s08 takes about 1.7–2× longer (sample drafts run in parallel where possible).
-- **Quality**: the verifier rejects unsupported claims; the retry-when-empty trigger then strengthens a single LLM call to recover comparator citations that v1.7 used to drop.
 
-Leave these unset (the default) for fast/cheap baseline composition — Strategy J is still the documented v1.7 default and produces good results on most papers.
+- **Cost**: best-of-N=2 roughly doubles s08 LLM spend (s08 is the most expensive stage). Per-paper cost goes from ~$0.60–1.20 to ~$0.90–1.80.
+- **Latency**: s08 takes about 1.7–2× longer.
+- **Quality**: the verifier rejects unsupported claims; the retry-when-empty trigger recovers comparator citations that the default composer can drop.
+
+Validated on the 10-paper corpus: mean coverage 15.0/17 on the meng2024 benchmark (floor 12, range 12–17 across three runs). See `docs/v1_8_2_corpus_validation.md` for the full table.
+
+Leave these unset for the fast/cheap default composer — it produces good results on most papers and is half the cost.
 
 ---
 

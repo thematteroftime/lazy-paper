@@ -173,6 +173,28 @@ def _quote_in_chunk(quote: str, chunk_text: str,
     return coverage
 
 
+_ANCHOR_AUTHOR_RE = re.compile(r"\b([A-Z][a-z]+)\s+(?:et\s+al\.?|等(?:人|等)?)")
+_ANCHOR_VALUE_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:J/cm[³3]|MV/cm|kV/cm|μC/cm[²2]|%)"
+)
+
+
+def _claim_anchors(text: str) -> list[str]:
+    """Extract specific anchor tokens (author surnames + numeric values) a
+    quote needs to contain to count as grounding the claim.
+
+    Returns the literal anchors as strings. Empty list = no specific
+    anchor — the claim is descriptive/general and any plausible quote
+    in the chunk suffices.
+    """
+    out: list[str] = []
+    for m in _ANCHOR_AUTHOR_RE.finditer(text):
+        out.append(m.group(1))
+    for m in _ANCHOR_VALUE_RE.finditer(text):
+        out.append(m.group(1))
+    return out
+
+
 def verify_section_draft(
     draft: SectionDraft,
     chunks_by_id: "dict[int, Chunk]",
@@ -193,6 +215,12 @@ def verify_section_draft(
     write `cited_chunk_ids=[B]` (chunk-ID slop). When the fallback succeeds,
     the claim's cited_chunk_ids are patched to point at the chunk that
     actually contains the quote.
+
+    Anchor check: when the claim text names a specific author (`X et al.`)
+    or a specific numeric value (`2.94 J/cm³`, `91.04%`), the cited_quote
+    must contain that anchor verbatim. Otherwise the quote is "in the
+    chunk" but doesn't *support* the specific fact — the verifier flags
+    this as an ungrounded citation even though the quote was real.
     """
     accepted: list[GroundedClaim] = []
     rejected: list[dict] = []
@@ -223,6 +251,20 @@ def verify_section_draft(
                 if score >= ratio_threshold:
                     matched_cid = cid
                     break
+        # Anchor check: when the claim names a specific author/value, the
+        # quote must contain at least one of those anchors.
+        anchors = _claim_anchors(c.text)
+        if anchors:
+            q_norm = _normalize_for_match(c.cited_quote)
+            if not any(_normalize_for_match(a) in q_norm for a in anchors):
+                rejected.append({
+                    "text": c.text[:120],
+                    "quote": c.cited_quote[:120],
+                    "best_ratio": round(best_score, 3),
+                    "cited_chunk_ids": list(c.cited_chunk_ids),
+                    "anchor_missing": anchors,
+                })
+                continue
         if matched_cid is not None:
             if matched_cid not in c.cited_chunk_ids:
                 c = c.model_copy(update={
@@ -431,7 +473,19 @@ Quote-then-claim discipline (for the verifier):
   - When you set cited_quote, copy it verbatim from the cited chunk — the
     verifier fuzzy-matches against the chunk text and rejects paraphrased
     quotes.
+  - **Quote must support the claim's specific anchor.** If the claim mentions
+    "<Author> et al." or a specific numeric value (W_rec, η, %, J/cm³, etc.),
+    the cited_quote must contain that author surname OR that numeric value
+    verbatim. Generic surrounding sentences ("Dielectric capacitors are widely
+    used...") will be rejected as ungrounded.
   - For Chinese chunks, copy CJK + ASCII as-is; do not transliterate.
+
+No-duplicate rule:
+  - Each (comparator + numeric value) pair must appear in at most ONE claim.
+  - If a required mention is already covered by an earlier claim, do NOT add
+    a second paraphrasing claim that repeats the same fact.
+  - Each section should be a sequence of distinct facts, not paraphrases of
+    one fact.
 
 Output a SectionDraft JSON object matching the schema. Aim for 4–8 claims
 unless guidance demands more.
@@ -494,14 +548,29 @@ def _single_compose(
     )
 
 
+def _claim_dedup_key(text: str) -> str:
+    """Return a paraphrase-resistant dedupe signature for a claim.
+
+    Two claims that name the same author/value pair OR start with the same
+    120-char prefix collapse to the same key. The anchor-based half catches
+    paraphrases like
+        "Jiang et al. 在Ca²⁺/Nb⁵⁺共掺杂…W_rec=2.94 J/cm³"
+        "Jiang et al. 在Ca²⁺/Nb⁵⁺-codoped…W_rec=2.94 J/cm³"
+    that the previous prefix-only check kept as separate claims.
+    """
+    anchors = _claim_anchors(text)
+    if anchors:
+        return "anchors:" + "|".join(sorted(anchors))
+    return "prefix:" + text.strip()[:120]
+
+
 def _merge_drafts(drafts: list["SectionDraft"], max_claims: int = 14) -> "SectionDraft":
     """Strategy K: union-merge multiple drafts via round-robin interleave.
 
     Take the i-th claim from each draft in turn (1st-from-run1, 1st-from-run2,
-    2nd-from-run1, 2nd-from-run2, ...). Dedupe only on near-identical prose
-    (first 120 chars); preserve claims whose chunk-ID sets overlap but whose
-    text differs substantively — those are exactly the case where different
-    sampling runs cite the same chunk but pick different facts from it.
+    2nd-from-run1, 2nd-from-run2, ...). Dedupe on a paraphrase-resistant
+    signature: claims that name the same (author, value) anchors are
+    treated as duplicates even when their prose differs substantially.
 
     Caps at max_claims (SectionDraft's enforced upper bound is 14).
     Falls back to the first draft if dedup leaves < 2 claims.
@@ -509,17 +578,17 @@ def _merge_drafts(drafts: list["SectionDraft"], max_claims: int = 14) -> "Sectio
     if not drafts:
         raise ValueError("no drafts to merge")
     interleaved: list[GroundedClaim] = []
-    seen_text_keys: set[str] = set()
+    seen_keys: set[str] = set()
     max_len = max(len(d.claims) for d in drafts)
     for i in range(max_len):
         for d in drafts:
             if i >= len(d.claims):
                 continue
             c = d.claims[i]
-            key = c.text.strip()[:120]
-            if key in seen_text_keys:
+            key = _claim_dedup_key(c.text)
+            if key in seen_keys:
                 continue
-            seen_text_keys.add(key)
+            seen_keys.add(key)
             interleaved.append(c)
             if len(interleaved) >= max_claims:
                 return SectionDraft(claims=interleaved)

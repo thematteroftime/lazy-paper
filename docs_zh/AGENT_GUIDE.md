@@ -13,7 +13,7 @@
 
 ---
 
-## v1.0–v1.1 开发期间观察到的工作流模式
+## 工作流模式
 
 ### 何时使用 subagent
 
@@ -49,7 +49,7 @@ uv run python -m cli run --pdf <pdf> --template <docx> --paper-id <pid> \
   --only s05_template,s08_section_compose,s09_render --force --formats docx,pdf,html,pptx
 ```
 
-### 开发中常见的故障模式
+### 需要注意的常见失败模式
 
 | 症状 | 根因 | 修复 |
 |---|---|---|
@@ -95,7 +95,7 @@ for i in [0, 1, 4, 7]:
 
 ---
 
-## v1.4 工作流模式
+## PaperDB + 检索器工作流模式
 
 ### 何时重跑 KG 抽取，何时复用
 

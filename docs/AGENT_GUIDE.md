@@ -13,7 +13,7 @@ This document is written for an AI coding agent (Claude Code, Cursor, Copilot, e
 
 ---
 
-## Workflow patterns observed during v1.0–v1.1 development
+## Workflow patterns
 
 ### When to use a subagent
 
@@ -49,7 +49,7 @@ uv run python -m cli run --pdf <pdf> --template <docx> --paper-id <pid> \
   --only s05_template,s08_section_compose,s09_render --force --formats docx,pdf,html,pptx
 ```
 
-### Common failure modes seen in development
+### Common failure modes to watch for
 
 | Symptom | Root cause | Fix |
 |---|---|---|
@@ -95,7 +95,7 @@ Then read the PNGs via the Read tool to inspect.
 
 ---
 
-## v1.4 workflow patterns
+## PaperDB + retriever workflow patterns
 
 ### When to re-run KG extraction vs reuse it
 
