@@ -187,9 +187,26 @@ Output language (Chinese/English) is controlled by `--lang` via `LANG_INSTRUCTIO
 
 **Output**: `chapters/<slug>.md` (one per template section) + `retrieval.parquet` + `critic_flags.yaml` + `findings.yaml` + per-section `<slug>.prompt.md` + `<slug>.response.json` + `done.yaml`.
 
-**Key code**: `stages/s08_section_compose/runner.py`, `stages/s08_section_compose/reviewer.py`, `stages/s08_section_compose/agent.py`
+**Key code**: `stages/s08_section_compose/runner.py`, `stages/s08_section_compose/structured.py`, `stages/s08_section_compose/reviewer.py`, `stages/s08_section_compose/agent.py`
 
-#### Default per-section algorithm (v1.4)
+#### Strategy KL — structured compose with best-of-N + author KG (v1.8.1 default-recommended)
+
+When `LAZY_PAPER_STRUCTURED=1` AND both retriever + KG are available, the runner uses the instructor-based structured-composition pipeline in `stages/s08_section_compose/structured.py` instead of the `_legacy_compose` path. This is the recommended path for v1.8.1+ and the only one validated for benchmark-recovery quality.
+
+Per-section flow:
+
+1. **Retrieval**: `retriever.retrieve(query, top_k=15)` returns RRF-fused chunks.
+2. **Required mentions**: `build_required_mentions` selects KG entities (all comparators for survey sections; gated entities for non-survey) and resolves each to a covering retrieved chunk index + an optional author-text link via the `cited_by_paper` relation. `select_top_required(cap=5)` ranks by length + digit-density.
+3. **Best-of-N compose** (env `LAZY_PAPER_BEST_OF_N`, default 1, recommended 2): N independent `instructor + SectionDraft` calls at temperatures 0.2, 0.4, 0.6, ... A Pydantic validator rejects `cited_chunk_ids` outside the retrieved set. The resulting drafts are union-merged via round-robin interleave with text-prefix (120-char) dedupe.
+4. **Verify**: `verify_section_draft(draft, chunks_by_id, ratio_threshold)` checks each claim's `cited_quote`. The matcher tries (a) exact substring; (b) case-insensitive substring; (c) **normalized substring** (`_normalize_for_match` strips LaTeX commands and collapses OCR digit-spacing); (d) fuzzy longest-common-substring on the normalized text. If the cited chunks don't match, the verifier falls back to scanning ALL retrieved chunks — when a quote is found in a non-cited chunk, the claim is accepted and `cited_chunk_ids` is patched (chunk-ID slop tolerance). Threshold is env-overridable via `LAZY_PAPER_VERIFIER_THRESHOLD` (default 0.85).
+5. **Retry-when-empty**: compute `missing_required` against the **verified** draft. If `post_cov ≤ LAZY_PAPER_RETRY_THRESHOLD` (default 0.5), issue one more `_single_compose` call with a strengthened system prompt that names the missing entities explicitly; re-verify; swap if coverage improved. Bounded to one extra call per section.
+6. **Render**: `draft.render(mode="REMOVE")` flattens the SectionDraft to prose. Leaked `(chunk N)` / `[N, M]` patterns are stripped.
+
+KG extraction uses `paper_kg_v3.md` (selected via `LAZY_PAPER_KG_PROMPT=paper_kg_v3.md`), which adds `author` as an 11th entity type linked to each `comparator` via the `cited_by_paper` relation. This is what lets the compose prompt say *"Jiang et al. reported W_rec=2.94 J/cm³"* instead of the bare chemical formula.
+
+See `docs/v1_8_validation_results.md` for the validation that proved this path's stability (mean 15.0/17 on meng2024 ch01, floor 12, range 12–17 — vs v1.7 KL's floor of 1).
+
+#### Default per-section algorithm (v1.4 fallback path)
 
 For each section node in `template.yaml`:
 

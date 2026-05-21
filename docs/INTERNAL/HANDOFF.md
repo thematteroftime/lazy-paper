@@ -1,8 +1,23 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 228/228 pass · **End-to-end verified on 13 papers** (3 known-defect + 10 random corpus) · **Last release:** v1.4.1 (2026-05-20)
+> **Status:** shipped · **Tests:** 250/250 pass · **End-to-end verified on 13+ papers** (3 known-defect + 10 random corpus + v1.8 stability validation) · **Last release:** v1.8.1 (2026-05-21)
 >
-> v1.4.x adds a PaperDB layer (KG + hybrid retrieval), a two-tier reviewer (regex + instructor LLM), and Onyx-vendored citation processing. The pydantic-ai section agent is **gated behind `LAZY_PAPER_AGENT=1`** because live runs revealed it occasionally returns meta-commentary instead of section prose; the retriever-fed `_legacy_compose` path is the default. See CHANGELOG.md for the full v1.4.0 → v1.4.1 trail.
+> **v1.8.1 makes Strategy KL the recommended high-quality default.** Fixes
+> two compose-side bugs that caused v1.7 KL's 1 – 13 variance: (a) the
+> verifier now normalizes LaTeX/OCR forms before substring matching, so
+> good comparator-citing claims are no longer rejected for whitespace
+> differences in `$W _ { \mathrm { rec } }$` etc.; (b) the retry-when-empty
+> trigger now measures coverage POST-verify, so it fires when the verifier
+> has just dropped comparator claims and one strengthened LLM call can
+> recover them. On meng2024 ch01 (the headline benchmark-recovery test):
+> v1.8.1 KL = floor 12/17, mean 15.0, range 12–17 (was floor 1, mean 5.0
+> in v1.7 KL). No regressions on yang2025/fu2020/chai2026. See
+> `docs/v1_8_validation_results.md` for full analysis.
+>
+> v1.4.x foundations (PaperDB / two-tier critic / Onyx citation
+> processor) remain unchanged. The pydantic-ai section agent
+> (`LAZY_PAPER_AGENT=1`) is still opt-in. See CHANGELOG.md for the full
+> v1.4.0 → v1.8.1 release trail.
 
 This is the doc to read first if you are picking the project up cold — whether you are a human maintainer or an AI agent. It tells you what exists, what works, what's been verified, and where to make changes.
 
@@ -67,6 +82,11 @@ Docker users: `docker compose build && docker compose run --rm lazy-paper run --
 | `LLM_TEXT_API_KEY` | Yes | — | Text LLM key |
 | `LLM_TEXT_MODEL` | No | `deepseek-reasoner` | Text model name |
 | `LLM_MAX_TOKENS_CEILING` | No | `40000` | Caps `max_tokens` for every LLM call (single knob to constrain spend or quota) |
+| `LAZY_PAPER_STRUCTURED` | No | unset | `1` enables instructor-based structured compose with verifier (recommended for v1.8.1+) |
+| `LAZY_PAPER_KG_PROMPT` | No | `paper_kg.md` | KG-extraction prompt file. Use `paper_kg_v3.md` for author-entity extraction in Strategy L |
+| `LAZY_PAPER_BEST_OF_N` | No | `1` | Number of independent draft samples per section. `2` enables Strategy K best-of-N merge |
+| `LAZY_PAPER_VERIFIER_THRESHOLD` | No | `0.85` | Minimum quote-vs-chunk substring/fuzzy match score |
+| `LAZY_PAPER_RETRY_THRESHOLD` | No | `0.5` | Post-verify coverage at or below which the retry-when-empty call fires. `0` disables retries |
 
 ---
 

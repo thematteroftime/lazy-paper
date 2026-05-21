@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-05-21
+
+### Fixed — KL stability win (mean 5.0 → 15.0 on meng2024)
+
+v1.7 KL's variance came from two interacting compose-side bugs:
+
+1. **Verifier was killing good claims.** Source PDFs OCR W_rec values as
+   LaTeX-form `$W _ { \mathrm { rec } }$`. The LLM correctly quoted the
+   chunk, but substring-match against the raw LaTeX form lost ~50% of
+   characters to whitespace differences. The verifier rejected the
+   claims that actually cited Jiang/Ma/Zhang/Tang comparators.
+2. **Retry-when-empty fired on pre-verify coverage.** The diagnostic
+   measured "did the LLM mention this entity" *before* the verifier
+   filtered. Coverage looked fine (~80%) so retry never triggered —
+   then the verifier dropped the comparator-citing claims and the
+   final prose was generic. Floor stayed at 1/17.
+
+Fixes in `stages/s08_section_compose/structured.py`:
+
+- `_normalize_for_match` strips LaTeX commands and collapses OCR
+  digit-spacing (`5 . 0 0` → `5.00`) on both sides of the substring
+  check. Catches the `$W _ { \mathrm`-vs-`$W_{\mathrm` divergence
+  cleanly.
+- `verify_section_draft` adds a chunk-ID slop fallback: if quote
+  doesn't match the cited chunk, scan ALL retrieved chunks. When a
+  match is found, the claim's `cited_chunk_ids` is patched.
+- `compose_structured` computes coverage **post-verify** and retries
+  with a strengthened prompt when `post_cov ≤ retry_threshold`.
+
+**T1 meng2024 ch01 benchmark recovery (3 runs):**
+mean **15.0 / 17**, stdev **2.6**, range **12 – 17**, floor **12**.
+
+Compare:
+
+| Strategy | Mean | Stdev | Range | Floor |
+|---|---|---|---|---|
+| **v1.8.1 KL** | **15.0** | **2.6** | **12 – 17** | **12** |
+| v1.7 KL | 5.0 | 6.9 | 1 – 13 | 1 |
+| v1.7 J | 6.3 | 1.5 | 5 – 8 | 5 |
+| v1.3.3 baseline | ~12 | — | — | — |
+
+All non-meng test cases preserved (no regressions):
+
+| Test case | v1.8.1 KL score |
+|---|---|
+| T2 yang2025 ch01 fabrication resistance | 3/3 ✓ |
+| T5 fu2020 ch01 basic | 3/4 ✓ |
+| T6 chai2026 ch01 basic | 4/4 ✓ |
+
+### Added — env-overridable verifier and retry thresholds
+
+- `LAZY_PAPER_VERIFIER_THRESHOLD` (default 0.85) — minimum quote-vs-chunk
+  match score for a claim to survive. Lower for paraphrase tolerance.
+- `LAZY_PAPER_RETRY_THRESHOLD` (default 0.5) — post-verify coverage at
+  or below which one strengthened retry call fires. Set higher for
+  stricter coverage at higher LLM cost; set to 0 to disable retries.
+
+Full validation analysis: `docs/v1_8_validation_results.md`.
+
 ## [1.7.0] — 2026-05-21
 
 ### Added — Strategy K (best-of-N merge) + Strategy L (KG-v3 author extraction)

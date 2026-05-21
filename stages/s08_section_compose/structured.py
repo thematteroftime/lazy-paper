@@ -135,30 +135,62 @@ class RequiredMention(BaseModel):
 # ─── verifier gate ───────────────────────────────────────────────────────────
 
 
+_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+")
+_LATEX_DELIM_RE = re.compile(r"[\$\{\}]")
+_OCR_DIGIT_SPACE_RE = re.compile(r"(\d)\s+(?=[\d.])")
+_OCR_DIGIT_DOT_RE = re.compile(r"(\d)\s+\.\s+(?=\d)")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_for_match(text: str) -> str:
+    """Normalize OCR/LaTeX quirks so quote-vs-chunk substring matching works.
+
+    Source PDFs often have LaTeX-form math (`$W _ { \\mathrm { rec } }$`)
+    and OCR digit-spacing (`5 . 0 0`). The LLM tends to copy these into
+    cited_quote literally; if we substring-match the raw forms we miss
+    valid quotes whose only divergence is whitespace inside the LaTeX.
+    Lowercases the result so comparisons are case-insensitive.
+    """
+    s = _LATEX_CMD_RE.sub(" ", text)
+    s = _LATEX_DELIM_RE.sub(" ", s)
+    s = _OCR_DIGIT_DOT_RE.sub(r"\1.", s)
+    s = _OCR_DIGIT_SPACE_RE.sub(r"\1", s)
+    s = _WHITESPACE_RE.sub(" ", s)
+    return s.lower().strip()
+
+
 def _quote_in_chunk(quote: str, chunk_text: str,
                     ratio_threshold: float = 0.85) -> float:
     """Return the best match score for `quote` inside `chunk_text`.
 
-    Strategy: substring check first (cheap path; LLM usually copies
-    verbatim). Falls back to SequenceMatcher.find_longest_match() to
-    measure the longest common contiguous span, which captures
-    "quote is a slightly-paraphrased substring" better than raw
-    ratio() does on length-mismatched strings.
+    Strategy:
+    1. exact substring (verbatim copy)
+    2. case-insensitive substring
+    3. normalized substring (LaTeX commands and OCR digit-spacing
+       stripped on both sides)
+    4. fuzzy longest-common-substring on normalized text
+
+    The normalization tier catches the common case where the LLM
+    correctly quotes the chunk but renders LaTeX-form math like
+    `$W _ { \\mathrm { rec } }` slightly differently than the OCR'd
+    source (different whitespace inside braces, etc.).
     """
     if not quote.strip() or not chunk_text:
         return 0.0
     quote_s = quote.strip()
-    # Cheap path 1: exact substring.
     if quote_s in chunk_text:
         return 1.0
-    # Cheap path 2: case-insensitive substring.
     if quote_s.lower() in chunk_text.lower():
         return 0.99
-    # Fuzzy path: longest contiguous matching block.
-    matcher = SequenceMatcher(None, quote_s, chunk_text)
-    longest = matcher.find_longest_match(0, len(quote_s), 0, len(chunk_text))
-    # Coverage of the quote by the longest matching block.
-    coverage = longest.size / max(1, len(quote_s))
+    q_norm = _normalize_for_match(quote_s)
+    c_norm = _normalize_for_match(chunk_text)
+    if q_norm and q_norm in c_norm:
+        return 0.97
+    if not q_norm:
+        return 0.0
+    matcher = SequenceMatcher(None, q_norm, c_norm)
+    longest = matcher.find_longest_match(0, len(q_norm), 0, len(c_norm))
+    coverage = longest.size / max(1, len(q_norm))
     return coverage
 
 
@@ -167,7 +199,7 @@ def verify_section_draft(
     chunks_by_id: "dict[int, Chunk]",
     ratio_threshold: float = 0.85,
 ) -> tuple[list[GroundedClaim], list[dict]]:
-    """Drop claims whose `cited_quote` doesn't fuzzy-match any cited chunk.
+    """Drop claims whose `cited_quote` doesn't fuzzy-match any chunk.
 
     Match criterion: the longest contiguous run of `cited_quote` characters
     found in the chunk text must cover at least `ratio_threshold` of the
@@ -176,6 +208,12 @@ def verify_section_draft(
 
     Empty quotes skip verification (cited_chunk_ids alone is the grounding
     signal — the LLM may still write good prose without verbatim quoting).
+
+    Tries the claim's `cited_chunk_ids` first. If none match, falls back to
+    scanning ALL retrieved chunks — LLMs sometimes quote from chunk A but
+    write `cited_chunk_ids=[B]` (chunk-ID slop). When the fallback succeeds,
+    the claim's cited_chunk_ids are patched to point at the chunk that
+    actually contains the quote.
     """
     accepted: list[GroundedClaim] = []
     rejected: list[dict] = []
@@ -184,7 +222,7 @@ def verify_section_draft(
             accepted.append(c)
             continue
         best_score = 0.0
-        matched = False
+        matched_cid: int | None = None
         for cid in c.cited_chunk_ids:
             ch = chunks_by_id.get(cid)
             if ch is None:
@@ -192,9 +230,25 @@ def verify_section_draft(
             score = _quote_in_chunk(c.cited_quote, ch.text, ratio_threshold)
             best_score = max(best_score, score)
             if score >= ratio_threshold:
-                matched = True
+                matched_cid = cid
                 break
-        if matched:
+        if matched_cid is None:
+            # Chunk-ID slop fallback: search the whole retrieved set.
+            cited_set = set(c.cited_chunk_ids)
+            for cid, ch in chunks_by_id.items():
+                if cid in cited_set:
+                    continue
+                score = _quote_in_chunk(c.cited_quote, ch.text, ratio_threshold)
+                if score > best_score:
+                    best_score = score
+                if score >= ratio_threshold:
+                    matched_cid = cid
+                    break
+        if matched_cid is not None:
+            if matched_cid not in c.cited_chunk_ids:
+                c = c.model_copy(update={
+                    "cited_chunk_ids": [matched_cid, *c.cited_chunk_ids],
+                })
             accepted.append(c)
         else:
             rejected.append({
@@ -558,49 +612,81 @@ def compose_structured(
                 continue
         draft = _merge_drafts(drafts)
 
-    # v1.8 retry-when-empty: if the draft completely ignored the required
-    # mentions list (LLM sampling discretion — happened in 2/3 KL runs on
-    # meng2024), issue one more call with an explicit "you missed everything"
-    # amendment. Lifts the variance floor without raising the cost ceiling.
+    # Verifier threshold is env-overridable for users who want stricter
+    # quote-grounding (raise) or looser tolerance for paraphrasing (lower).
+    verifier_threshold = float(
+        _os.environ.get("LAZY_PAPER_VERIFIER_THRESHOLD", "0.85")
+    )
+    chunks_by_id = {i: c for i, c in enumerate(chunks)}
+    accepted, rejected = verify_section_draft(
+        draft, chunks_by_id, ratio_threshold=verifier_threshold,
+    )
+    verified = SectionDraft(claims=accepted) if len(accepted) >= 2 else draft
+
+    # v1.8 retry-when-empty: trigger on POST-VERIFY coverage. The verifier
+    # can drop comparator-citing claims if their cited_quote fails to
+    # match (LaTeX/OCR drift handled by _normalize_for_match, but quote
+    # hallucination is still possible). When verified coverage is poor,
+    # one strengthened retry usually lifts the floor.
+    retry_threshold = float(
+        _os.environ.get("LAZY_PAPER_RETRY_THRESHOLD", "0.5")
+    )
     if required and len(required) >= 2:
-        still_missing = missing_required(required, draft)
-        # Trigger only when ALL required were ignored — partial coverage
-        # is much harder to "force-add" without disrupting good prose.
-        if len(still_missing) == len(required):
+        pre_missing = missing_required(required, draft)
+        post_missing = missing_required(required, verified)
+        pre_cov = (len(required) - len(pre_missing)) / len(required)
+        post_cov = (len(required) - len(post_missing)) / len(required)
+        print(
+            f"[s08] structured-compose: required={len(required)} "
+            f"pre-verify-missing={len(pre_missing)} ({pre_cov:.0%}) "
+            f"post-verify-missing={len(post_missing)} ({post_cov:.0%})",
+            flush=True,
+        )
+        if post_cov <= retry_threshold:
             retry_system = _STRUCTURED_SYSTEM + (
-                "\n\n## CRITICAL — REQUIRED MENTIONS WERE NOT CITED\n"
-                "Your previous draft attempted this section but FAILED to "
-                "cite ANY of the required mentions listed below. This is the "
-                "single most important correction.\n\n"
-                "You MUST write a dedicated GroundedClaim for EACH required "
-                "mention in the user's 'Required mentions' block. For each:\n"
-                "  - Use the author's 'X et al.' form when author_text is "
-                "given\n"
-                "  - Quote or paraphrase the entity_quote into cited_quote\n"
-                "  - Set cited_chunk_ids to the evidence_chunk_id\n"
+                "\n\n## CRITICAL — REQUIRED MENTIONS MISSING FROM PRIOR DRAFT\n"
+                "Your previous draft missed most of the required mentions "
+                "listed in the user message. Writing a dedicated "
+                "GroundedClaim for EACH required mention is the single most "
+                "important correction.\n\n"
+                "For each entry in the 'Required mentions' block:\n"
+                "  - Use the author's '<Author> et al.' form when "
+                "author_text is given\n"
+                "  - Copy the entity_quote VERBATIM into cited_quote — do "
+                "NOT paraphrase the quote\n"
+                "  - Set cited_chunk_ids to [evidence_chunk_id]\n"
                 "  - Embed any linked_values verbatim in the prose\n\n"
-                "Do NOT skip any required mention. Output will be checked "
-                "automatically."
+                "Quote discipline: cited_quote must be a verbatim substring "
+                "of the chunk's content. The verifier rejects quotes that "
+                "don't match. Output will be checked automatically."
             )
             try:
                 retry_draft = _single_compose(
                     llm, retry_system, user_msg, chunks,
                     max_retries=max_retries, temperature=0.3,
                 )
-                retry_missing = missing_required(required, retry_draft)
-                if len(retry_missing) < len(still_missing):
-                    print(f"[s08] retry-when-empty: lifted coverage "
-                          f"from 0/{len(required)} to "
-                          f"{len(required) - len(retry_missing)}/{len(required)}",
-                          flush=True)
-                    draft = retry_draft
+                retry_accepted, retry_rejected = verify_section_draft(
+                    retry_draft, chunks_by_id,
+                    ratio_threshold=verifier_threshold,
+                )
+                retry_verified = (SectionDraft(claims=retry_accepted)
+                                  if len(retry_accepted) >= 2
+                                  else retry_draft)
+                retry_post_missing = missing_required(required, retry_verified)
+                if len(retry_post_missing) < len(post_missing):
+                    print(
+                        f"[s08] retry-when-empty: lifted post-verify "
+                        f"coverage from "
+                        f"{len(required) - len(post_missing)}/{len(required)} "
+                        f"to "
+                        f"{len(required) - len(retry_post_missing)}/{len(required)}",
+                        flush=True,
+                    )
+                    verified, rejected = retry_verified, retry_rejected
             except Exception as exc:
                 print(f"[s08] retry-when-empty failed: {exc!r}; keeping "
                       f"original draft", flush=True)
 
-    chunks_by_id = {i: c for i, c in enumerate(chunks)}
-    accepted, rejected = verify_section_draft(draft, chunks_by_id)
-    verified = SectionDraft(claims=accepted) if len(accepted) >= 2 else draft
     return verified, rejected
 
 

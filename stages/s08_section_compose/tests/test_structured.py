@@ -311,26 +311,35 @@ def test_compose_structured_retries_when_required_all_missed(monkeypatch):
     assert any(0 in c.cited_chunk_ids for c in verified.claims)
 
 
-def test_compose_structured_no_retry_when_required_partially_covered(monkeypatch):
-    """Retry-when-empty only fires when ALL required are missed."""
+def test_compose_structured_no_retry_when_required_mostly_covered(monkeypatch):
+    """Retry-when-empty does NOT fire when post-verify coverage > 50%.
+
+    With 3 required and 2 mentioned (67%), the post-verify coverage is
+    above threshold so no retry call is made — keeping the cost ceiling
+    fixed when the initial draft is good enough.
+    """
     from unittest.mock import MagicMock
     from stages.s08_section_compose.structured import compose_structured
 
     mock_llm = MagicMock()
     mock_llm.model = "deepseek-chat"
     mock_llm._client = MagicMock()
-    chunks = [_make_chunk("r0", "Jiang", "doc_1.md", 0, 10),
-              _make_chunk("r1", "Other", "doc_1.md", 100, 110)]
+    chunks = [_make_chunk("r0", "alpha beta gamma", "doc_1.md", 0, 16),
+              _make_chunk("r1", "Other content", "doc_1.md", 100, 113)]
     required = [
-        RequiredMention(entity_text="x", entity_type="comparator",
+        RequiredMention(entity_text="alpha", entity_type="comparator",
                         evidence_chunk_id=0, evidence_quote="q", linked_values=[]),
-        RequiredMention(entity_text="y", entity_type="comparator",
-                        evidence_chunk_id=1, evidence_quote="q", linked_values=[]),
+        RequiredMention(entity_text="beta", entity_type="comparator",
+                        evidence_chunk_id=0, evidence_quote="q", linked_values=[]),
+        RequiredMention(entity_text="gamma", entity_type="comparator",
+                        evidence_chunk_id=0, evidence_quote="q", linked_values=[]),
     ]
-    # First (and only — no retry should fire) call cites chunk 0 → 1/2 covered
+    # Mentions 2 of 3 distinctive tokens → ~67% coverage, above 50%.
     partial = SectionDraft(claims=[
-        GroundedClaim(text="Cites x", cited_chunk_ids=[0], cited_quote=""),
-        GroundedClaim(text="Other content", cited_chunk_ids=[1], cited_quote=""),
+        GroundedClaim(text="Discusses alpha and beta in detail.",
+                      cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="Other content paragraph.",
+                      cited_chunk_ids=[1], cited_quote=""),
     ])
     call_count = {"n": 0}
 
@@ -349,7 +358,6 @@ def test_compose_structured_no_retry_when_required_partially_covered(monkeypatch
         mock_llm, section_title="Introduction", section_guidance="x",
         lang_instruction="Chinese", chunks=chunks, required=required,
     )
-    # 1 call only — partial coverage doesn't trigger retry
     assert call_count["n"] == 1
 
 
