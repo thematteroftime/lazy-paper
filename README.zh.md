@@ -9,7 +9,7 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
   <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.8.2-blue"></a>
   <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-250%20passing-22c55e"></a>
-  <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
+  <a href="docs_zh/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
 <p align="center"><strong><a href="README.md">English</a> · <a href="README.zh.md">简体中文</a></strong></p>
@@ -27,15 +27,35 @@
 喂入一篇科研 PDF + 一份 `.docx` 章节大纲模板，得到 **DOCX · PDF · HTML · PPTX** —— 中英双语深度分析，图表、量化锚点完整保留。
 
 ```
-PDF  +  outline.docx                    ┌─▶ preview.docx
-        │                               │
-        ▼                               │
-  OCR ▶ 清洗 ▶ 切章 ▶ 抠图 ▶ ───────────┼─▶ preview.pdf
-  模板 ▶ 上下文+KG ▶ 图分析 LLM ────────┼─▶ preview.html
-  检索器 ▶ 章节 agent ▶ reviewer ───────┼─▶ preview.pptx
-  ▶ citation ▶ 渲染 ─────────────────┼─▶   （学术答辩风格）
-                                        ▼
-                                  runs/<paper-id>/s09_render/
+                                                  ┌──▶ preview.docx
+PDF  +  outline.docx                              │
+       │                                          ├──▶ preview.pdf
+       ▼                                          │
+  s01_ocr  ▶  s02_clean  ▶  s03_chapter ┐         ├──▶ preview.html
+                                        │         │
+  s04_figures ─────────┐                ├─▶ s09 ──┴──▶ preview.pptx
+                       ├─▶ s06_context ─┤
+  s05_template ────────┤    (+ KG)      │
+                       │                │
+  s07_figure_analyze ──┴─▶ s08_section_compose
+                              (Strategy KL：检索器 + 校验器 + 重试)
+```
+
+```mermaid
+flowchart LR
+    PDF[PDF] --> S01[s01_ocr] --> S02[s02_clean] --> S03[s03_chapter] --> S04[s04_figures]
+    TPL[outline.docx] --> S05[s05_template]
+    S03 --> S06[s06_context<br/>+ 知识图谱]
+    S04 --> S06
+    S04 --> S07[s07_figure_analyze]
+    S05 --> S08
+    S06 --> S08
+    S07 --> S08[s08_section_compose<br/>Strategy KL]
+    S08 --> S09[s09_render]
+    S09 --> DOCX[preview.docx]
+    S09 --> PDFo[preview.pdf]
+    S09 --> HTML[preview.html]
+    S09 --> PPTX[preview.pptx]
 ```
 
 每个阶段写 `done.yaml`、可断点续跑；每次 LLM 调用持久化 prompt 与 response 供追溯。
@@ -191,12 +211,15 @@ uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 | 文件 | 受众 |
 |---|---|
 | [`README.md`](README.md) · [`README.zh.md`](README.zh.md) | 一手用户（英 / 中） |
-| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | 终端用户 —— 安装、快速开始、迭代、排障 |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 |
-| [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) | AI 编程 agent —— 工作流与反模式 |
-| [`docs/INTERNAL/HANDOFF.md`](docs/INTERNAL/HANDOFF.md) | 下一任维护者 —— 验证态 + 改动入口 |
+| [`docs_zh/USER_GUIDE.md`](docs_zh/USER_GUIDE.md) | 终端用户 —— 安装、快速开始、迭代、排障 |
+| [`docs_zh/ARCHITECTURE.md`](docs_zh/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 + Strategy KL 详解 + 数据流图 |
+| [`docs_zh/AGENT_GUIDE.md`](docs_zh/AGENT_GUIDE.md) | AI 编程 agent —— 工作流与反模式 |
+| [`docs_zh/TEST_FRAMEWORK.md`](docs_zh/TEST_FRAMEWORK.md) | 评测 harness 与 TestCase 编写 |
+| [`docs_zh/INTERNAL/HANDOFF.md`](docs_zh/INTERNAL/HANDOFF.md) | 下一任维护者 —— 验证态 + 改动入口 |
+| [`docs_zh/README.md`](docs_zh/README.md) | 中文文档全索引 |
+| [`docs/`](docs/) | 英文原版文档（含历史设计文档） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本差异 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 外部贡献者约定 |
+| [`CONTRIBUTING.md`](docs_zh/CONTRIBUTING.md) · [英文](CONTRIBUTING.md) | 外部贡献者约定 |
 
 ## 许可证
 

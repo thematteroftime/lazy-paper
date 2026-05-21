@@ -82,6 +82,7 @@ Docker users: `docker compose build && docker compose run --rm lazy-paper run --
 | `LLM_TEXT_API_KEY` | Yes | — | Text LLM key |
 | `LLM_TEXT_MODEL` | No | `deepseek-reasoner` | Text model name |
 | `LLM_MAX_TOKENS_CEILING` | No | `40000` | Caps `max_tokens` for every LLM call (single knob to constrain spend or quota) |
+| `LLM_EMBEDDINGS_BATCH_SIZE` | No | `10` | Per-batch size when embedding chunks in the retriever (`llm/retriever.py`) |
 | `LAZY_PAPER_STRUCTURED` | No | unset | `1` enables instructor-based structured compose with verifier (recommended for v1.8.1+) |
 | `LAZY_PAPER_KG_PROMPT` | No | `paper_kg.md` | KG-extraction prompt file. Use `paper_kg_v3.md` for author-entity extraction (Strategy L) |
 | `LAZY_PAPER_BEST_OF_N` | No | `1` | Number of independent draft samples per section. `2` enables Strategy K best-of-N merge |

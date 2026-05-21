@@ -27,15 +27,35 @@
 Feed a scientific PDF + a `.docx` section-outline template. Get back **DOCX · PDF · HTML · PPTX** — bilingual deep-analysis documents with figures, tables, and quantitative anchors preserved.
 
 ```
-PDF  +  outline.docx                    ┌─▶ preview.docx
-        │                               │
-        ▼                               │
-  OCR ▶ clean ▶ chapter ▶ figures ▶ ────┼─▶ preview.pdf
-  template ▶ context+KG ▶ figure-LLM ──┼─▶ preview.html
-  retriever ▶ section-agent ▶ reviewer ┼─▶ preview.pptx
-  ▶ citation ▶ render ────────────────┼─▶   (academic-defense style)
-                                        ▼
-                                  runs/<paper-id>/s09_render/
+                                                  ┌──▶ preview.docx
+PDF  +  outline.docx                              │
+       │                                          ├──▶ preview.pdf
+       ▼                                          │
+  s01_ocr  ▶  s02_clean  ▶  s03_chapter ┐         ├──▶ preview.html
+                                        │         │
+  s04_figures ─────────┐                ├─▶ s09 ──┴──▶ preview.pptx
+                       ├─▶ s06_context ─┤
+  s05_template ────────┤    (+ KG)      │
+                       │                │
+  s07_figure_analyze ──┴─▶ s08_section_compose
+                              (Strategy KL: retriever + verifier + retry)
+```
+
+```mermaid
+flowchart LR
+    PDF[PDF] --> S01[s01_ocr] --> S02[s02_clean] --> S03[s03_chapter] --> S04[s04_figures]
+    TPL[outline.docx] --> S05[s05_template]
+    S03 --> S06[s06_context<br/>+ KG]
+    S04 --> S06
+    S04 --> S07[s07_figure_analyze]
+    S05 --> S08
+    S06 --> S08
+    S07 --> S08[s08_section_compose<br/>Strategy KL]
+    S08 --> S09[s09_render]
+    S09 --> DOCX[preview.docx]
+    S09 --> PDFo[preview.pdf]
+    S09 --> HTML[preview.html]
+    S09 --> PPTX[preview.pptx]
 ```
 
 Each stage writes `done.yaml` and is independently re-runnable; every LLM call persists its prompt and response for audit.
