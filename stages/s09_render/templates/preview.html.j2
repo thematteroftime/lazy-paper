@@ -42,5 +42,15 @@
   {% endfor %}
 </section>
 {% endfor %}
+{% if sources %}
+<section id="sources" class="sources-footer">
+  <h2>{{ '来源' if doc.lang == 'zh' else 'Sources' }}</h2>
+  <ol class="sources-list">
+    {% for s in sources %}
+      <li id="cite-{{ s.n }}"><code>{{ s.doc_id }}</code> · chars {{ s.start }}–{{ s.end }}</li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
 </body>
 </html>

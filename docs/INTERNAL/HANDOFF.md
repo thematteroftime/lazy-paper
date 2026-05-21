@@ -87,7 +87,10 @@ Docker users: `docker compose build && docker compose run --rm lazy-paper run --
 | `LAZY_PAPER_KG_PROMPT` | No | `paper_kg.md` | KG-extraction prompt file. Use `paper_kg_v3.md` for author-entity extraction (Strategy L) |
 | `LAZY_PAPER_BEST_OF_N` | No | `1` | Number of independent draft samples per section. `2` enables Strategy K best-of-N merge |
 | `LAZY_PAPER_VERIFIER_THRESHOLD` | No | `0.85` | Minimum quote-vs-chunk substring/fuzzy match score |
-| `LAZY_PAPER_RETRY_THRESHOLD` | No | `0.5` | Post-verify coverage at or below which the retry-when-empty call fires. `0` disables retries |
+| `LAZY_PAPER_RETRY_THRESHOLD` | No | `0.5` | Post-verify coverage at or below which the retry-when-empty call fires. `0` means retry only when ALL required mentions are missing |
+| `LAZY_PAPER_MIN_SECTION_CHARS` | No | `500` | If the verified section is shorter than this, fire one extra retry asking the LLM to thicken it. `0` disables length-based retry |
+| `LAZY_PAPER_MIN_SECTION_CLAIMS` | No | `4` | Same as above but on claim count. Either condition triggers retry |
+| `LAZY_PAPER_HTML_CITATIONS` | No | `hyperlink` | HTML citation rendering: `hyperlink` (clickable per-claim anchors + sources footer), `keep`, or `remove` |
 | `LAZY_PAPER_AGENT` | No | unset | `1` enables the experimental pydantic-ai tool-calling agent compose path |
 | `LAZY_PAPER_TWO_STEP` | No | unset | `1` enables the experimental outline→expand two-step compose path |
 | `LAZY_PAPER_WHOLE_PAPER` | No | unset | `1` injects the whole paper text into each section compose (high cost) |

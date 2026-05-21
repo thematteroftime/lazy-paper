@@ -201,9 +201,9 @@ Three phases:
 
 Reads up to 20,000 characters from the abstract and introduction chapters. Calls `LLM(role="text")` with the `llm/prompts/paper_context.md` prompt. The LLM returns YAML; `safe_parse_yaml()` parses the response defensively. The parsed `context.yaml` is consumed by s07, s08, and s09 to inject paper-specific context into all downstream prompts.
 
-#### v1.4: KG sub-step
+#### Knowledge-graph sub-step
 
-After `context.yaml` is written, `kg_extract.build_paper_kg()` extracts a structured knowledge graph from all chapter text using `instructor` (typed Pydantic LLM output). The extraction uses a **10-type closed schema**:
+After `context.yaml` is written, `kg_extract.build_paper_kg()` extracts a structured knowledge graph from all chapter text using `instructor` (typed Pydantic LLM output). The default 10-type closed schema covers:
 
 | Type | Covers |
 |---|---|
@@ -217,6 +217,8 @@ After `context.yaml` is written, `kg_extract.build_paper_kg()` extracts a struct
 | `claim` | key claims / findings |
 | `method` | synthesis or characterization methods |
 | `comparator` | comparison benchmarks |
+
+Setting `LAZY_PAPER_KG_PROMPT=paper_kg_v3.md` adds an 11th `author` type linked to comparators via a `cited_by_paper` relation. This is the version Strategy KL uses to attribute literature citations as "<Author> et al." instead of bare chemical formulas.
 
 The extractor makes one LLM call via `instructor.from_openai(LLM('text').client, mode=Mode.JSON)` with `response_model=PaperKG`. On success, the entity + relation graph is serialized to `paper_kg.parquet` (via `pyarrow`). Each entity carries a `source_span` pointing back to the exact character range in the chapter text.
 
@@ -258,62 +260,36 @@ Output language (Chinese/English) is controlled by `--lang` via `LANG_INSTRUCTIO
 
 **Key code**: `stages/s08_section_compose/runner.py`, `stages/s08_section_compose/structured.py`, `stages/s08_section_compose/reviewer.py`, `stages/s08_section_compose/agent.py`
 
-#### Strategy KL — structured compose with best-of-N + author KG (v1.8.1 default-recommended)
+The composer has two paths that share the same input / output contract. The default ("Strategy KL") is recommended for all production runs; the legacy fallback exists for environments without retriever or KG.
 
-When `LAZY_PAPER_STRUCTURED=1` AND both retriever + KG are available, the runner uses the instructor-based structured-composition pipeline in `stages/s08_section_compose/structured.py` instead of the `_legacy_compose` path. This is the recommended path for v1.8.1+ and the only one validated for benchmark-recovery quality.
+#### Default path: structured compose with verifier (Strategy KL)
 
-Per-section flow:
+When `LAZY_PAPER_STRUCTURED=1` AND both retriever + KG are available, the runner uses `stages/s08_section_compose/structured.py::compose_structured`. Per-section flow:
 
-1. **Retrieval**: `retriever.retrieve(query, top_k=15)` returns RRF-fused chunks.
-2. **Required mentions**: `build_required_mentions` selects KG entities (all comparators for survey sections; gated entities for non-survey) and resolves each to a covering retrieved chunk index + an optional author-text link via the `cited_by_paper` relation. `select_top_required(cap=5)` ranks by length + digit-density.
-3. **Best-of-N compose** (env `LAZY_PAPER_BEST_OF_N`, default 1, recommended 2): N independent `instructor + SectionDraft` calls at temperatures 0.2, 0.4, 0.6, ... A Pydantic validator rejects `cited_chunk_ids` outside the retrieved set. The resulting drafts are union-merged via round-robin interleave with text-prefix (120-char) dedupe.
-4. **Verify**: `verify_section_draft(draft, chunks_by_id, ratio_threshold)` checks each claim's `cited_quote`. The matcher tries (a) exact substring; (b) case-insensitive substring; (c) **normalized substring** (`_normalize_for_match` strips LaTeX commands and collapses OCR digit-spacing); (d) fuzzy longest-common-substring on the normalized text. If the cited chunks don't match, the verifier falls back to scanning ALL retrieved chunks — when a quote is found in a non-cited chunk, the claim is accepted and `cited_chunk_ids` is patched (chunk-ID slop tolerance). Threshold is env-overridable via `LAZY_PAPER_VERIFIER_THRESHOLD` (default 0.85).
-5. **Retry-when-empty**: compute `missing_required` against the **verified** draft. If `post_cov ≤ LAZY_PAPER_RETRY_THRESHOLD` (default 0.5), issue one more `_single_compose` call with a strengthened system prompt that names the missing entities explicitly; re-verify; swap if coverage improved. Bounded to one extra call per section.
-6. **Render**: `draft.render(mode="REMOVE")` flattens the SectionDraft to prose. Leaked `(chunk N)` / `[N, M]` patterns are stripped.
+1. **Retrieval**: `retriever.retrieve(query, top_k=15)` returns RRF-fused chunks (dense cosine + BM25).
+2. **Required mentions**: `build_required_mentions` selects KG entities (all comparators for survey sections; tokens-overlap-with-guidance entities elsewhere) and resolves each to a covering retrieved chunk index + author-text link via `cited_by_paper`. `select_top_required(cap=5)` ranks by length + digit-density.
+3. **Best-of-N compose** (env `LAZY_PAPER_BEST_OF_N`, default 1, recommended 2): N independent `instructor + SectionDraft` calls at temperatures 0.2, 0.4, 0.6 … . A Pydantic validator rejects `cited_chunk_ids` outside the retrieved set. Drafts are union-merged via round-robin interleave with `_claim_dedup_key` (collapses paraphrases on shared `(author, value)` anchors).
+4. **Verify**: `verify_section_draft(draft, chunks_by_id, ratio_threshold)` checks each claim's `cited_quote` with a four-tier match (exact substring → case-insensitive substring → normalized substring with LaTeX commands stripped + OCR digit-spacing folded → fuzzy longest-common-substring). If the cited chunks don't match, the verifier scans ALL retrieved chunks; on match the claim is accepted and `cited_chunk_ids` is patched (chunk-ID slop tolerance). Threshold env: `LAZY_PAPER_VERIFIER_THRESHOLD` (default 0.85). An **anchor check** then runs: when the claim names a specific author (`X et al.` / `X 等人`) or numeric value (`2.94 J/cm³`, `91.04%`, …), the `cited_quote` must itself contain at least one of those anchors — otherwise the quote is in the chunk but doesn't support the specific fact.
+5. **Retry-when-empty**: compute `missing_required` against the **verified** draft. If `post_cov ≤ LAZY_PAPER_RETRY_THRESHOLD` (default 0.5), issue one more `_single_compose` call with a strengthened prompt and re-verify; swap if coverage improved.
+6. **Retry-when-short**: even when coverage is fine, if the verified section is shorter than `LAZY_PAPER_MIN_SECTION_CHARS` (500) or has fewer than `LAZY_PAPER_MIN_SECTION_CLAIMS` (4) claims, issue one more LLM call asking for additional distinct facts; swap only if the result is longer.
+7. **Render**: `draft.render(mode="REMOVE")` flattens the SectionDraft to prose; the HTML renderer post-processes the same markers into clickable citation anchors (HYPERLINK mode by default).
 
-KG extraction uses `paper_kg_v3.md` (selected via `LAZY_PAPER_KG_PROMPT=paper_kg_v3.md`), which adds `author` as an 11th entity type linked to each `comparator` via the `cited_by_paper` relation. This is what lets the compose prompt say *"Jiang et al. reported W_rec=2.94 J/cm³"* instead of the bare chemical formula.
+Validation: see `docs/v1_8_validation_results.md` and `docs/v1_8_2_corpus_validation.md` for benchmark scores across a 13-paper corpus.
 
-See `docs/v1_8_validation_results.md` for the validation that proved this path's stability (mean 15.0/17 on meng2024 ch01, floor 12, range 12–17 — vs v1.7 KL's floor of 1).
+#### Legacy fallback: prompt-stuffed compose
 
-#### Default per-section algorithm (v1.4 fallback path)
+When `LAZY_PAPER_STRUCTURED` is unset OR either retriever or KG failed to build, the runner calls `_legacy_compose`. This is the v1.4 path: single LLM call per section with retrieved evidence packed into the prompt, followed by the two-tier critic (regex + LLM). The critic produces flags in `critic_flags.yaml`; the LLM critic only runs when the regex tier finds flags.
 
-For each section node in `template.yaml`:
+The legacy path also threads a rolling first-sentence summary of the prior 8 composed sections into the `{prior_findings}` slot, and post-checks the Chinese-character ratio of the draft (retries once with a hard `OUTPUT MUST BE IN CHINESE` amendment when the LLM defaulted to English).
 
-1. **Evidence retrieval**: load `Retriever` from `retrieval.parquet` and call `retriever.retrieve(guidance, top_k=8)`. The default `_legacy_compose` path passes no `entity_boost`; only the optional agent path may pass entity IDs for boost. The RRF-fused ranked list of chunks combines dense cosine + BM25 sparse. Falls back to keyword excerpts if `retrieval.failed` or `kg_extract.failed` marker is present.
+#### Optional experimental composers (opt-in only)
 
-2. **Cross-section context (v1.4.1)**: a rolling first-sentence summary of the last 8 composed sections is threaded into the `{prior_findings}` slot of the compose prompt with a "do not restate verbatim — refer back, build on, or contrast" instruction. Eliminates verbatim cross-chapter repetition (e.g., the chemical-formula problem observed in meng2024 v1.4.0).
+Two experimental composers remain env-gated and are NOT recommended for production:
 
-3. **Composition**: calls `LLM(role="text")` with the `llm/prompts/section_compose.md` prompt, injecting paper context, section metadata, retrieved evidence chunks, figure notes, and `{prior_findings}`.
+- `LAZY_PAPER_AGENT=1` — pydantic-ai tool-calling agent in `stages/s08_section_compose/agent.py`. Provides `query_kg`, `retrieve`, `check_source`, `emit_section` tools to the LLM. Occasionally returns meta-commentary instead of section prose; falls back to legacy compose on any exception.
+- `LAZY_PAPER_TWO_STEP=1` — outline → expand pipeline in `stages/s08_section_compose/two_step.py`. Splits compose into an outline draft + per-bullet expand pass.
 
-4. **Language guard (v1.4.1)**: when `--lang zh` is set, the composer post-checks the Chinese-character ratio of the draft. If < 30% and length > 100 chars (LLM defaulted to the source paper's English), it retries once with a hard "OUTPUT MUST BE WRITTEN IN CHINESE" system-prompt amendment.
-
-5. **Regex critic**: `reviewer.regex_check(draft, source_docs, kg, fig_yaml)` scans the draft for:
-   - numeric values not found in source documents (with unit normalization via `_units.normalize()`)
-   - `Fig. N` / `Table N` references not present in `figures.yaml`
-   - chemical formulas or symbol bindings not present in the KG
-
-   Any `Flag` objects produced are appended to `critic_flags.yaml`.
-
-6. **LLM critic**: if `reviewer.regex_check()` produces flags, `reviewer.llm_review(draft, flags, evidence)` is called. The reviewer uses `instructor` with `response_model=CritiqueRevision`, which carries `revised_draft`, `quote_fidelity`, `grounding`, `synthesis_depth` (all 1–4 Likert scores), and `notes`. The revised draft replaces the original. A second regex pass runs; any remaining flags are soft-accepted with a logged warning.
-
-7. **Findings stub**: `findings.append_verified_claims(section.title, claims)` appends verified claims from the reviewed draft to `findings.yaml` (write-only in v1.4; consumed by a future cross-chapter coherence agent in v1.5).
-
-8. Write the chapter Markdown to `chapters/<slug>.md`. If `composed` is empty (both compose attempts failed), a placeholder marker is written instead so downstream stages don't silently emit a heading-only chapter.
-
-#### Optional pydantic-ai agent path (experimental, env-gated)
-
-Set `LAZY_PAPER_AGENT=1` to replace step 2 with a `pydantic-ai` tool-calling agent loop. The agent (`stages/s08_section_compose/agent.py`) is given four tools:
-
-| Tool | Signature | Purpose |
-|---|---|---|
-| `query_kg` | `(entity_type, filter?) → list[dict]` | Query the KG by type; types are the 10-type closed schema. |
-| `retrieve` | `(query, top_k=8, entity_boost?) → list[dict]` | Hybrid dense+BM25 retrieval; top_k clamped to 12. |
-| `check_source` | `(claim, expected_value?) → dict` | Substring + unit-normalized lookup; returns `{found, span, evidence}`. |
-| `emit_section` | `(draft) → str` | Terminal call; validates ≥1 `[span:...]` citation marker, ends the tool loop. |
-
-The agent runs up to `max_iters=8` tool cycles before forcing an `emit_section` call. Any exception in the agent loop causes the runner to fall back to legacy compose for that section, logging `[degraded] agent fallback for <section.title>`.
-
-**Why env-gated**: live runs revealed the agent occasionally returns meta-commentary ("I will now write…") instead of section prose. The flag lets you opt in on a known-good environment while the default path remains stable.
+Both predate Strategy KL and have not been re-validated against the v1.8 corpus.
 
 ---
 
@@ -430,29 +406,27 @@ BM25 term frequencies and the inverted index are serialized alongside the chunks
 
 ---
 
-## Citation processing (v1.4+)
+## Citation processing
 
-### Stream processor (vendored)
+### Design origin
 
-`llm/citation/stream_processor.py` is vendored from [Onyx](https://github.com/onyx-dot-app/onyx) (`backend/onyx/chat/citation_processor.py`, MIT license). The original MIT header and author attribution are preserved verbatim. Three Onyx-internal imports (`SearchDoc`, `CitationInfo`, `STOP_STREAM_PAT`) are replaced by local Pydantic models; all regex state-machine logic and rendering modes are retained unchanged.
-
-**License**: see `THIRD_PARTY_NOTICES.md` for source repo, commit SHA, and MIT full text.
+The citation rendering design is borrowed from [Onyx](https://github.com/onyx-dot-app/onyx)'s `citation_processor.py` (MIT). The original streaming implementation was vendored at `llm/citation/stream_processor.py` for one release but never wired in; the in-tree non-streaming variant in `llm/citation/__init__.py::process_text` has been the only runtime path. See `THIRD_PARTY_NOTICES.md` for full attribution.
 
 ### Three rendering modes
 
 | Mode | Behavior | When to use |
 |---|---|---|
-| `REMOVE` | Strips all `[span:doc_X:Y-Z]` markers — final output is clean prose. | **Default** for end users. |
+| `REMOVE` | Strips all `[span:doc_X:Y-Z]` markers — final output is clean prose. | DOCX default. |
 | `KEEP` | Leaves markers in place as literal text. | Debugging retrieval attribution. |
-| `HYPERLINK` | Converts markers to hyperlinks in DOCX/HTML output pointing to the source chunk. | QA review, citation audit. |
+| `HYPERLINK` | Converts markers to clickable per-claim anchors in HTML output; appends a sources footer. | HTML default; biggest trust signal for end readers. |
 
-The mode is selected via `llm/citation/__init__.py::CitationAdapter`, which bridges lazy-paper's `Source`/`Citation` Pydantic models to the Onyx `SearchDoc`/`CitationInfo` interface.
+The mode is selected per-renderer in `stages/s09_render/runner.py`. DOCX defaults to `REMOVE`; HTML defaults to `HYPERLINK`. Both can be overridden by `--debug-citations` (forces `KEEP` everywhere) or by setting `LAZY_PAPER_HTML_CITATIONS=remove` to disable HTML clickable citations.
 
 ### CLI flag
 
-Pass `--debug-citations` to switch the mode to `KEEP`, exposing `[span:...]` markers in DOCX and HTML output. Default is `REMOVE`. The flag has no effect on PPTX (speaker notes carry the markers regardless).
+Pass `--debug-citations` to switch all renderers to `KEEP` mode, exposing `[span:...]` markers as literal text. Useful when auditing what the LLM cited.
 
-**Cross-reference**: `llm/citation/__init__.py`, `llm/citation/stream_processor.py`, `stages/s09_render/renderers/docx.py`
+**Cross-reference**: `llm/citation/__init__.py::process_text`, `stages/s09_render/renderers/{docx,html}.py`
 
 ---
 

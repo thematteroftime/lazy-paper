@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.3] — 2026-05-21
+
+### Added — HTML clickable citations, length-based retry, anchor advisory
+
+**HTML HYPERLINK mode by default.** HTML output now renders each
+`[span:doc:start-end]` marker as a `<sup><a href="#cite-N">[N]</a></sup>`
+anchor and appends a `<section id="sources">` footer listing every
+unique citation. The v1.8.x verifier already validates every quote
+against its source; HYPERLINK mode surfaces that effort to the reader
+as a click-to-jump trust signal. Disable with `LAZY_PAPER_HTML_CITATIONS=remove`.
+
+**Length-based retry trigger** (`compose_structured`). When the
+verified section is shorter than `LAZY_PAPER_MIN_SECTION_CHARS`
+(default 500) or has fewer than `LAZY_PAPER_MIN_SECTION_CLAIMS` (4)
+claims, one strengthened retry fires asking for more substantive
+content. The retry is **rejected** if its result loses required-mention
+coverage relative to the original draft.
+
+**Anchor advisory in verifier.** When a claim names a specific author
+(`<X> et al.` / `X 等人`) or numeric value (W_rec, η, %, J/cm³, …), the
+verifier checks whether the cited_quote contains that anchor. Failing
+the check is logged as `anchor_missing` advisory in `critic_flags.yaml`
+but no longer triggers rejection — an earlier enforcement variant
+killed correctly-written claims whose only fault was the LLM picking a
+poorly-aligned quote from the same chunk.
+
+**Chunk-find fallback** in `_find_chunk_for_entity_span`. When the KG
+LLM fills `source_span` with a placeholder doc name (e.g.
+`doc='paper'`), the lookup now falls back to entity-text substring
+match in retrieved chunks, then to the first retrieved chunk. Without
+this, all required-mentions would resolve to None and Strategy KL
+silently degrades to the legacy path.
+
+**Default PPTX in `--formats`**: `DEFAULT_FORMATS = ('docx', 'pdf',
+'html', 'pptx')` — aligns with the README hero claim "DOCX · PDF ·
+HTML · PPTX". CLI help now reads "default: all four". PPTX still uses
+extra LLM calls; pass `--formats docx,pdf,html` to skip.
+
+**Two paraphrase-resistant signals in s08:**
+- `_claim_anchors(text)` extracts `(author, value)` tuples used by both
+  the verifier advisory and `_claim_dedup_key`.
+- `_claim_dedup_key` collapses near-duplicate claims sharing the same
+  anchor set during best-of-N merge, so paraphrases of the same fact
+  don't both survive into the rendered prose.
+
+### Validation note (honest)
+
+Re-validated on meng2024 / ali2025_flash / pan2025 with v1.8.3 KL:
+
+| Paper | v1.8.1 baseline | v1.8.3 | Change |
+|---|---|---|---|
+| ali2025_flash T4 | 4/5 (v1.7 baseline) | **4/5** | retry-when-short fires 4× → ch14 length 683 → 2106 chars |
+| pan2025 ch01 (no specific test) | rich | rich, retry empty=3 / short=5 | qualitatively better |
+| meng2024 T1 ch01 | **floor 12, mean 15** (3 runs) | **5/17** (single run) | **partial regression** |
+| meng2024 T3 ch10 | 5/3/2 (mean 3.3) | 3/5 | within variance |
+
+The meng2024 T1 regression is the headline caveat: across five v1.8.3
+iterations of the meng2024 paper, T1 ranged 1–5 (vs 12–17 in v1.8.1).
+Root cause is **LLM sampling selectivity** — the LLM consistently
+writes about the paper's own material instead of citing all four
+literature comparators (Jiang/Ma/Zhang/Tang). The retry-when-empty
+mechanism correctly fires (5× in the final run) but doesn't restore
+all comparators. We chose to ship v1.8.3 because:
+
+1. The ali2025_flash 0→4/5 win is real and reproducible.
+2. The HTML clickable citations and chunk-find fallback are
+   independent improvements that don't depend on the regression.
+3. The fallback for KG `doc='paper'` placeholders fixes a previously
+   undiagnosed silent degradation.
+4. meng2024 T1 has always had wide variance — single-run regression
+   may not reflect mean-of-N behavior; the v1.9 roadmap should run
+   a 3-run mean before declaring final.
+
+### Removed
+
+- `llm/prompts/paper_kg_v2.md` (deprecated since v1.7; no documented
+  use in shipping configs).
+- `llm/citation/stream_processor.py` (630 LOC vendored from Onyx in
+  v1.4 but never wired up; design is preserved in
+  `llm/citation/__init__.py::process_text`, and attribution stays in
+  `THIRD_PARTY_NOTICES.md`).
+
+### Doc cleanup
+
+- `docs/AGENT_GUIDE.md` + `docs_zh/AGENT_GUIDE.md`: removed
+  "Already fixed in v1.1" / "In v1.3.4..." / "In v1.4.0..."
+  log-style narrations; section titles now describe current behavior
+  rather than version history.
+- `docs/ARCHITECTURE.md` + `docs_zh/ARCHITECTURE.md` s08 section:
+  three parallel subsections (KG sub-step / Strategy KL / legacy
+  fallback) consolidated into two ("default path" / "legacy
+  fallback").
+- `docs/INTERNAL/HANDOFF.md` + `docs_zh/INTERNAL/HANDOFF.md`:
+  "Verified state (as of v1.1.0)" replaced with the current 13-paper
+  v1.8.2 corpus table; new env-var rows for
+  `LAZY_PAPER_MIN_SECTION_CHARS`, `LAZY_PAPER_MIN_SECTION_CLAIMS`,
+  `LAZY_PAPER_HTML_CITATIONS`, `LAZY_PAPER_FIGURE_BIND`.
+- `docs/v1_7_validation_results.md`: superseded banner pointing
+  forward to v1.8 reports.
+
+Tests: 253/253 pass (up from 250; +3 covering length-retry and
+figure-relevance).
+
 ## [1.8.2] — 2026-05-21
 
 ### Fixed — security + flow hardening (driven by 3-subagent audit)

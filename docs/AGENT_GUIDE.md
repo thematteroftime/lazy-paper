@@ -53,9 +53,9 @@ uv run python -m cli run --pdf <pdf> --template <docx> --paper-id <pid> \
 
 | Symptom | Root cause | Fix |
 |---|---|---|
-| Empty PPT outline (flat 15-row list, no group descriptions) | LLM returned empty content (DeepSeek-Reasoner reasoning tokens ate `max_tokens` budget) | Already fixed in v1.1: `max_tokens(16000)` for outline + explicit empty-response check. Don't lower it. |
-| Front-half/back-half numbering inconsistency in chapter headings | s08 was concatenating template's `number` field; template had `number:''` for some, `'12'..'17'` for others | Already fixed in v1.1: s08 no longer embeds number. PPT renderer adds positional 01–N prefix. |
-| `--only s08,s09` silently runs nothing | `--only` didn't split on comma | Already fixed in v1.1: `--only s08,s09` now works; unknown stages raise SystemExit. |
+| Empty PPT outline (flat 15-row list, no group descriptions) | DeepSeek-Reasoner reasoning tokens can eat the `max_tokens` budget before content is emitted | Outline calls use `max_tokens(16000)` + an explicit empty-response check; don't lower the budget for outline. |
+| Front-half/back-half numbering inconsistency in chapter headings | Template `number` field is sparse (`''` for some, `'12'..'17'` for others); concatenating it into the heading produces mixed forms | s08 must not embed the template `number`; the PPT renderer adds a positional 01–N prefix. |
+| `--only s08,s09` silently runs nothing | A regex/split bug in the `--only` parser | The CLI splits on comma and raises `SystemExit` for unknown stages — verify both behaviors stay intact if you touch `cli.py`. |
 | Subagent dispatched but never completed | Likely context limit hit, session timeout, or agent ran into permission denial silently | Verify with `TaskOutput` or by checking the log file written by the script the subagent ran. Don't assume "subagent finished == work done". |
 
 ### Anti-patterns to avoid
@@ -155,9 +155,7 @@ If `retrieval.failed` is present, s08 has already logged `[degraded] keyword fal
       evidence: null
 ```
 
-**In v1.3.4**: the critic is observe-only. Flags are recorded but do not trigger rewriting. Use `critic_flags.yaml` to audit s08 output quality before upgrading to v1.4.
-
-**In v1.4.0**: if `LAZY_PAPER_AGENT=0` (default), the regex tier still gates the LLM tier — `reviewer.llm_review()` only runs when `regex_check()` returns ≥1 flag. Check `critic_flags.yaml` to understand why an LLM critic revision was triggered.
+**Current behavior:** the regex tier gates the LLM tier — `reviewer.llm_review()` only runs when `regex_check()` returns ≥1 flag. Check `critic_flags.yaml` to understand why an LLM critic revision was triggered, or to audit s08 output quality post-hoc when no LLM critic ran.
 
 Problem codes and what they mean:
 
@@ -213,8 +211,8 @@ llm/
   prompts/*.md                  # one prompt per LLM call site
   retriever.py                  # Retriever: build_index() + retrieve() (llama-index + bm25s + RRF)
   citation/
-    stream_processor.py         # vendored Onyx citation processor (MIT)
-    __init__.py                 # CitationAdapter; mode switch for --debug-citations
+    __init__.py                 # process_text() — REMOVE / KEEP / HYPERLINK modes
+    models.py                   # SearchDoc / CitationInfo helpers
 
 stages/_common/                 # shared helpers (yaml, paths, done-marker, images, bbox)
 stages/sNN_<name>/runner.py     # stage entrypoint; called by cli._run_one

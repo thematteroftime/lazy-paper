@@ -169,7 +169,7 @@ Options
   --skip-ocr                assume s01_ocr already exists
   --force                   re-run stages even if marked done
   --only STAGE[,STAGE...]   subset of STAGE_ORDER (comma-separated)
-  --formats LIST            docx,pdf,html,pptx (default: docx,pdf,html)
+  --formats LIST            docx,pdf,html,pptx (default: all four)
   --pptx-bullets {llm,rule} bullet strategy (default: llm)
   --pptx-template PATH      custom .pptx slide-master
   --pptx-subtitle TEXT      override the PPT subtitle line

@@ -353,12 +353,122 @@ def test_compose_structured_no_retry_when_required_mostly_covered(monkeypatch):
         chat = _FakeChat()
     monkeypatch.setattr("instructor.from_openai",
                         lambda client, mode=None: _FakeClient())
+    # Disable the length-based retry — this test is about coverage retry only.
+    monkeypatch.setenv("LAZY_PAPER_MIN_SECTION_CHARS", "0")
 
     compose_structured(
         mock_llm, section_title="Introduction", section_guidance="x",
         lang_instruction="Chinese", chunks=chunks, required=required,
     )
     assert call_count["n"] == 1
+
+
+def test_compose_structured_retries_when_section_too_short(monkeypatch):
+    """retry-when-short fires when verified draft is below min-chars/claims.
+
+    Coverage is fine (no required mentions), but the draft has only 2
+    short claims totalling ~60 chars — under the default thresholds, so
+    a second LLM call should fire.
+    """
+    from unittest.mock import MagicMock
+    from stages.s08_section_compose.structured import compose_structured
+
+    mock_llm = MagicMock()
+    mock_llm.model = "deepseek-chat"
+    mock_llm._client = MagicMock()
+    chunks = [_make_chunk("r0", "x" * 200, "doc_1.md", 0, 200)]
+    required: list = []  # no required mentions — coverage retry won't fire
+    short = SectionDraft(claims=[
+        GroundedClaim(text="Short claim one.", cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="Short claim two.", cited_chunk_ids=[0], cited_quote=""),
+    ])
+    longer = SectionDraft(claims=[
+        GroundedClaim(text="A much longer claim that covers " + ("x" * 150),
+                      cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="Another substantive claim " + ("y" * 150),
+                      cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="Third detailed claim " + ("z" * 150),
+                      cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="Fourth claim " + ("w" * 150),
+                      cited_chunk_ids=[0], cited_quote=""),
+    ])
+    drafts = [short, longer]
+    call_count = {"n": 0}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            d = drafts[call_count["n"]]
+            call_count["n"] += 1
+            return d
+    class _FakeChat:
+        completions = _FakeCompletions()
+    class _FakeClient:
+        chat = _FakeChat()
+    monkeypatch.setattr("instructor.from_openai",
+                        lambda client, mode=None: _FakeClient())
+
+    verified, _ = compose_structured(
+        mock_llm, section_title="Section", section_guidance="x",
+        lang_instruction="Chinese", chunks=chunks, required=required,
+    )
+    assert call_count["n"] == 2, "second call (retry-when-short) should fire"
+    # The longer draft should win because it's longer + has more claims
+    assert len(verified.claims) >= 3
+
+
+def test_compose_structured_no_short_retry_when_disabled(monkeypatch):
+    """LAZY_PAPER_MIN_SECTION_CHARS=0 disables length-based retry."""
+    from unittest.mock import MagicMock
+    from stages.s08_section_compose.structured import compose_structured
+
+    mock_llm = MagicMock()
+    mock_llm.model = "deepseek-chat"
+    mock_llm._client = MagicMock()
+    chunks = [_make_chunk("r0", "x" * 200, "doc_1.md", 0, 200)]
+    short = SectionDraft(claims=[
+        GroundedClaim(text="Short.", cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="Also short.", cited_chunk_ids=[0], cited_quote=""),
+    ])
+    call_count = {"n": 0}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            call_count["n"] += 1
+            return short
+    class _FakeChat:
+        completions = _FakeCompletions()
+    class _FakeClient:
+        chat = _FakeChat()
+    monkeypatch.setattr("instructor.from_openai",
+                        lambda client, mode=None: _FakeClient())
+    monkeypatch.setenv("LAZY_PAPER_MIN_SECTION_CHARS", "0")
+
+    compose_structured(
+        mock_llm, section_title="Section", section_guidance="x",
+        lang_instruction="Chinese", chunks=chunks, required=[],
+    )
+    assert call_count["n"] == 1
+
+
+def test_figure_relevance_picks_topically_close_figures():
+    from stages.s08_section_compose.structured import _figure_relevance
+
+    fig_notes = [
+        {"fig_id": "Fig.1", "caption": "SEM microstructure of NBST-BMZ ceramics",
+         "deep_observation": "Grain size decreases with BMZ content"},
+        {"fig_id": "Fig.5", "caption": "P-E loops at varying electric field",
+         "deep_observation": "Pinched double loops characteristic of AFE"},
+        {"fig_id": "Fig.8", "caption": "Frequency-dependent dielectric constant",
+         "deep_observation": "Broad relaxor peak around 200°C"},
+    ]
+    # Section about P-E loops — should rank Fig.5 highest
+    top = _figure_relevance(
+        section_title="Polarization Behaviour",
+        section_guidance="P-E hysteresis loops and pinched response",
+        fig_notes=fig_notes, top_k=2,
+    )
+    assert len(top) >= 1
+    assert top[0]["fig_id"] == "Fig.5"
 
 
 def test_compose_structured_uses_instructor_and_runs_verifier(monkeypatch):

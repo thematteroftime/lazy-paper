@@ -1,8 +1,11 @@
-"""Citation rendering adapter — wires vendored Onyx stream_processor to s09.
+"""Citation rendering adapter for s09.
 
-`process_text(text, mode, sources)` parses [span:doc:start-end] markers and
-returns either a cleaned string (REMOVE/KEEP) or a segmented list (HYPERLINK)
-suitable for renderer-specific output.
+`process_text(text, mode, sources)` parses `[span:doc:start-end]` markers
+and returns either a cleaned string (REMOVE / KEEP) or a segmented list
+(HYPERLINK) suitable for renderer-specific output.
+
+Design borrowed from Onyx's citation_processor.py (MIT). See
+THIRD_PARTY_NOTICES.md for attribution.
 """
 from __future__ import annotations
 

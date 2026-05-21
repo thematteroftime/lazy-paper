@@ -169,7 +169,7 @@ lazy-paper run --pdf PATH --template PATH [options]
   --skip-ocr                假定 s01_ocr 产物已存在
   --force                   即使 done.yaml 存在也强制重跑
   --only STAGE[,STAGE...]   只跑指定阶段（逗号分隔）
-  --formats LIST            docx,pdf,html,pptx（默认 docx,pdf,html）
+  --formats LIST            docx,pdf,html,pptx（默认四种全开）
   --pptx-bullets {llm,rule} PPT 要点策略（默认 llm）
   --pptx-template PATH      自定义 .pptx 母版
   --pptx-subtitle TEXT      覆盖 PPT 副标题

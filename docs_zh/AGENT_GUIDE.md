@@ -53,9 +53,9 @@ uv run python -m cli run --pdf <pdf> --template <docx> --paper-id <pid> \
 
 | 症状 | 根因 | 修复 |
 |---|---|---|
-| PPT 大纲为空（扁平 15 行列表、没有分组描述） | LLM 返回了空内容（DeepSeek-Reasoner 的 reasoning token 吃掉了 `max_tokens` 预算） | v1.1 已修：大纲使用 `max_tokens(16000)` + 显式空响应检查。不要再调低。 |
-| 章节标题前后段编号不一致 | s08 在拼接模板的 `number` 字段；模板里部分章节为 `number:''`、另一些为 `'12'..'17'` | v1.1 已修：s08 不再嵌入编号。PPT 渲染器按位置追加 01–N 前缀。 |
-| `--only s08,s09` 静默地什么也不跑 | `--only` 当时没有按逗号拆分 | v1.1 已修：`--only s08,s09` 现在可用；未知阶段会抛 SystemExit。 |
+| PPT 大纲为空（扁平 15 行列表、没有分组描述） | DeepSeek-Reasoner 的 reasoning token 可能吃掉 `max_tokens` 预算让正式内容没有 token 可用 | 大纲调用使用 `max_tokens(16000)` + 显式空响应检查；改 outline 时不要调低预算。 |
+| 章节标题前后段编号不一致 | 模板的 `number` 字段稀疏（部分为 `''`、其它为 `'12'..'17'`），把它拼进标题会得到混杂形式 | s08 不能嵌入模板的 `number`；编号由 PPT 渲染器按位置加 01–N 前缀。如果改 `cli.py`，保留这一约定。 |
+| `--only s08,s09` 静默地什么也不跑 | `--only` 解析器对逗号拆分有 bug | CLI 按逗号拆分并对未知阶段抛 `SystemExit`，改 `cli.py` 时保留这两条行为。 |
 | 派发了 subagent 但从未完成 | 多半是上下文超限、会话超时，或 agent 静默撞上权限拒绝 | 用 `TaskOutput` 或读 subagent 跑过脚本写入的日志文件来核实。不要假定"subagent 结束 == 工作完成"。 |
 
 ### 应避免的反模式
@@ -155,9 +155,7 @@ for h in hits:
       evidence: null
 ```
 
-**在 v1.3.4 中**：critic 是只观察的。flag 会记录但不触发重写。可用 `critic_flags.yaml` 在升级到 v1.4 之前审计 s08 的输出质量。
-
-**在 v1.4.0 中**：若 `LAZY_PAPER_AGENT=0`（默认），regex 层仍然为 LLM 层把关 —— 只有当 `regex_check()` 返回 ≥1 个 flag 时，`reviewer.llm_review()` 才会运行。查 `critic_flags.yaml` 可以了解某次 LLM critic 重写为何被触发。
+**当前行为**：regex 层为 LLM 层把关 —— 只有当 `regex_check()` 返回 ≥1 个 flag 时，`reviewer.llm_review()` 才会运行。查 `critic_flags.yaml` 可以了解某次 LLM critic 重写为何被触发，或在没有 LLM critic 介入时事后审计 s08 输出质量。
 
 problem code 含义对照表：
 
@@ -213,7 +211,7 @@ llm/
   prompts/*.md                  # 每个 LLM 调用点对应一个 prompt
   retriever.py                  # Retriever：build_index() + retrieve()（llama-index + bm25s + RRF）
   citation/
-    stream_processor.py         # 内置的 Onyx citation processor（MIT）
+    models.py                   # SearchDoc / CitationInfo 辅助类型
     __init__.py                 # CitationAdapter；--debug-citations 的模式开关
 
 stages/_common/                 # 共享辅助函数（yaml、路径、done 标记、图像、bbox）

@@ -86,7 +86,10 @@ Docker 用户：`docker compose build && docker compose run --rm lazy-paper run 
 | `LAZY_PAPER_KG_PROMPT` | 否 | `paper_kg.md` | KG 抽取所用的 prompt 文件。Strategy L 使用 `paper_kg_v3.md` 抽取作者实体 |
 | `LAZY_PAPER_BEST_OF_N` | 否 | `1` | 每个 section 独立 draft 的样本数。`2` 启用 Strategy K 的 best-of-N 合并 |
 | `LAZY_PAPER_VERIFIER_THRESHOLD` | 否 | `0.85` | quote vs chunk 子串/模糊匹配分数的最低阈值 |
-| `LAZY_PAPER_RETRY_THRESHOLD` | 否 | `0.5` | 当 verify 之后覆盖率小于等于该值时触发 retry-when-empty。`0` 表示禁用重试 |
+| `LAZY_PAPER_RETRY_THRESHOLD` | 否 | `0.5` | 当 verify 之后覆盖率小于等于该值时触发 retry-when-empty。`0` 表示仅在**所有** required mention 缺失时才重试 |
+| `LAZY_PAPER_MIN_SECTION_CHARS` | 否 | `500` | 若 verified 章节短于此值，额外触发一次让 LLM 把章节写厚。`0` 关闭长度触发重试 |
+| `LAZY_PAPER_MIN_SECTION_CLAIMS` | 否 | `4` | 同上但针对 claim 数量。两条件任一满足即触发 |
+| `LAZY_PAPER_HTML_CITATIONS` | 否 | `hyperlink` | HTML 引用渲染模式：`hyperlink`（可点击逐 claim 锚点 + 文末 sources 段）、`keep`、`remove` |
 | `LAZY_PAPER_AGENT` | 否 | 未设置 | `1` 启用实验性的 pydantic-ai tool-calling agent compose 路径 |
 | `LAZY_PAPER_TWO_STEP` | 否 | 未设置 | `1` 启用实验性的 outline→expand 两步 compose 路径 |
 | `LAZY_PAPER_WHOLE_PAPER` | 否 | 未设置 | `1` 在每个 section compose 中注入整篇论文文本（成本很高） |

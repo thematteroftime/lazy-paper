@@ -5,16 +5,25 @@ lazy-paper includes code from the following projects.
 ## Onyx (formerly Danswer)
 
 - **Source**: https://github.com/onyx-dot-app/onyx
-- **Path vendored**: `backend/onyx/chat/citation_processor.py`
-- **Local target**: `llm/citation/stream_processor.py`
-- **Commit pinned**: `fa8fc678f9a8bc6d5e17a8810cef6ad426db1911`
+- **Original file referenced**: `backend/onyx/chat/citation_processor.py`
+- **Local re-implementation**: `llm/citation/__init__.py::process_text`
 - **License**: MIT
 
-### Modifications
+### Status
 
-- Replaced imports of `onyx.configs.chat_configs.STOP_STREAM_PAT`, `onyx.context.search.models.SearchDoc`, `onyx.prompts.constants.TRIPLE_BACKTICK`, `onyx.server.query_and_chat.streaming_models.CitationInfo`, and `onyx.utils.logger.setup_logger` with the equivalent local types and stdlib `logging` in `llm/citation/models.py`.
-- Added a file-level vendoring header.
-- No logic changes; the streaming regex state machine and HYPERLINK / KEEP_MARKERS / REMOVE rendering modes are preserved verbatim.
+In v1.4.0–v1.7 the Onyx file was vendored verbatim at
+`llm/citation/stream_processor.py` as a streaming
+`DynamicCitationProcessor`. It was never wired into the runtime — the
+adapter in `llm/citation/__init__.py` always took the non-streaming
+`process_text` path. The vendored file was removed in v1.8.x; only the
+three small support types it shared (`SearchDoc`, `CitationInfo`,
+`STOP_STREAM_PAT`) remain in `llm/citation/models.py`.
+
+The in-tree `process_text` retains the same three rendering modes
+(HYPERLINK / KEEP / REMOVE) and the same span-marker grammar
+(`[span:doc:start-end]`) as Onyx's design, but is non-streaming and
+substantially shorter. This attribution preserves credit to Onyx for the
+citation-processor design.
 
 ### MIT License (full text)
 

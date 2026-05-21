@@ -29,3 +29,5 @@ mypaper/
 *.pdf
 *.docx
 .worktrees/
+
+.claude/

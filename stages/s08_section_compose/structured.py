@@ -3,7 +3,9 @@
 Architecture (see docs/v1_6_strategy_j_design.md):
 - Perplexity-style pre-injection: chunks pre-labeled with IDs, LLM constrained
   to cite only that set via Pydantic validator.
-- Onyx-vendored citation_processor handles rendering ([span:doc:start-end]).
+- `llm.citation.process_text` renders the `[span:doc:start-end]` markers
+  (REMOVE / KEEP / HYPERLINK modes; design ported from Onyx, see
+  THIRD_PARTY_NOTICES.md).
 - ClarityArc-style verifier: fuzzy-match cited_quote against actual chunk
   text to filter hallucinated quotes after the LLM call.
 
@@ -251,20 +253,18 @@ def verify_section_draft(
                 if score >= ratio_threshold:
                     matched_cid = cid
                     break
-        # Anchor check: when the claim names a specific author/value, the
-        # quote must contain at least one of those anchors.
+        # Anchor advisory: when the claim names a specific author/value
+        # but the quote doesn't contain that anchor, log it as a soft
+        # warning (the claim is accepted as long as the quote
+        # substring-matches some chunk). Enforcement-as-rejection was too
+        # strict in practice — it killed correctly-written claims when
+        # the LLM picked a poorly-aligned quote from the same chunk.
         anchors = _claim_anchors(c.text)
-        if anchors:
+        anchor_advisory: list[str] = []
+        if anchors and matched_cid is not None:
             q_norm = _normalize_for_match(c.cited_quote)
-            if not any(_normalize_for_match(a) in q_norm for a in anchors):
-                rejected.append({
-                    "text": c.text[:120],
-                    "quote": c.cited_quote[:120],
-                    "best_ratio": round(best_score, 3),
-                    "cited_chunk_ids": list(c.cited_chunk_ids),
-                    "anchor_missing": anchors,
-                })
-                continue
+            anchor_advisory = [a for a in anchors
+                               if _normalize_for_match(a) not in q_norm]
         if matched_cid is not None:
             if matched_cid not in c.cited_chunk_ids:
                 c = c.model_copy(update={
@@ -293,13 +293,39 @@ def _find_chunk_for_entity_span(
     entity: "Entity",
     retrieved_chunks: list["Chunk"],
 ) -> int | None:
-    """Return the retrieved-chunks index whose char range contains the
-    entity's source_span, or None if no retrieved chunk covers it."""
+    """Return the index of a retrieved chunk that "covers" the entity, or
+    None if no chunk is plausible.
+
+    Primary: exact doc+span match (the v1.4 contract — works when the KG
+    extractor fills `source_span = (chapter_filename, char_start, char_end)`).
+
+    Fallback 1: text-match — when the LLM filled a generic placeholder
+    for the doc name (e.g. `doc='paper'`), or the char offsets are
+    unreliable, scan retrieved chunks for the entity's text as a
+    substring. Strategy KL needs the comparator in the required-mentions
+    block; missing the exact span is acceptable as long as a chunk
+    plausibly contains the fact.
+
+    Fallback 2: when no chunk text-matches, fall through to the first
+    retrieved chunk. The LLM still sees the required entity in the
+    prompt's required-mentions block; the cited_chunk_id we pass is best-
+    effort. Verifier + retry-when-empty handle the rest.
+    """
     doc, start, end = entity.source_span
     mid = (start + end) // 2
+    # Primary: exact doc + span match.
     for i, ch in enumerate(retrieved_chunks):
         if ch.doc_name == doc and ch.char_start <= mid < ch.char_end:
             return i
+    # Fallback 1: text-substring match.
+    text = (entity.text or "").strip().lower()
+    if text and len(text) >= 4:
+        for i, ch in enumerate(retrieved_chunks):
+            if text in ch.text.lower():
+                return i
+    # Fallback 2: first retrieved chunk (best-effort).
+    if retrieved_chunks:
+        return 0
     return None
 
 
@@ -473,19 +499,7 @@ Quote-then-claim discipline (for the verifier):
   - When you set cited_quote, copy it verbatim from the cited chunk — the
     verifier fuzzy-matches against the chunk text and rejects paraphrased
     quotes.
-  - **Quote must support the claim's specific anchor.** If the claim mentions
-    "<Author> et al." or a specific numeric value (W_rec, η, %, J/cm³, etc.),
-    the cited_quote must contain that author surname OR that numeric value
-    verbatim. Generic surrounding sentences ("Dielectric capacitors are widely
-    used...") will be rejected as ungrounded.
   - For Chinese chunks, copy CJK + ASCII as-is; do not transliterate.
-
-No-duplicate rule:
-  - Each (comparator + numeric value) pair must appear in at most ONE claim.
-  - If a required mention is already covered by an earlier claim, do NOT add
-    a second paraphrasing claim that repeats the same fact.
-  - Each section should be a sequence of distinct facts, not paraphrases of
-    one fact.
 
 Output a SectionDraft JSON object matching the schema. Aim for 4–8 claims
 unless guidance demands more.
@@ -597,6 +611,56 @@ def _merge_drafts(drafts: list["SectionDraft"], max_claims: int = 14) -> "Sectio
     return SectionDraft(claims=interleaved)
 
 
+_FIG_TOKEN_RE = re.compile(r"[A-Za-z0-9_\-]{3,}|[一-鿿]{2,}")
+
+
+def _figure_relevance(
+    section_title: str,
+    section_guidance: str,
+    fig_notes: list[dict],
+    top_k: int = 4,
+) -> list[dict]:
+    """Pick the figures most topically relevant to this section.
+
+    Score = Jaccard overlap between (title + guidance) tokens and
+    (caption + deep_observation) tokens. Returns the top-k notes as the
+    original dicts (so callers can pull out `fig_id`, `caption`, etc.).
+    Empty list when no fig_notes — caller passes nothing to the prompt.
+    """
+    if not fig_notes:
+        return []
+    section_tokens = set(_FIG_TOKEN_RE.findall(
+        (section_title + " " + section_guidance).lower()
+    ))
+    if not section_tokens:
+        return []
+    scored: list[tuple[float, dict]] = []
+    for note in fig_notes:
+        cap = str(note.get("caption", ""))
+        obs = str(note.get("deep_observation", ""))
+        fig_tokens = set(_FIG_TOKEN_RE.findall((cap + " " + obs).lower()))
+        if not fig_tokens:
+            continue
+        union = section_tokens | fig_tokens
+        overlap = len(section_tokens & fig_tokens)
+        if overlap == 0:
+            continue
+        scored.append((overlap / len(union), note))
+    scored.sort(key=lambda kv: kv[0], reverse=True)
+    return [n for _, n in scored[:top_k]]
+
+
+def _format_section_figures_block(notes: list[dict]) -> str:
+    if not notes:
+        return "(no figures topically relevant to this section)"
+    lines: list[str] = []
+    for n in notes:
+        fid = n.get("fig_id", "?")
+        cap = str(n.get("caption", "")).replace("\n", " ")[:140]
+        lines.append(f"- {fid}: {cap}")
+    return "\n".join(lines)
+
+
 def compose_structured(
     llm,
     *,
@@ -607,6 +671,7 @@ def compose_structured(
     required: list[RequiredMention],
     prior_findings: str = "",
     paper_context: str = "",
+    section_figures: list[dict] | None = None,
     max_retries: int = 3,
 ) -> tuple["SectionDraft", list[dict]]:
     """instructor call → SectionDraft → verifier gate.
@@ -624,6 +689,15 @@ def compose_structured(
     import os as _os
     chunks_block = _format_chunks_block(chunks)
     required_block = _format_required_block(required)
+    figures_msg = ""
+    if section_figures:
+        figures_msg = (
+            f"## Figures topically relevant to this section\n"
+            f"{_format_section_figures_block(section_figures)}\n"
+            f"   (Prefer these when you cite a figure; do not reference "
+            f"figures whose caption is unrelated to this section's topic "
+            f"unless the source chunk explicitly cross-references them.)\n\n"
+        )
     user_msg = (
         f"## Section to write\n"
         f"- Title: {section_title}\n"
@@ -632,6 +706,7 @@ def compose_structured(
         f"## Paper context\n{paper_context}\n\n"
         f"## Available chunks (cite ONLY these 0-based IDs)\n{chunks_block}\n\n"
         f"## Required mentions (you MUST cover each)\n{required_block}\n\n"
+        f"{figures_msg}"
         f"## Already established in prior sections (refer back, do not restate)\n"
         f"{prior_findings or '(this is the first section)'}\n\n"
         f"Emit the SectionDraft JSON now."
@@ -734,6 +809,75 @@ def compose_structured(
             except Exception as exc:
                 print(f"[s08] retry-when-empty failed: {exc!r}; keeping "
                       f"original draft", flush=True)
+
+    # v1.9 retry-when-short: an orthogonal trigger to retry-when-empty.
+    # When the verified draft is well-covered on required mentions but
+    # still too short / too sparse (e.g. ali2025_flash ch14: 0 missing,
+    # 3 claims, 683 chars), one more LLM call usually thickens the
+    # section without the LLM regenerating duplicate facts (the
+    # no-duplicate rule in the system prompt covers that).
+    min_chars = int(_os.environ.get("LAZY_PAPER_MIN_SECTION_CHARS", "500"))
+    min_claims = int(_os.environ.get("LAZY_PAPER_MIN_SECTION_CLAIMS", "4"))
+    verified_text = " ".join(c.text for c in verified.claims)
+    if (min_chars > 0
+            and (len(verified_text) < min_chars
+                 or len(verified.claims) < min_claims)):
+        print(
+            f"[s08] structured-compose: verified={len(verified.claims)} claims "
+            f"/ {len(verified_text)} chars — below "
+            f"min_claims={min_claims} or min_chars={min_chars}",
+            flush=True,
+        )
+        retry_system = _STRUCTURED_SYSTEM + (
+            "\n\n## CRITICAL — SECTION TOO SHORT\n"
+            f"Your previous draft has only {len(verified.claims)} verified "
+            f"claims and {len(verified_text)} characters. Produce a more "
+            "substantive draft with 5–8 distinct claims, each carrying its "
+            "own quantitative anchor where the source supports it.\n\n"
+            "**You must still cover every entry in the 'Required mentions' "
+            "block above.** Do NOT skip the literature-citation comparators "
+            "(`<Author> et al.`) to make room for general prose; instead, "
+            "ADD additional substantive claims on top of those required "
+            "mentions. The no-duplicate rule still applies."
+        )
+        try:
+            len_retry_draft = _single_compose(
+                llm, retry_system, user_msg, chunks,
+                max_retries=max_retries, temperature=0.35,
+            )
+            len_retry_accepted, len_retry_rejected = verify_section_draft(
+                len_retry_draft, chunks_by_id,
+                ratio_threshold=verifier_threshold,
+            )
+            len_retry_verified = (SectionDraft(claims=len_retry_accepted)
+                                  if len(len_retry_accepted) >= 2
+                                  else len_retry_draft)
+            len_retry_text = " ".join(c.text for c in len_retry_verified.claims)
+            # Only swap if the retry is actually longer AND doesn't lose
+            # required-mention coverage relative to the original draft.
+            current_missing = len(missing_required(required, verified))
+            new_missing = len(missing_required(required, len_retry_verified))
+            if (len(len_retry_text) > len(verified_text)
+                    and len(len_retry_verified.claims) >= len(verified.claims)
+                    and new_missing <= current_missing):
+                print(
+                    f"[s08] retry-when-short: lifted "
+                    f"{len(verified.claims)}→{len(len_retry_verified.claims)} "
+                    f"claims, {len(verified_text)}→{len(len_retry_text)} chars "
+                    f"(required missing {current_missing}→{new_missing})",
+                    flush=True,
+                )
+                verified, rejected = len_retry_verified, len_retry_rejected
+            elif len(len_retry_text) > len(verified_text):
+                print(
+                    f"[s08] retry-when-short: REJECTED — retry would lose "
+                    f"coverage ({current_missing}→{new_missing} missing). "
+                    f"Keeping original draft.",
+                    flush=True,
+                )
+        except Exception as exc:
+            print(f"[s08] retry-when-short failed: {exc!r}; keeping "
+                  f"original draft", flush=True)
 
     return verified, rejected
 

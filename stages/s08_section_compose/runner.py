@@ -444,7 +444,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
             try:
                 from stages.s08_section_compose.structured import (
                     build_required_mentions, select_top_required,
-                    compose_structured, missing_required,
+                    compose_structured, missing_required, _figure_relevance,
                 )
                 query = _build_retrieval_query(title_cn, guidance, kg, keywords)
                 chunks = retriever.retrieve(query, top_k=15)
@@ -453,6 +453,17 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                     kg=kg, source_docs=source_docs, retrieved_chunks=chunks,
                 )
                 required = select_top_required(required_all, cap=5)
+                # Figure-section binding is opt-in (LAZY_PAPER_FIGURE_BIND=1).
+                # The extra prompt block can deprioritize required-mention
+                # coverage on survey sections (observed regression on
+                # meng2024 ch01 vs v1.8.1 baseline); enable for non-survey
+                # sections that have visible figure-binding bugs.
+                if os.environ.get("LAZY_PAPER_FIGURE_BIND") == "1":
+                    section_figures = _figure_relevance(
+                        title_cn, guidance, fig_notes, top_k=4,
+                    )
+                else:
+                    section_figures = None
                 lang_text = LANG_INSTRUCTIONS.get(lang, LANG_INSTRUCTIONS["zh"])
                 draft, rejected = compose_structured(
                     llm,
@@ -463,6 +474,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                     required=required,
                     prior_findings=prior_findings_block,
                     paper_context=paper_context_str[:3000],
+                    section_figures=section_figures,
                 )
                 composed = draft.render(mode="REMOVE")
                 # Soft-warn audit: required mentions the LLM didn't cover

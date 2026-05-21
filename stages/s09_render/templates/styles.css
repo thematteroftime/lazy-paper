@@ -34,3 +34,47 @@ table.md-table thead th {
 table.md-table tbody tr:nth-child(even) {
   background-color: #f7f7f7;
 }
+
+/* citation anchors + sources footer (HYPERLINK mode) */
+sup.cite-anchor {
+  font-size: 0.7em;
+  vertical-align: super;
+  line-height: 0;
+  margin-left: 1px;
+}
+sup.cite-anchor a {
+  color: #2563eb;
+  text-decoration: none;
+  border-bottom: 1px dotted #2563eb;
+  padding: 0 1px;
+}
+sup.cite-anchor a:hover {
+  background-color: #eff6ff;
+  text-decoration: none;
+}
+section.sources-footer {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1pt solid #b5b5b5;
+}
+section.sources-footer h2 {
+  font-size: 13pt;
+  margin-bottom: 0.5em;
+}
+ol.sources-list {
+  font-size: 9.5pt;
+  color: #555;
+  padding-left: 1.5em;
+}
+ol.sources-list li {
+  margin-bottom: 0.2em;
+}
+ol.sources-list code {
+  background-color: #f1f5f9;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+ol.sources-list li:target {
+  background-color: #fef3c7;
+  padding: 2px 4px;
+}

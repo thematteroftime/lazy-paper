@@ -209,7 +209,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="Output language for LLM stages and render")
     r.add_argument("--formats", default=None,
                    help="Comma-separated subset of docx,pdf,html,pptx "
-                        "(default: docx,pdf,html — PPT is opt-in because it uses LLM)")
+                        "(default: all four). PPTX uses extra LLM calls; "
+                        "pass --formats docx,pdf,html to skip.")
     r.add_argument("--pptx-bullets", choices=("llm", "rule"), default="llm",
                    help="How PPT bullets are generated (llm = quality, rule = offline)")
     r.add_argument("--pptx-template", type=Path, default=None, metavar="PATH",

@@ -30,7 +30,7 @@ Drop this folder's contents into mypaper/ to render the styled thesis:
 The README of mypaper has the full template-swap instructions.
 """
 
-DEFAULT_FORMATS = ("docx", "pdf", "html")
+DEFAULT_FORMATS = ("docx", "pdf", "html", "pptx")
 
 
 class _ContextResolver:
