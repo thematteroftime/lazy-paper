@@ -348,7 +348,7 @@ def evaluate_run(run_dir: Path) -> dict:
     paper_id = run_dir.name
     # Strip any trailing "_v<digits>_..." suffix (one regex covers all
     # variants: _v140, _v140_baseline, _v170_KL, _v170_KL_run2, _v160_J1, ...)
-    m = re.match(r"^(.+?)_v\d+(?:_[A-Za-z0-9]+)*$", paper_id)
+    m = re.match(r"^(.+?)_v\d+[A-Za-z]*(?:_[A-Za-z0-9]+)*$", paper_id)
     if m:
         paper_id = m.group(1)
     results = []

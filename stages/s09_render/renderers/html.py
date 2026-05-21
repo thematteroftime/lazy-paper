@@ -34,20 +34,26 @@ class HtmlRenderer(Renderer):
 
     extension: ClassVar[str] = "html"
 
-    def __init__(self, *, citation_mode: CitationMode = CitationMode.REMOVE, **kwargs):
-        # HTML defaults to HYPERLINK regardless of caller (DOCX uses REMOVE).
-        # CLI --debug-citations sets KEEP — honor that. Env can disable.
-        env_mode = os.environ.get("LAZY_PAPER_HTML_CITATIONS", "hyperlink").lower()
+    def __init__(self, *, citation_mode: CitationMode = CitationMode.HYPERLINK, **kwargs):
+        # HTML default is HYPERLINK (the parameter default reflects that).
+        # Precedence when resolving the effective mode:
+        #   1. CLI `--debug-citations` is honored — caller passes KEEP.
+        #   2. env `LAZY_PAPER_HTML_CITATIONS=remove|keep|hyperlink` overrides.
+        #   3. Caller's explicit citation_mode wins over the default.
+        #   4. Else HYPERLINK.
+        env_mode = os.environ.get("LAZY_PAPER_HTML_CITATIONS", "").lower()
         if citation_mode == CitationMode.KEEP:
             effective = CitationMode.KEEP
         elif env_mode == "remove":
             effective = CitationMode.REMOVE
         elif env_mode == "keep":
             effective = CitationMode.KEEP
-        else:
+        elif env_mode == "hyperlink":
             effective = CitationMode.HYPERLINK
+        else:
+            effective = citation_mode
         super().__init__(citation_mode=effective, **kwargs)
-        # Per-render citation registry, populated by _process_text and
+        # Per-render citation registry, populated by _render_paragraph and
         # consumed by the template footer.
         self._cite_registry: dict[tuple[str, int, int], int] = {}
 
@@ -65,10 +71,12 @@ class HtmlRenderer(Renderer):
         env.globals["render_paragraph"] = self._render_paragraph
         styles = (_TEMPLATE_DIR / "styles.css").read_text(encoding="utf-8")
         template = env.get_template("preview.html.j2")
-        # First pass populates self._cite_registry via render_paragraph.
-        body = template.render(doc=doc, styles=styles, sources=self._sources_list())
-        # Second pass — re-render with the populated sources footer.
-        # (Cheap: template render is sub-100ms.)
+        # Two-pass render: the first pass walks every paragraph via
+        # _render_paragraph, which populates self._cite_registry as a
+        # side effect. The result is discarded; the second pass uses
+        # the now-populated registry to emit the sources footer.
+        # Render is sub-100ms, so the cost is acceptable.
+        template.render(doc=doc, styles=styles, sources=[])
         return template.render(doc=doc, styles=styles, sources=self._sources_list())
 
     def _render_paragraph(self, text: str) -> Markup:

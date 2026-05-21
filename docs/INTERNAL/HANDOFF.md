@@ -1,13 +1,22 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 250/250 pass · **End-to-end verified on 13+ papers** (10-paper v1.8.2 corpus + 3-paper v1.8.1 stability validation) · **Last release:** v1.8.2 (2026-05-21)
+> **Status:** shipped · **Tests:** 253/253 pass · **End-to-end verified on 13-paper corpus** · **Last release:** v1.9.0 (2026-05-22)
 >
-> **v1.8.1 makes Strategy KL the recommended high-quality default.** Fixes
-> two compose-side bugs that caused v1.7 KL's 1 – 13 variance: (a) the
-> verifier now normalizes LaTeX/OCR forms before substring matching, so
-> good comparator-citing claims are no longer rejected for whitespace
-> differences in `$W _ { \mathrm { rec } }$` etc.; (b) the retry-when-empty
-> trigger now measures coverage POST-verify, so it fires when the verifier
+> **v1.9.0 ships informed-retry that eliminates meng2024 T1 variance.**
+> The previous retry-when-empty used a generic "you missed required
+> mentions" instruction. v1.9 now generates a per-entity diagnosis listing
+> each missing required mention with its specific anchor token
+> (author surname OR linked numeric value), giving the LLM a deterministic
+> checklist instead of a vague reminder. Three independent meng2024 runs
+> all score exactly **9/17** on T1 benchmark recovery — variance reduced
+> from stdev 2.6 (v1.8.1) to **stdev 0** (v1.9). Full corpus validation
+> + analysis in `docs/v1_9_validation_results.md`.
+>
+> **v1.8.x foundations remain unchanged.** Strategy KL is still the
+> recommended high-quality default. The verifier normalizes LaTeX/OCR
+> forms before substring matching (so good comparator-citing claims are no longer rejected for whitespace
+> differences in `$W _ { \mathrm { rec } }$` etc.); the retry-when-empty
+> trigger measures coverage POST-verify, so it fires when the verifier
 > has just dropped comparator claims and one strengthened LLM call can
 > recover them. On meng2024 ch01 (the headline benchmark-recovery test):
 > v1.8.1 KL = floor 12/17, mean 15.0, range 12–17 (was floor 1, mean 5.0
@@ -91,6 +100,7 @@ Docker users: `docker compose build && docker compose run --rm lazy-paper run --
 | `LAZY_PAPER_MIN_SECTION_CHARS` | No | `500` | If the verified section is shorter than this, fire one extra retry asking the LLM to thicken it. `0` disables length-based retry |
 | `LAZY_PAPER_MIN_SECTION_CLAIMS` | No | `4` | Same as above but on claim count. Either condition triggers retry |
 | `LAZY_PAPER_HTML_CITATIONS` | No | `hyperlink` | HTML citation rendering: `hyperlink` (clickable per-claim anchors + sources footer), `keep`, or `remove` |
+| `LAZY_PAPER_FIGURE_BIND` | No | unset | `1` enables figure-section binding: for each section, the top-4 topically-relevant figures are surfaced in the compose prompt so the LLM doesn't cite an off-topic figure. Off by default; observed regression on meng2024 T1 when on, so use selectively. |
 | `LAZY_PAPER_AGENT` | No | unset | `1` enables the experimental pydantic-ai tool-calling agent compose path |
 | `LAZY_PAPER_TWO_STEP` | No | unset | `1` enables the experimental outline→expand two-step compose path |
 | `LAZY_PAPER_WHOLE_PAPER` | No | unset | `1` injects the whole paper text into each section compose (high cost) |
@@ -155,7 +165,7 @@ DOCX + HTML are always produced. PDF / PPTX are produced only when the
 `--formats` flag includes them; the v181 corpus runs above produced docx+html
 only. Output path: `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}`.
 
-**Tests**: 250 (2 deselected `-m live`). Run with `uv run pytest -q`.
+**Tests**: 253 (2 deselected `-m live`). Run with `uv run pytest -q`.
 
 ---
 

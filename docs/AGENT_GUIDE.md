@@ -5,7 +5,7 @@ This document is written for an AI coding agent (Claude Code, Cursor, Copilot, e
 ## TL;DR for agents
 
 1. **Don't touch `runs/`** unless the user explicitly asks you to clean it. It's the verified-test corpus.
-2. **Always run `uv run pytest -q` before and after any change**. If you break tests, fix them or revert. 250 should pass; live-LLM tests are gated behind `-m live`.
+2. **Always run `uv run pytest -q` before and after any change**. If you break tests, fix them or revert. 253 should pass; live-LLM tests are gated behind `-m live`.
 3. **Use `LLM_MAX_TOKENS_CEILING` env var to cap spend** in test runs (e.g. `LLM_MAX_TOKENS_CEILING=4000` for fast smoke tests).
 4. **Don't bypass `llm.client.max_tokens()`**. All LLM calls go through it. Bumping a hardcoded `max_tokens=N` is a regression.
 5. **Prompt edits require `_PROMPT_VERSION` bumps** in `stages/s09_render/pptx_summarizer.py` (or equivalent in other LLM stages) — otherwise cached responses won't invalidate.
@@ -255,7 +255,7 @@ CONTRIBUTING.md                 # contribution norms
 
 ## When you're done
 
-1. `uv run pytest -q` → 250 pass, 2 deselected.
+1. `uv run pytest -q` → 253 pass, 2 deselected.
 2. End-to-end smoke on at least 2 papers (re-run `--only s09_render --force`).
 3. Update `CHANGELOG.md` Unreleased section.
 4. Commit with a clear message (explain the *why*, not just the *what*).

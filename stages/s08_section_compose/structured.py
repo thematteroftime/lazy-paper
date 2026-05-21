@@ -323,8 +323,13 @@ def _find_chunk_for_entity_span(
         for i, ch in enumerate(retrieved_chunks):
             if text in ch.text.lower():
                 return i
-    # Fallback 2: first retrieved chunk (best-effort).
+    # Fallback 2: first retrieved chunk (best-effort). Logged because
+    # this masks KG-extraction-quality regressions — when the LLM fills
+    # a placeholder doc name AND text-substring also misses, the entity
+    # silently routes to chunk 0 and the user has no signal.
     if retrieved_chunks:
+        print(f"[s08] _find_chunk_for_entity_span: fallback-2 (chunk 0) "
+              f"for entity={entity.text[:60]!r} doc={doc!r}", flush=True)
         return 0
     return None
 
@@ -337,6 +342,19 @@ def _evidence_quote(
     doc, start, end = entity.source_span
     src = source_docs.get(doc, "")
     if not src:
+        # Fallback: KG LLM filled a placeholder doc name (e.g. 'paper').
+        # Look for the entity's text inside any known source doc; take
+        # the longest plausible substring around the first match.
+        needle = (entity.text or "").strip()
+        if not needle or len(needle) < 4:
+            return ""
+        for src_text in source_docs.values():
+            idx = src_text.find(needle)
+            if idx < 0:
+                continue
+            pad_left = max(0, idx - 30)
+            pad_right = min(len(src_text), idx + len(needle) + (max_chars - 30))
+            return src_text[pad_left:pad_right].replace("\n", " ").strip()[:max_chars]
         return ""
     pad_left = max(0, start - 30)
     pad_right = min(len(src), end + (max_chars - (end - start) - 30))
@@ -880,25 +898,33 @@ def compose_structured(
                                   if len(len_retry_accepted) >= 2
                                   else len_retry_draft)
             len_retry_text = " ".join(c.text for c in len_retry_verified.claims)
-            # Only swap if the retry is actually longer AND doesn't lose
-            # required-mention coverage relative to the original draft.
+            # Only swap if the retry is genuinely better. Three guards:
+            #  - longer prose (otherwise length retry was pointless),
+            #  - at least as many *verifier-accepted* claims (compare
+            #    accepted counts, not post-fallback claim counts — the
+            #    fallback returns the raw draft when accepted < 2, so
+            #    a retry with 1 grounded + 5 ungrounded claims would
+            #    appear "bigger" but be worse),
+            #  - required-mention coverage not regressed.
             current_missing = len(missing_required(required, verified))
             new_missing = len(missing_required(required, len_retry_verified))
             if (len(len_retry_text) > len(verified_text)
-                    and len(len_retry_verified.claims) >= len(verified.claims)
+                    and len(len_retry_accepted) >= len(accepted)
                     and new_missing <= current_missing):
                 print(
                     f"[s08] retry-when-short: lifted "
                     f"{len(verified.claims)}→{len(len_retry_verified.claims)} "
                     f"claims, {len(verified_text)}→{len(len_retry_text)} chars "
-                    f"(required missing {current_missing}→{new_missing})",
+                    f"(accepted {len(accepted)}→{len(len_retry_accepted)}, "
+                    f"required missing {current_missing}→{new_missing})",
                     flush=True,
                 )
                 verified, rejected = len_retry_verified, len_retry_rejected
             elif len(len_retry_text) > len(verified_text):
                 print(
-                    f"[s08] retry-when-short: REJECTED — retry would lose "
-                    f"coverage ({current_missing}→{new_missing} missing). "
+                    f"[s08] retry-when-short: REJECTED — "
+                    f"accepted {len(accepted)}→{len(len_retry_accepted)}, "
+                    f"coverage {current_missing}→{new_missing} missing. "
                     f"Keeping original draft.",
                     flush=True,
                 )
