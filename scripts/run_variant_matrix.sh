@@ -30,11 +30,17 @@ repo_root=$(cd -- "${script_dir}/.." >/dev/null 2>&1 && pwd)
 cd "${repo_root}"
 
 new_id="${paper}_v${variant}_r${run}"
-src_run="runs/${paper}"
 
-# Copy cached s01-s07 from existing baseline run to avoid re-OCR
-if [ ! -d "${src_run}" ]; then
-  echo "ERROR: ${src_run} missing — cannot reuse OCR cache" >&2
+# Prefer v190 baseline (Strategy KL — has paper_kg.parquet); fall back to
+# the plain <paper>/ dir only if v190 is missing (legacy-only papers).
+if [ -d "runs/${paper}_v190" ]; then
+  src_run="runs/${paper}_v190"
+elif [ -d "runs/${paper}" ]; then
+  src_run="runs/${paper}"
+  echo "WARN: ${paper}_v190 missing — falling back to legacy ${paper}/" >&2
+  echo "WARN: this likely means no paper_kg.parquet → s08 will run legacy compose" >&2
+else
+  echo "ERROR: neither runs/${paper}_v190 nor runs/${paper} exists" >&2
   echo "Hint: run baseline (s01-s07) for this paper first." >&2
   exit 1
 fi
@@ -61,12 +67,12 @@ if [ ! -f "${meta_yaml}" ]; then
 fi
 
 # Extract pdf and template paths from meta.yaml (handles multi-line YAML strings)
-orig_pdf=$(uv run python -c "
+orig_pdf=$(uv run --python 3.11 python -c "
 import yaml, sys
 m = yaml.safe_load(open('${meta_yaml}'))
 print(m['pdf'])
 ")
-orig_template=$(uv run python -c "
+orig_template=$(uv run --python 3.11 python -c "
 import yaml, sys
 m = yaml.safe_load(open('${meta_yaml}'))
 print(m['template'])
@@ -88,8 +94,11 @@ if [ -f .env.local ]; then
 fi
 
 # Run s08 + s09 only (rest is cached). Capture stdout+stderr to s08.log.
+# Use `python -m cli` per README §Quickstart — the `lazy-paper` console_script
+# entry-point fails on `from cli import main` because `cli.py` is at repo root
+# (not packaged) and the entry-point's sys.path doesn't include the cwd.
 echo "[run-matrix] starting ${new_id} (variant ${variant})" >&2
-uv run lazy-paper run \
+uv run --python 3.11 python -m cli run \
   --pdf "${orig_pdf}" \
   --template "${orig_template}" \
   --paper-id "${new_id}" \
