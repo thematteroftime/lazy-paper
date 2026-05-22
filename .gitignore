@@ -17,6 +17,7 @@ __pycache__/
 
 # Runtime outputs (per-paper artifacts, uploads, build)
 runs/
+runs/_baseline_recheck.yaml
 upload/
 upload.zip
 build/
