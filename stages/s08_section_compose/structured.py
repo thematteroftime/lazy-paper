@@ -48,6 +48,14 @@ class GroundedClaim(BaseModel):
     text: str = Field(min_length=2)
     cited_chunk_ids: list[int] = Field(default_factory=list)
     cited_quote: str = Field(default="")
+    figure_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Figure IDs (e.g. 'Fig. 3') that this claim references. "
+            "When non-empty, claim.text MUST contain the fig_id literal "
+            "(or Chinese-form '图N') — checked by verify_section_draft."
+        ),
+    )
 
     @field_validator("cited_chunk_ids")
     @classmethod
