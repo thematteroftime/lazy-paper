@@ -1053,13 +1053,34 @@ def compose_structured(
                         new_mentioned.add(fid)
                     elif fid in new_full:
                         new_mentioned.add(fid)
-                if len(new_mentioned) > len(mentioned_ids):
+                # Swap guards (parity with retry-when-short β#3 patch):
+                #   - figure mentions strictly increased (intent)
+                #   - C-2: at least 1 verifier-accepted claim in retry
+                #     (else we'd swap a fully-ungrounded retry just
+                #     because it textually mentions a figure)
+                #   - C-1: required-mention coverage did not regress
+                #     (else figure-retry could silently drop comparators)
+                current_missing = len(missing_required(required, verified))
+                new_missing = len(missing_required(required, fig_verified))
+                if (len(new_mentioned) > len(mentioned_ids)
+                        and len(fig_accepted) >= 1
+                        and new_missing <= current_missing):
                     print(
                         f"[s08] figure-retry: lifted "
-                        f"{len(mentioned_ids)}→{len(new_mentioned)} figure mentions",
+                        f"{len(mentioned_ids)}→{len(new_mentioned)} figure "
+                        f"mentions (accepted={len(fig_accepted)}, "
+                        f"required missing {current_missing}→{new_missing})",
                         flush=True,
                     )
                     verified, rejected = fig_verified, fig_rejected
+                elif len(new_mentioned) > len(mentioned_ids):
+                    print(
+                        f"[s08] figure-retry: REJECTED — "
+                        f"accepted={len(fig_accepted)}, "
+                        f"coverage {current_missing}→{new_missing} missing. "
+                        f"Keeping original draft.",
+                        flush=True,
+                    )
             except Exception as exc:
                 print(f"[s08] figure-retry failed: {exc!r}; keeping draft",
                       flush=True)
