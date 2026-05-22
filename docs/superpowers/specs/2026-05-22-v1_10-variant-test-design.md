@@ -163,7 +163,41 @@ runs/<paper>_v181_KL/  ✗ 删
 - **A + B + C 都正向**：v1.10 全 ship（按 priority C > B > A）
 - **任何变体 regression**：保留现状，未通过的根因留待下一轮
 
-## 10. 不在本次 scope 的工作
+## 10. Baseline 数据二次复核（前置）
+
+任何对比"之前例子的历史数据"的指标，都要先验证那份历史数据当下
+仍可重现，否则 delta 没有参照价值。
+
+### 区分两类指标
+
+| 类别 | 指标 | 是否需要复核 | 原因 |
+|---|---|---|---|
+| Deterministic | M1 字数、M2 图嵌入数、M3 coverage、M5 retry 次数、M6 成本 | ❌ 不需要 | 直接从 baseline runs/ 的 artifact / log 读，0 LLM 调用 |
+| LLM-judge 依赖 | M4 TestCase 得分 | ✅ **必须** | judge 自身有方差，历史记录的分数（如 meng2024 T1 = 9/9/9）当下未必复现 |
+
+### M4 复核操作（实验启动前完成）
+
+1. 用当前 `scripts/evaluate.py` 重跑 baseline TestCase：
+   - meng2024 v190 三次跑 → 重新评 T1 + T3
+   - yang2025 v190 → 重评 T2
+   - chai2026 v190 → 重评 T6
+   - ali2025_flash v190 → 重评 T4
+2. 与 docs 历史记录对比：
+   - 偏差 ≤ ±1 → 视为 judge 噪声，记录但接受
+   - 偏差 ≥ 2 → baseline 历史分数不可信，扩大 sample（每 TestCase 跑 3 次取均值）
+3. 实验对比时使用**当下重评的 baseline 分数**作为参照，不引用 docs 里的历史记录
+
+### 成本
+
+- ~$0.5 × 5 个 TestCase × 1-3 次 = **~$2.5-7 额外**
+- 总实验预算调整：$8-14 → **$10-21**
+
+### 文档记录
+
+复核结果写到 `runs/_baseline_recheck.yaml` + 实验报告 §1 引用，使
+对比起点可审计。
+
+## 11. 不在本次 scope 的工作
 
 以下 v1.10 候选不在本实验中验证：
 
