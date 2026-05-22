@@ -168,29 +168,33 @@ runs/<paper>_v181_KL/  ✗ 删
 任何对比"之前例子的历史数据"的指标，都要先验证那份历史数据当下
 仍可重现，否则 delta 没有参照价值。
 
-### 区分两类指标
+### 关键修正（2026-05-22 实施 Task 3 时发现）
 
-| 类别 | 指标 | 是否需要复核 | 原因 |
-|---|---|---|---|
-| Deterministic | M1 字数、M2 图嵌入数、M3 coverage、M5 retry 次数、M6 成本 | ❌ 不需要 | 直接从 baseline runs/ 的 artifact / log 读，0 LLM 调用 |
-| LLM-judge 依赖 | M4 TestCase 得分 | ✅ **必须** | judge 自身有方差，历史记录的分数（如 meng2024 T1 = 9/9/9）当下未必复现 |
+原 spec 假设 M4 TestCase 评测依赖 LLM judge，因此可能有变体方差。
+**实际复核 `scripts/evaluate.py` 代码后确认：M4 评测完全 deterministic**：
+- 正则模式匹配（PatternHit / required / forbidden）
+- 字符数阈值（min_chars）
+- 中文字符比例（_zh_ratio）
+- 引用准确度用 fuzzy SequenceMatcher（确定性算法）
 
-### M4 复核操作（实验启动前完成）
+**无 LLM 调用**。这意味着：
+- 同一份 chapter markdown 文本，evaluator 跑两次给出**完全相同分数**
+- 历史 baseline 分数（如 meng2024 T1=9/9/9）当下不可能因"judge 噪声"漂移
+- 唯一可能 DRIFT 的来源：`scripts/evaluate.py` 自身代码（pattern 定义）在 baseline 评测之后被改动
 
-1. 用当前 `scripts/evaluate.py` 重跑 baseline TestCase：
-   - meng2024 v190 三次跑 → 重新评 T1 + T3
-   - yang2025 v190 → 重评 T2
-   - chai2026 v190 → 重评 T6
-   - ali2025_flash v190 → 重评 T4
-2. 与 docs 历史记录对比：
-   - 偏差 ≤ ±1 → 视为 judge 噪声，记录但接受
-   - 偏差 ≥ 2 → baseline 历史分数不可信，扩大 sample（每 TestCase 跑 3 次取均值）
-3. 实验对比时使用**当下重评的 baseline 分数**作为参照，不引用 docs 里的历史记录
+### 修正后的复核流程
+
+1. 跑 `scripts/recheck_baseline.py`：对每个 baseline run dir 调用
+   `evaluate_run()`，对比历史分数
+2. 任何非零 delta → DRIFT，需要 grep evaluator 自身的 git history 看
+   pattern 是否被改过
+3. 实验对比时直接用 historical 分数（既然 deterministic 重现）；若
+   DRIFT 则用 rechecked 分数 + 在报告里 flag 原因
 
 ### 成本
 
-- ~$0.5 × 5 个 TestCase × 1-3 次 = **~$2.5-7 额外**
-- 总实验预算调整：$8-14 → **$10-21**
+- **0 LLM 调用**（原估算 $2.5-7 错了）
+- 总实验预算回落：$10-21 → **~$8-14**（恢复原估算）
 
 ### 文档记录
 
