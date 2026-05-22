@@ -479,17 +479,30 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                 composed = draft.render(mode="REMOVE")
                 # Soft-warn audit: required mentions the LLM didn't cover
                 still_missing = missing_required(required, draft)
+                # variant-c: split rejected[] into real rejects (quote
+                # mismatch, no matched chunk) vs figure advisories (claim
+                # was accepted but its figure_ids literal isn't in text).
+                # Auditor 2 cycle 2: lumping them inflated the
+                # "verifier_rejects" count by ~50% in the audit log.
+                real_rejects = [r for r in rejected
+                                 if r.get("reason") != "figure_hint_unmet"]
+                fig_advisories = [r for r in rejected
+                                   if r.get("reason") == "figure_hint_unmet"]
                 if still_missing or rejected:
                     note = {
                         "missing_required": [r.entity_text for r in still_missing],
-                        "verifier_rejected": rejected,
+                        "verifier_rejected": real_rejects,
+                        "figure_advisories": fig_advisories,
                     }
                     all_flags.setdefault(basename, []).append(
                         {"problem": "structured_audit", **note}
                     )
                     print(f"[critic-structured] {basename}: "
                           f"{len(still_missing)} missing required, "
-                          f"{len(rejected)} verifier rejects", flush=True)
+                          f"{len(real_rejects)} verifier rejects"
+                          + (f", {len(fig_advisories)} figure advisories"
+                             if fig_advisories else ""),
+                          flush=True)
                 # Audit file for the draft
                 (out_dir / f"{basename}.structured.json").write_text(
                     draft.model_dump_json(indent=2), encoding="utf-8",
