@@ -49,13 +49,22 @@ def test_docx_keep_preserves_markers(tmp_path: Path):
     assert "[span:doc123:10-20]" in full_text
 
 
-def test_html_remove_strips_markers(tmp_path: Path):
-    """Default REMOVE mode: [span:…] markers are absent in the rendered HTML."""
+def test_html_remove_strips_markers(tmp_path: Path, monkeypatch):
+    """REMOVE mode: [span:…] markers removed AND no <sup> anchor inserted.
+
+    The old test only checked `[span:` absence — but HYPERLINK mode also
+    satisfies that (it rewrites markers into <sup><a> anchors). Asserting
+    `<sup class="cite-anchor"` absence discriminates REMOVE from HYPERLINK
+    (the CSS always references the class name even when no anchors
+    render, so we match the literal HTML tag).
+    """
+    monkeypatch.delenv("LAZY_PAPER_HTML_CITATIONS", raising=False)
     doc = _make_doc()
     out = tmp_path / "preview.html"
-    RENDERERS["html"]().render(doc, out)
+    RENDERERS["html"](citation_mode=CitationMode.REMOVE).render(doc, out)
     html = out.read_text(encoding="utf-8")
     assert "[span:" not in html
+    assert '<sup class="cite-anchor"' not in html  # discriminates from HYPERLINK
     assert "Some text" in html
 
 
@@ -66,3 +75,29 @@ def test_html_keep_preserves_markers(tmp_path: Path):
     RENDERERS["html"](citation_mode=CitationMode.KEEP).render(doc, out)
     html = out.read_text(encoding="utf-8")
     assert "[span:doc123:10-20]" in html
+
+
+def test_html_hyperlink_emits_anchor_and_sources_footer(tmp_path: Path, monkeypatch):
+    """HYPERLINK mode (the new default): markers become clickable anchors
+    and a sources-footer section is emitted."""
+    monkeypatch.delenv("LAZY_PAPER_HTML_CITATIONS", raising=False)
+    doc = _make_doc()
+    out = tmp_path / "preview.html"
+    RENDERERS["html"](citation_mode=CitationMode.HYPERLINK).render(doc, out)
+    html = out.read_text(encoding="utf-8")
+    assert "[span:" not in html  # raw marker stripped
+    assert '<sup class="cite-anchor"' in html  # anchor emitted
+    assert 'id="sources"' in html  # footer present (CSS-class name is "sources-footer", but the section id is "sources")
+    assert "Some text" in html
+
+
+def test_html_env_override_remove(tmp_path: Path, monkeypatch):
+    """LAZY_PAPER_HTML_CITATIONS=remove overrides the default HYPERLINK."""
+    monkeypatch.setenv("LAZY_PAPER_HTML_CITATIONS", "remove")
+    doc = _make_doc()
+    out = tmp_path / "preview.html"
+    # Caller passes default HYPERLINK — env should win.
+    RENDERERS["html"]().render(doc, out)
+    html = out.read_text(encoding="utf-8")
+    assert "[span:" not in html
+    assert '<sup class="cite-anchor"' not in html  # env=remove suppresses anchors

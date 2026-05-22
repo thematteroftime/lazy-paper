@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.2] — 2026-05-22
+
+### Fixed — bugs surfaced by 2-auditor + 3-reviewer + 2-confirmation cycle
+
+Two parallel bug-auditor subagents identified 19 candidate issues; cross-
+checking confirmed 8 high-impact ones plus several follow-ups exposed by
+the subsequent 3-review + 2-confirmation cycle. The headline fixes:
+
+- **C1**: `retry-when-short` was comparing against a stale `accepted`
+  variable from before `retry-when-empty` rebound `verified`/`rejected`.
+  Wrong-output potential. Now rebinds `accepted = retry_accepted` after
+  the empty-retry swap. (`structured.py::compose_structured`)
+- **C2**: `retry-when-short` could swap one fully-ungrounded draft for
+  another when both had 0 verifier-accepted claims (`0 >= 0` passed).
+  Now requires `len(retry_accepted) >= 1`.
+- **H1**: `_find_chunk_for_entity_span` fallback-2 print crashed on
+  `None` entity.text. Defensive `(entity.text or "")[:60]`.
+- **H2**: `_evidence_quote` `pad_right` formula could go negative for
+  spans longer than `max_chars - 30`, silently producing
+  empty/garbage snippets via negative-index slicing. Rewrote to
+  anchor a `max_chars` window from `pad_left`.
+- **H3**: `_evidence_quote` fallback now documents the known cross-doc
+  snippet/chunk mismatch (a real fix is queued for v1.10).
+- **M1 + critical CLI fix**: `s09_render/runner.py` now defaults to
+  `HYPERLINK` for HTML format (was REMOVE for all formats). `cli.py`
+  also updated to pass `None` when `--debug-citations` is absent, so
+  the per-format default actually reaches CLI users (was inert).
+  Together these honor the HtmlRenderer docstring "clickable
+  citations by default" for end users.
+- **M2**: HtmlRenderer env_mode adds `.strip()` before `.lower()` so
+  trailing whitespace from `.env` doesn't silently break override.
+- **M3**: best-of-N exception-swallow now logs the failed sample
+  (`stage] best-of-N sample N failed: ...; continuing with M draft(s)`).
+  Previously a rate-limit on sample N silently dropped it.
+
+### Added — discriminating HTML mode tests
+
+`test_citation_render.py`:
+- `test_html_remove_strips_markers` now asserts `<sup` absence (not
+  just `[span:` absence), discriminating REMOVE from HYPERLINK.
+- `test_html_hyperlink_emits_anchor_and_sources_footer` exercises the
+  default-by-runner HYPERLINK path.
+- `test_html_env_override_remove` verifies `LAZY_PAPER_HTML_CITATIONS=remove`
+  overrides.
+
+### Changed
+
+- `pyproject.toml` version bumped from stale `1.4.0` to current `1.9.2`.
+
+### Deferred to v1.10
+
+- `α#3` control-chars in HTML `title` attribute
+- `α#7` best-of-N temperature can exceed 1.0 at `N≥5`
+- `α#9` paper_id regex edge case for `_v<digit>`-suffixed inputs
+- `α#10` `_merge_drafts` empty-drafts defensive guard
+- `β#5` `_FIG_TOKEN_RE` missing CJK Extension A/B
+- `β#7` test coverage for `_evidence_quote` fallback +
+  `_find_chunk_for_entity_span` fallback-2
+- 6 retry-temperature / figure-top_k / claim-range hardcodes
+- H3 real fix (return matched doc + patch source_span consistently)
+
+Tests: 256/256 pass (+3 from new HTML mode tests).
+
+## [1.9.1] — 2026-05-22
+
+### Fixed — 3-review + 2-audit cycle on v1.9.0
+
+10 audit findings applied:
+
+- HtmlRenderer signature default REMOVE was silently overridden by
+  env default HYPERLINK; rewrote precedence so caller intent is
+  honored when env is unset. Parameter default also bumped to
+  HYPERLINK to match docstring.
+- HtmlRenderer two-pass render's `body = template.render(...)` dead
+  variable removed.
+- length-retry coverage guard now compares verifier-accepted counts
+  (not post-fallback claim counts).
+- `_evidence_quote` fallback added for KG `doc='paper'` placeholder
+  case (searches entity text in source_docs).
+- `_find_chunk_for_entity_span` fallback-2 now logs (was silent).
+- `scripts/evaluate.py` paper_id regex relaxed to accept `_v\d+[a-z]+`
+  suffixes (e.g. `_v190b`).
+
+### Doc
+
+- `LAZY_PAPER_FIGURE_BIND` added to HANDOFF env-vars table (EN + ZH).
+- ARCHITECTURE.md anchor-check wording: "must contain otherwise rejected"
+  → "advisory" (matches v1.8.3 code change).
+- Test count `250 → 253` in 4 stale doc spots (HANDOFF section 5,
+  AGENT_GUIDE×2 lines).
+- `docs_zh/v1_9_validation_results.md` created (ZH counterpart).
+
 ## [1.9.0] — 2026-05-22
 
 ### Added — informed-retry diagnosis for missing required mentions

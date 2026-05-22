@@ -186,7 +186,13 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             presenter=getattr(args, "presenter", None),
             affiliation=getattr(args, "affiliation", None),
             pptx_subtitle=getattr(args, "pptx_subtitle", None),
-            citation_mode=CitationMode.KEEP if getattr(args, "debug_citations", False) else CitationMode.REMOVE,
+            # When --debug-citations is set, force KEEP everywhere (audit
+            # trail mode). Otherwise pass None so the per-format default in
+            # runner.py applies (html → HYPERLINK, others → REMOVE) — that
+            # default was unreachable for CLI users before v1.9.2.1.
+            citation_mode=(CitationMode.KEEP
+                           if getattr(args, "debug_citations", False)
+                           else None),
         )
 
 

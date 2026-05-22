@@ -360,10 +360,13 @@ def _evidence_quote(
             return src_text[pad_left:pad_right].replace("\n", " ").strip()[:max_chars]
         return ""
     # Audit α#5 / β#4: the old formula `end + (max_chars - (end - start) - 30)`
-    # could go negative for long spans (entity length > max_chars - 30),
-    # silently truncating the entity tail. Anchor `pad_right` to a fixed
-    # `max_chars` window from `pad_left`, which always contains the start
-    # of the entity even when the entity itself exceeds max_chars.
+    # could go negative for long spans (entity length > max_chars - 30) and
+    # produce an empty/garbage snippet via accidental negative-index slicing.
+    # The new formula anchors `pad_right` to a fixed `max_chars` window from
+    # `pad_left`, which guarantees a stable snippet. NOTE: when the entity
+    # itself is longer than `max_chars - 30`, the tail still gets clipped —
+    # the snippet is bounded by `max_chars` either way. This is acceptable
+    # because the snippet is a hint, not a verbatim transcript.
     pad_left = max(0, start - 30)
     pad_right = min(len(src), pad_left + max_chars)
     snippet = src[pad_left:pad_right].replace("\n", " ").strip()

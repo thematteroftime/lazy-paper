@@ -101,13 +101,9 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
             # --debug-citations), that wins. Each renderer can further
             # override its own default via env (e.g. HtmlRenderer
             # honors LAZY_PAPER_HTML_CITATIONS).
-            if citation_mode is not None:
-                effective_mode = citation_mode
-            elif fmt == "html":
-                effective_mode = CitationMode.HYPERLINK
-            else:
-                effective_mode = CitationMode.REMOVE
             if fmt == "pptx":
+                # PPTX renderer doesn't consume citation_mode; skip the
+                # dispatch entirely.
                 renderer = RENDERERS[fmt](summaries=summaries,
                                          outline=outline,
                                          paper_brief=paper_brief,
@@ -116,6 +112,12 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
                                          affiliation=affiliation,
                                          subtitle=resolved_subtitle)
             else:
+                if citation_mode is not None:
+                    effective_mode = citation_mode
+                elif fmt == "html":
+                    effective_mode = CitationMode.HYPERLINK
+                else:
+                    effective_mode = CitationMode.REMOVE
                 renderer = RENDERERS[fmt](citation_mode=effective_mode)
             renderer.render(doc, out_path)
             results[fmt] = str(out_path)
