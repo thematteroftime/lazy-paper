@@ -1,4 +1,4 @@
-"""Collect 6 metrics (M1/M2/M3/M5/M6) from a single variant run.
+"""Collect 5 metrics (M1/M2/M3/M5/M6) from a single variant run.
 
 Usage:
     python scripts/collect_variant_metrics.py runs/<paper>_<variant>_r<run>/
@@ -11,8 +11,6 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from typing import Iterable
-
 import yaml
 
 _COVERAGE_RE = re.compile(

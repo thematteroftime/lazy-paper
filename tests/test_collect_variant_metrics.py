@@ -66,3 +66,38 @@ def test_count_retry_fires():
     )
     assert count_retry_fires(log, "retry-when-empty") == 2
     assert count_retry_fires(log, "retry-when-short") == 1
+
+
+def test_collect_run_metrics_assembles_all_fields(tmp_path):
+    # Minimal but realistic run dir
+    chapters = tmp_path / "s08_section_compose" / "chapters"
+    chapters.mkdir(parents=True)
+    (chapters / "01_intro.md").write_text("a" * 1000, encoding="utf-8")
+    s09 = tmp_path / "s09_render"
+    s09.mkdir(parents=True)
+    (s09 / "preview.html").write_text("<img ><img >", encoding="utf-8")
+    s07 = tmp_path / "s07_figure_analyze"
+    s07.mkdir(parents=True)
+    (s07 / "fig_notes.yaml").write_text(
+        yaml.safe_dump([{"fig_id": "Fig. 1"}, {"fig_id": "Fig. 2"}]),
+        encoding="utf-8",
+    )
+    log = (
+        "[s08] structured-compose: required=5 "
+        "pre-verify-missing=2 (60%) post-verify-missing=1 (80%)\n"
+        "[s08] retry-when-empty: lifted post-verify coverage from 1/5 to 3/5\n"
+    )
+    out = collect_run_metrics(tmp_path, "A", "test_paper", 1, log_text=log, cost_usd=0.45)
+    assert out["variant"] == "A"
+    assert out["paper"] == "test_paper"
+    assert out["run"] == 1
+    assert out["M1_total_chars"] == 1000
+    assert out["M1_mean_chars"] == 1000
+    assert out["M2_figures_embedded"] == 2
+    assert out["M2_figures_available"] == 2
+    assert out["M2_embed_ratio"] == 1.0
+    assert out["M3_total_required"] == 5
+    assert out["M3_total_post_missing"] == 1
+    assert out["M5_retry_empty_fires"] == 1
+    assert out["M5_retry_short_fires"] == 0
+    assert out["M6_llm_cost_usd"] == 0.45
