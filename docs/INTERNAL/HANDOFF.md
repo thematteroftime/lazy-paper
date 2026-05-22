@@ -1,6 +1,12 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 253/253 pass · **End-to-end verified on 13-paper corpus** · **Last release:** v1.9.0 (2026-05-22)
+> **Status:** shipped · **Tests:** 255/255 pass · **End-to-end verified on 18-paper corpus** · **Last release:** v1.9.2 (2026-05-22)
+>
+> **v1.9.2** lands 8 high-impact bug fixes (2-auditor + 3-reviewer +
+> 2-confirmation cycle) on top of v1.9.0's informed-retry. The fixes
+> preserve meng2024 T1 = 9/9/9 zero variance across 18-paper validation
+> (13 corpus + 5 newly OCR'd). HTML clickable citations are now the
+> default for end users. Full report: `docs/v1_9_2_20_paper_validation.md`.
 >
 > **v1.9.0 ships informed-retry that eliminates meng2024 T1 variance.**
 > The previous retry-when-empty used a generic "you missed required
@@ -165,7 +171,7 @@ DOCX + HTML are always produced. PDF / PPTX are produced only when the
 `--formats` flag includes them; the v181 corpus runs above produced docx+html
 only. Output path: `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}`.
 
-**Tests**: 253 (2 deselected `-m live`). Run with `uv run pytest -q`.
+**Tests**: 255 (2 deselected `-m live`). Run with `uv run pytest -q`.
 
 ---
 

@@ -68,7 +68,7 @@ the subsequent 3-review + 2-confirmation cycle. The headline fixes:
 - 6 retry-temperature / figure-top_k / claim-range hardcodes
 - H3 real fix (return matched doc + patch source_span consistently)
 
-Tests: 256/256 pass (+3 from new HTML mode tests).
+Tests: 255/255 pass (+2 from new HTML mode tests).
 
 ## [1.9.1] — 2026-05-22
 

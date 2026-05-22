@@ -1064,7 +1064,7 @@ wheels = [
 
 [[package]]
 name = "lazy-paper"
-version = "1.4.0"
+version = "1.9.2"
 source = { editable = "." }
 dependencies = [
     { name = "bm25s" },
