@@ -1,0 +1,175 @@
+# v1.10 候选变体并行测试 — 设计文档
+
+> **Date**: 2026-05-22
+> **Author**: brainstorming session via neat-freak + writing-skills
+> **Status**: design approved, awaiting implementation plan
+
+## 1. 背景与动机
+
+v1.9.2 完成 18-paper 验证后，用户审计输出文件发现：相比预期，
+section 字数偏少、引用图片偏少。诊断（见上一会话 transcript）识别
+出 6 个根因，其中 5 个属于 v1.8.x → v1.9.x audit cycle 累积加上的
+"安全护栏"——护栏正确但**调得太紧，把深度也一起压没了**：
+
+1. `select_top_required(cap=5)` 硬上限 5 个 required mention
+2. `MIN_SECTION_CHARS=500` 太宽松
+3. `retry-when-short` swap 守卫太严（v1.9.2 audit β#3）
+4. 图引用是**软提示**（schema 无 `figure_ids`，verifier 不验图）
+5. `_merge_drafts` 120 字 prefix dedupe 抹平 best-of-N 多样性
+6. verifier `ratio_threshold=0.85` — 设计意图，不该松
+
+本次实验目标：通过 3 个最小变体在 7 篇论文上并行测试，量化每个
+根因的实际贡献，决定 v1.10 ship 哪些。
+
+## 2. 三个候选变体
+
+### 变体 A — 纯 env 调优
+
+- `LAZY_PAPER_MIN_SECTION_CHARS=1200`（默认 500 → 1200）
+- `LAZY_PAPER_BEST_OF_N=3`（默认 2 → 3）
+- **代码改动**：0 行
+- **预期机制**：retry-when-short 触发率↑；best-of-N 多采 1 份再 merge
+- **预期 LLM 成本**：单论文 +50%（s08 主调用 2→3）
+
+### 变体 B — required cap 按节型分级
+
+- `stages/s08_section_compose/structured.py:482-540` `select_top_required` 改为按节型分级
+- `LAZY_PAPER_REQUIRED_CAP_SURVEY=12`（survey 节用）
+- `LAZY_PAPER_REQUIRED_CAP=5`（非 survey 节，沿用现状）
+- `_is_survey_section()` 已存在 (`structured.py:287`)，调用处传过去
+- **代码改动**：~15 行
+- **预期机制**：长 survey 节 12 个 comparator 不再被截到 5，prompt
+  里 required mentions 完整列出，LLM 必须 cite 每一个
+- **预期 LLM 成本**：prompt 长度增加，无额外 LLM 调用
+
+### 变体 C — figure_ids 进 schema + 硬约束
+
+跨 3 处共 ~50 行：
+
+1. `SectionDraft.GroundedClaim` 加 `figure_ids: list[str] = []` 字段
+2. `_STRUCTURED_SYSTEM` prompt 加段：
+   > For EVERY figure listed in 'Figures topically relevant to this
+   > section', write at least one claim that sets figure_ids to
+   > ["Fig. N"] AND includes "Fig. N" / "图N" literally in claim text
+3. `verify_section_draft` 加一档 figure check（advisory）
+4. `compose_structured` 加 figure-retry：`section_figures` 非空 AND
+   verified 中缺失 ≥ 50% → 触发一次硬提示 retry
+
+- **代码改动**：~50 行
+- **预期机制**：把"图引用"从软提示升级为 schema/verifier 硬约束，
+  s09 literal-mention binding 必然命中
+- **预期 LLM 成本**：可能多 1 次 figure-retry / 节，单论文 ~+$0.30
+
+## 3. 测试矩阵
+
+7 篇论文 × 3 变体；meng2024 因 zero-variance 防守，每变体跑 3 次：
+
+| 论文 | A | B | C | meng 重复 | TestCase |
+|---|---|---|---|---|---|
+| meng2024 | ✓ × 3 | ✓ × 3 | ✓ × 3 | 9 次 | T1 (headline), T3 |
+| yang2025 | ✓ × 1 | ✓ × 1 | ✓ × 1 | — | T2 fabrication |
+| chai2026 | ✓ × 1 | ✓ × 1 | ✓ × 1 | — | T6 basic |
+| ali2025_flash | ✓ × 1 | ✓ × 1 | ✓ × 1 | — | T4 comparison |
+| gaur2022 | ✓ × 1 | ✓ × 1 | ✓ × 1 | — | (generic) |
+| he2023 | ✓ × 1 | ✓ × 1 | ✓ × 1 | — | (generic) |
+| pan2025 | ✓ × 1 | ✓ × 1 | ✓ × 1 | — | (generic) |
+
+**总跑数**：3 变体 × (6 generic + meng×3) = **27 次新跑**
+
+**baseline 对照**：复用现有 `<paper>_v190` / `<paper>_v190b` 产物。
+
+**成本估算**：s01_ocr / s06_context / s07_figure_analyze 全缓存（仅
+s08/s09 重跑）→ ~$0.3-0.5/跑 → **总 ~$8-14**
+
+## 4. 并行架构
+
+3 个 git worktree，每个一份变体代码改动：
+
+```
+paper2md/                    main (HEAD = 02d9ad0)
+  ↓ git worktree add
+.worktrees/variant-a-env/    无代码改动，仅 .env tuning
+.worktrees/variant-b-cap/    structured.py select_top_required 改
+.worktrees/variant-c-figure/ structured.py SectionDraft+prompt+verify 改
+```
+
+每个 worktree 跑各自的 `runs/<paper>_v<variant>_r<run>/`，paper_id
+后缀区分。worktree branch 命名：`variant-a-env-test` / `-b-cap-test`
+/ `-c-figure-test`。
+
+## 5. 数据采集
+
+每次跑结束后写 `runs/<paper>_<variant>_r<run>/metrics.yaml`：
+
+```yaml
+variant: A|B|C|baseline
+paper: meng2024
+run: 1
+M1_chars_per_section:    # wc s08/chapters/*.md
+  ch01: 1245
+  ch02: 1788
+  ...
+M2_figures_embedded:     # 以 HTML 渲染产物为准：grep -c '<img ' s09/preview.html
+M2_figures_available:    # len(fig_notes.yaml)
+M2_embed_ratio:          # M2_embedded / M2_available
+M3_post_verify_missing:  # parse s08 log "post-verify-missing X/Y (Z%)"
+M4_testcase_scores:      # scripts/evaluate.py；有 TestCase 的论文跑 1 次
+                         # 评测（meng2024 例外：T1/T3 每变体跑 3 次）
+M5_retry_empty_fires:    # grep "retry-when-empty: lifted" s08.log
+M5_retry_short_fires:    # grep "retry-when-short: lifted" s08.log
+M6_llm_cost_usd:         # 从 LLM client token 计数推算
+```
+
+通过 `scripts/collect_variant_metrics.py`（~80 行）自动跑这套抓取。
+
+## 6. 对比报告
+
+实验结束后 generate `docs/v1_10_variant_comparison.md`：
+
+- 每个变体 vs baseline 在 6 指标上的 delta 表
+- meng2024 T1 stdev 检查（必须保持 ≤ stdev(baseline) = 0）
+- 决策矩阵：哪个变体最值得 ship 进 v1.10、哪个有 regression
+
+## 7. 成功标准
+
+- **必要（M4 防退化）**：meng2024 T1 stdev ≤ baseline stdev（=0）
+  - 即三次跑必须保持 9/9/9 或更高的一致性
+- **目标**：至少 1 个变体让 M1（字数）和 M2（图嵌入比）显著提升
+  （≥ 30%）且 M4 不退化
+- **可接受**：M6 成本 +50% 内
+
+## 8. 清理范围（执行前置）
+
+```
+runs/<paper>/          ✓ 保留（主目录 cache）
+runs/<paper>_v190/     ✓ 保留（v1.9.0 baseline 对比锚点）
+runs/<paper>_v190b/    ✓ 保留（v1.9.0 二次跑方差锚点）
+runs/<paper>_v191/     ✓ 保留（v1.9.1 新 OCR）
+runs/<paper>_v140/     ✗ 删
+runs/<paper>_v160_J/   ✗ 删
+runs/<paper>_v170_KL/  ✗ 删
+runs/<paper>_v181_KL/  ✗ 删
+```
+
+预计释放 ~150MB（337MB → ~190MB）。
+
+## 9. 决策候选 → v1.10
+
+实验完成后，按指标排序决定哪些变体进 v1.10：
+
+- **A 单独**胜出：v1.10 仅调默认 env，无代码改动
+- **B 单独**胜出：v1.10 ship cap 分级
+- **C 单独**胜出：v1.10 ship figure_ids 硬约束
+- **A + B + C 都正向**：v1.10 全 ship（按 priority C > B > A）
+- **任何变体 regression**：保留现状，未通过的根因留待下一轮
+
+## 10. 不在本次 scope 的工作
+
+以下 v1.10 候选不在本实验中验证：
+
+- `_merge_drafts` 120-char prefix dedup 改 60-char（根因 #5）
+- 抽 `_attempt_retry` helper 去重（refactor，无 behavior 变化）
+- 6 个 retry-temperature / figure-top_k / claim-range hardcode 暴露
+  为 env var（已在 v1.10 候选列表）
+
+这些可在本实验结果出来后单独 brainstorm 第二轮。
