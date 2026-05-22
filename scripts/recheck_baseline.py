@@ -22,46 +22,40 @@ sys.path.insert(0, str(REPO_ROOT))
 from scripts.evaluate import evaluate_run  # noqa: E402
 
 HISTORICAL = {
-    # (run_dir_name, test_id): expected_score
-    ("meng2024_v190", "T1"): 9,
-    ("meng2024_v190", "T3"): 3,
-    ("meng2024_v190_run2", "T1"): 9,
-    ("meng2024_v190_run2", "T3"): 3,
-    ("meng2024_v190_run3", "T1"): 9,
-    ("meng2024_v190_run3", "T3"): 5,
-    ("yang2025_v190", "T2"): 3,
-    ("chai2026_v190", "T6"): 4,
-    ("ali2025_flash_v190", "T4"): 4,
-    ("fu2020_v190", "T5"): 3,
+    # (run_dir_name, evaluator_test_name): expected_score
+    ("meng2024_v190", "meng2024:ch01_benchmark_recovery"): 9,
+    ("meng2024_v190", "meng2024:ch10_synthesis_specificity"): 3,
+    ("meng2024_v190_run2", "meng2024:ch01_benchmark_recovery"): 9,
+    ("meng2024_v190_run2", "meng2024:ch10_synthesis_specificity"): 3,
+    ("meng2024_v190_run3", "meng2024:ch01_benchmark_recovery"): 9,
+    ("meng2024_v190_run3", "meng2024:ch10_synthesis_specificity"): 5,
+    ("yang2025_v190", "yang2025:ch01_no_fabrication"): 3,
+    ("chai2026_v190", "chai2026:ch01_basic"): 4,
+    ("ali2025_flash_v190", "ali2025_flash:ch14_depth"): 4,
+    ("fu2020_v190", "fu2020:ch01_basic"): 3,
 }
-
-
-def _test_id(test_name: str) -> str:
-    """'T1: meng2024 ch01-...' -> 'T1'"""
-    return test_name.split(":", 1)[0].strip()
 
 
 def recheck_one(run_dir: Path) -> list[dict]:
     """Score one run dir and pair against historical."""
     report = evaluate_run(run_dir)
-    actual = {_test_id(r["test"]): r["score"] for r in report["results"]}
+    actual = {r["test"]: r["score"] for r in report["results"]}
     out: list[dict] = []
-    for (paper_run, test_id), historical in HISTORICAL.items():
+    for (paper_run, test_name), historical in HISTORICAL.items():
         if paper_run != run_dir.name:
             continue
-        score = actual.get(test_id)
+        score = actual.get(test_name)
         if score is None:
-            print(f"no result for {paper_run}/{test_id}", file=sys.stderr)
             out.append({
-                "paper_run": paper_run, "test_id": test_id,
+                "paper_run": paper_run, "test": test_name,
                 "historical": historical, "current": None,
-                "delta": None, "verdict": "DRIFT — test not found",
+                "delta": None, "verdict": "DRIFT — test not found"
             })
             continue
         delta = score - historical
         verdict = "OK" if delta == 0 else f"DRIFT (Δ={delta:+d})"
         out.append({
-            "paper_run": paper_run, "test_id": test_id,
+            "paper_run": paper_run, "test": test_name,
             "historical": historical, "current": score,
             "delta": delta, "verdict": verdict,
         })
@@ -89,7 +83,7 @@ def main() -> int:
         results = recheck_one(run_dir)
         for r in results:
             print(
-                f"{r['paper_run']}/{r['test_id']}: "
+                f"{r['paper_run']}/{r['test']}: "
                 f"hist={r['historical']} current={r['current']} "
                 f"→ {r['verdict']}",
                 flush=True,
