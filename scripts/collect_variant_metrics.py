@@ -30,17 +30,57 @@ def collect_chars_per_section(run_dir: Path) -> dict[str, int]:
 
 
 def collect_figure_embed_ratio(run_dir: Path) -> tuple[int, int, float]:
+    """Count distinct figures embedded vs available.
+
+    A figure can have multiple panels — HTML renders each panel as a
+    separate `<img>` tag, but we want one count per distinct figure.
+    `<figure>` wraps the whole multi-panel block, so counting those is
+    the right denominator-aware metric.
+    """
     html = run_dir / "s09_render" / "preview.html"
     fig_notes = run_dir / "s07_figure_analyze" / "fig_notes.yaml"
     embedded = 0
     available = 0
     if html.exists():
-        embedded = html.read_text(encoding="utf-8").count("<img ")
+        text = html.read_text(encoding="utf-8")
+        embedded = text.count("<figure")
+        if embedded == 0:
+            # Fallback for templates without <figure> wrapping: count
+            # unique alt-text instead (alt="图 N" / "Fig. N")
+            alts = re.findall(r'alt="([^"]+)"', text)
+            embedded = len(set(alts))
     if fig_notes.exists():
         notes = yaml.safe_load(fig_notes.read_text(encoding="utf-8")) or []
         available = len(notes)
     ratio = embedded / available if available else 0.0
     return embedded, available, ratio
+
+
+def collect_figure_hallucinations(run_dir: Path) -> tuple[int, list[str]]:
+    """Count fig_ids cited in chapter md that don't exist in fig_notes.
+
+    A side-effect probe for variant C — figure_ids hard constraint can
+    nudge the LLM to write 'Fig. N' for nonexistent figure numbers,
+    which s09 then silently drops.
+    """
+    chapters_dir = run_dir / "s08_section_compose" / "chapters"
+    fig_notes = run_dir / "s07_figure_analyze" / "fig_notes.yaml"
+    if not chapters_dir.exists() or not fig_notes.exists():
+        return 0, []
+    notes = yaml.safe_load(fig_notes.read_text(encoding="utf-8")) or []
+    valid_nums: set[str] = set()
+    for n in notes:
+        fid = n.get("fig_id", "")
+        m = re.search(r"(\d+)", fid)
+        if m:
+            valid_nums.add(m.group(1))
+    cited_nums: set[str] = set()
+    for md in chapters_dir.glob("*.md"):
+        text = md.read_text(encoding="utf-8")
+        for m in re.finditer(r"(?:Fig\.\s*|图\s*)(\d+)", text):
+            cited_nums.add(m.group(1))
+    hallucinated = sorted(cited_nums - valid_nums, key=int)
+    return len(hallucinated), hallucinated
 
 
 def parse_coverage_from_log(log_text: str) -> list[dict[str, int]]:
@@ -65,6 +105,7 @@ def collect_run_metrics(
 ) -> dict:
     chars = collect_chars_per_section(run_dir)
     embedded, available, ratio = collect_figure_embed_ratio(run_dir)
+    halluc_count, halluc_ids = collect_figure_hallucinations(run_dir)
     coverage = parse_coverage_from_log(log_text)
     return {
         "variant": variant,
@@ -76,6 +117,8 @@ def collect_run_metrics(
         "M2_figures_embedded": embedded,
         "M2_figures_available": available,
         "M2_embed_ratio": round(ratio, 3),
+        "M2_figures_hallucinated_count": halluc_count,
+        "M2_figures_hallucinated_ids": halluc_ids,
         "M3_coverage_per_section": coverage,
         "M3_total_required": sum(c["required"] for c in coverage),
         "M3_total_post_missing": sum(c["post_missing"] for c in coverage),

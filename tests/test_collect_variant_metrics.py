@@ -24,8 +24,13 @@ def test_collect_chars_per_section(tmp_path):
 def test_collect_figure_embed_ratio(tmp_path):
     s09 = tmp_path / "s09_render"
     s09.mkdir(parents=True)
+    # Realistic: 2 distinct figures wrapped in <figure>; Fig.1 has
+    # 3 panels (3 <img>) — counter must count figures (2), not imgs (4).
     (s09 / "preview.html").write_text(
-        "<p><img src='a'><img src='b'></p>", encoding="utf-8"
+        "<figure><img src='a1'><img src='a2'><img src='a3'>"
+        "<figcaption>Fig. 1</figcaption></figure>"
+        "<figure><img src='b'><figcaption>Fig. 2</figcaption></figure>",
+        encoding="utf-8",
     )
     s07 = tmp_path / "s07_figure_analyze"
     s07.mkdir(parents=True)
@@ -39,9 +44,48 @@ def test_collect_figure_embed_ratio(tmp_path):
         encoding="utf-8",
     )
     embedded, available, ratio = collect_figure_embed_ratio(tmp_path)
-    assert embedded == 2
+    assert embedded == 2  # 2 distinct figures, not 4 <img> panels
     assert available == 4
     assert ratio == 0.5
+
+
+def test_collect_figure_embed_alt_fallback(tmp_path):
+    """No <figure> wrappers → fall back to unique alt-text count."""
+    from scripts.collect_variant_metrics import collect_figure_embed_ratio
+    s09 = tmp_path / "s09_render"
+    s09.mkdir(parents=True)
+    (s09 / "preview.html").write_text(
+        '<p><img alt="Fig. 1" src="a"><img alt="Fig. 1" src="b">'
+        '<img alt="Fig. 2" src="c"></p>',
+        encoding="utf-8",
+    )
+    s07 = tmp_path / "s07_figure_analyze"
+    s07.mkdir(parents=True)
+    (s07 / "fig_notes.yaml").write_text(
+        yaml.safe_dump([{"fig_id": "Fig. 1"}, {"fig_id": "Fig. 2"}]),
+        encoding="utf-8",
+    )
+    embedded, available, _ = collect_figure_embed_ratio(tmp_path)
+    assert embedded == 2  # unique alt count, not 3 img tags
+
+
+def test_collect_figure_hallucinations(tmp_path):
+    """Chapter md cites Fig. N where N isn't in fig_notes → flagged."""
+    from scripts.collect_variant_metrics import collect_figure_hallucinations
+    chapters = tmp_path / "s08_section_compose" / "chapters"
+    chapters.mkdir(parents=True)
+    (chapters / "01.md").write_text(
+        "See Fig. 1 and Fig. 9 and 图16. Also Fig. 2.", encoding="utf-8"
+    )
+    s07 = tmp_path / "s07_figure_analyze"
+    s07.mkdir(parents=True)
+    (s07 / "fig_notes.yaml").write_text(
+        yaml.safe_dump([{"fig_id": "Fig. 1"}, {"fig_id": "Fig. 2"}]),
+        encoding="utf-8",
+    )
+    count, ids = collect_figure_hallucinations(tmp_path)
+    assert count == 2
+    assert ids == ["9", "16"]
 
 
 def test_parse_coverage_from_log():
@@ -75,7 +119,11 @@ def test_collect_run_metrics_assembles_all_fields(tmp_path):
     (chapters / "01_intro.md").write_text("a" * 1000, encoding="utf-8")
     s09 = tmp_path / "s09_render"
     s09.mkdir(parents=True)
-    (s09 / "preview.html").write_text("<img ><img >", encoding="utf-8")
+    (s09 / "preview.html").write_text(
+        '<figure><img alt="Fig. 1" src="a"></figure>'
+        '<figure><img alt="Fig. 2" src="b"></figure>',
+        encoding="utf-8",
+    )
     s07 = tmp_path / "s07_figure_analyze"
     s07.mkdir(parents=True)
     (s07 / "fig_notes.yaml").write_text(

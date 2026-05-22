@@ -100,11 +100,11 @@ def _fmt(v: float | int | None, decimals: int = 0) -> str:
 def render_table(matrix: dict[tuple[str, str], list[dict]]) -> str:
     out: list[str] = []
     out.append(
-        "| Variant | Paper | n | M1 chars (mean) | M2 embed/avail | "
+        "| Variant | Paper | n | M1 chars | M2 embed/avail | M2 halluc | "
         "M3 missing/required | M5 empty/short | M6 cost |"
     )
     out.append(
-        "|---|---|---|---|---|---|---|---|"
+        "|---|---|---|---|---|---|---|---|---|"
     )
     sort_key = {"baseline": 0, "A": 1, "B": 2, "C": 3}
     rows = sorted(
@@ -118,6 +118,7 @@ def render_table(matrix: dict[tuple[str, str], list[dict]]) -> str:
         m1_mean = _mean([r.get("M1_total_chars") for r in runs])
         m2_embed = _mean([r.get("M2_figures_embedded") for r in runs])
         m2_avail = _mean([r.get("M2_figures_available") for r in runs])
+        m2_halluc = _mean([r.get("M2_figures_hallucinated_count") for r in runs])
         m3_required = _mean([r.get("M3_total_required") for r in runs])
         m3_missing = _mean([r.get("M3_total_post_missing") for r in runs])
         m5e = _mean([r.get("M5_retry_empty_fires") for r in runs])
@@ -127,6 +128,7 @@ def render_table(matrix: dict[tuple[str, str], list[dict]]) -> str:
             f"| {variant} | {paper} | {n} | "
             f"{_fmt(m1_mean)} | "
             f"{_fmt(m2_embed)}/{_fmt(m2_avail)} | "
+            f"{_fmt(m2_halluc, 1)} | "
             f"{_fmt(m3_missing)}/{_fmt(m3_required)} | "
             f"{_fmt(m5e, 1)}/{_fmt(m5s, 1)} | "
             f"{('$' + _fmt(m6, 2)) if m6 is not None else '—'} |"
