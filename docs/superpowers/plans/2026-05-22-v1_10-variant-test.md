@@ -1540,9 +1540,184 @@ gh release create v1.10.0 --title "v1.10.0 — ..." \
 
 ---
 
+## Task 16: External reference survey（与 Task 5-12 并行）
+
+**Files:**
+- Create: `docs/v1_10_external_reference.md`
+
+调研 6 个开源 deep-research / paper-synthesis 系统，写对照报告。
+**质量优先**：每个系统至少看 README + 1 篇代表论文 abstract +
+关键 code module（不要只看 README 1 段就交差）。
+
+- [ ] **Step 1: WebSearch 每个系统的官方/学术信息**
+
+```
+对每个系统跑：WebSearch "STORM Stanford OVAL paper synthesis"
+对每个系统跑：WebSearch "OpenScholar AI2 informed retry"
+对每个系统跑：WebSearch "LitLLM per-comparator drafting"
+对每个系统跑：WebSearch "gpt-researcher autonomous research agent"
+对每个系统跑：WebSearch "PaperQA2 figure citation"
+对每个系统跑：WebFetch onyx-dot-app/onyx citation_processor.py
+```
+
+Expected: 每个系统至少拿到 GitHub URL + 关键 design doc 链接
+
+- [ ] **Step 2: 对 STORM 看 README + 1 篇 paper**
+
+```bash
+# 用 WebFetch 抓 STORM GitHub README + arXiv paper abstract
+```
+
+记录：(1) outline-then-write 流程；(2) 多智能体怎么协作；(3) 怎么
+做 citation grounding。
+
+- [ ] **Step 3: 对 OpenScholar 看 informed-retry 机制**
+
+```bash
+# WebFetch 抓 OpenScholar GitHub README + paper
+```
+
+重点：他们的 informed-retry 跟我们 v1.9 的实现差异。
+
+- [ ] **Step 4: 对 LitLLM 看 per-comparator drafting**
+
+记录：per-comparator drafting 的实现细节，对比我们 v1.10 候选。
+
+- [ ] **Step 5: 对 gpt-researcher / PaperQA2 / Onyx 各做同样调研**
+
+每个系统至少：(1) GitHub README 完整看；(2) 1 篇 paper 或 design
+doc 抽要；(3) 关键 code module 扫一眼（如 PaperQA2 的 figure
+binding、Onyx 的 citation_processor）。
+
+- [ ] **Step 6: 写 `docs/v1_10_external_reference.md`**
+
+骨架：
+
+```markdown
+# v1.10 — External Reference Survey
+
+> Date: 2026-05-22
+> Spec: docs/superpowers/specs/2026-05-22-v1_10-variant-test-design.md §11
+
+## STORM (Stanford OVAL)
+- 简介
+- 对照点（figure citation / quote grounding / coverage / informed-retry）
+- 与 v1.10 三变体的异同
+- 决策建议
+
+## OpenScholar (AI2)
+(同上结构)
+
+## LitLLM
+## gpt-researcher
+## PaperQA2 / GPT-Pdf
+## Onyx citation processor
+
+## 综合 — v1.10 三变体 vs 业界设计图谱
+
+| 设计点 | STORM | OpenScholar | LitLLM | gpt-researcher | PaperQA2 | Onyx | v1.10 A | v1.10 B | v1.10 C |
+|---|---|---|---|---|---|---|---|---|---|
+| informed-retry | ... | ✓ | ... | ... | ... | ... | — | — | ✓ (figure-retry) |
+| per-comparator drafting | ✓ | ... | ✓ | ... | ... | ... | — | ✓ (cap=12) | — |
+| figure_ids 硬约束 | ... | ... | ... | ... | ✓? | ... | — | — | ✓ |
+| coverage 兜底 | ... | ✓ | ... | ... | ... | ... | ✓ (env) | — | — |
+
+## 决策影响
+
+(基于对照，哪些 v1.10 候选要调整、哪些 best practice 要吸纳进 v1.11)
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add docs/v1_10_external_reference.md
+git commit -m "docs(v1.10): external reference survey (6 OSS systems)"
+```
+
+---
+
+## Task 17: 高 IF 论文扩展语料（与 Task 10-12 同步跑）
+
+**Files:**
+- Add: 2 篇 PDF 到 `input/`（user 提供）
+- Run: 各变体上 2 篇 ×1 跑
+
+- [ ] **Step 1: 让 user 提供 2 篇高 IF PDF**
+
+```
+HIF-1: 高 IF 综述（Nature / Science / Nat Rev Mat，IF 30+），用于
+       测**长 survey**场景下变体 B 的 cap 分级
+HIF-2: ML 高图论文（NeurIPS / ICML / CVPR + 8-15 张图），用于测
+       变体 C 的 figure_ids 硬约束在多图场景效果
+```
+
+如 user 未提供，从 arXiv 拉 fallback：
+- HIF-1: 一篇 arXiv 高引材料学综述
+- HIF-2: arXiv 一篇带 ≥10 figures 的 CS 论文
+
+- [ ] **Step 2: 为每篇跑完整 s01-s07（OCR + KG + figure analyze）**
+
+```bash
+for paper_pdf in input/hif_1.pdf input/hif_2.pdf; do
+  paper_id=$(basename "${paper_pdf}" .pdf)
+  uv run lazy-paper run --pdf "${paper_pdf}" \
+    --template <template-path> --paper-id "${paper_id}"
+done
+```
+
+Expected: `runs/hif_1/` 和 `runs/hif_2/` 完整 s01-s09 产物
+
+- [ ] **Step 3: 跑 3 变体 × 2 paper × 1 run = 6 跑**
+
+```bash
+for variant in a b c; do
+  for paper in hif_1 hif_2; do
+    bash scripts/run_variant_matrix.sh "${variant}" "${paper}" 1
+  done
+done
+```
+
+Expected: 6 个 `runs/hif_*_v[abc]_r1/metrics.yaml`
+
+- [ ] **Step 4: 把 HIF metrics 合并进 aggregate_comparison.py 输出**
+
+scripts/aggregate_comparison.py 已经 glob `runs/*` — HIF 论文自动
+被采到。
+
+- [ ] **Step 5: 在 comparison 报告 §7 写 HIF 验证小结**
+
+记录：HIF-1 / HIF-2 上各变体的 M1/M2/M3 是否与 7 篇内置语料的趋势
+一致，或出现领域漂移。
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add docs/v1_10_variant_comparison.md
+git commit -m "docs(v1.10): add HIF-1/HIF-2 extended-corpus verification"
+```
+
+---
+
+## 并行执行说明
+
+Task 1-9 是 sequential（前置 + 代码改动 + 工具准备）。
+
+Task 10/11/12 跑 3 个变体（每个 ~30-60 min LLM 调用）应**并行**
+（3 个 terminal 分别 cd 进 3 个 worktree 跑）。
+
+Task 13 (M4 评测) 依赖 10/11/12 完成。
+
+Task 16 (external reference survey) 可与 Task 5-13 完全**并行**
+（纯 WebSearch + 写作，零 LLM 调用）。
+
+Task 17 (HIF 论文) 的 Step 2 (s01-s07) 可在 Task 1-9 期间做；
+Step 3 (变体跑) 与 Task 10/11/12 同步。
+
+Task 14 报告 依赖 12 + 13 + 16 + 17 全部完成。
+
 ## Self-Review Result
 
-- ✅ **Spec coverage**：spec §1-11 全部映射到 task：
+- ✅ **Spec coverage**：spec §1-12 全部映射到 task：
   - §2 三变体 → Task 6/7/8
   - §3 测试矩阵 → Task 10/11/12
   - §4 并行架构 → Task 5
@@ -1552,5 +1727,9 @@ gh release create v1.10.0 --title "v1.10.0 — ..." \
   - §8 清理 → Task 1
   - §9 决策候选 → Task 15
   - §10 baseline 复核 → Task 3, 4
-- ✅ **Placeholder scan**：无 TBD/TODO；M4 评测的 evaluator CLI 标注"按真实接口调整"是合理 fallback
+  - §11.1 external reference survey → Task 16
+  - §11.2 高 IF 扩展语料 → Task 17
+  - §11.3 报告侧补充 → Task 16/17 各自 Step 6/5 落入 comparison §6/§7
+- ✅ **Placeholder scan**：无 TBD/TODO；M4 评测的 evaluator CLI 标注"按真实接口调整"是合理 fallback；HIF PDF 来源已在 Task 17 Step 1 标注"user 提供 or arXiv fallback"
 - ✅ **Type consistency**：`select_top_required(is_survey)` / `GroundedClaim.figure_ids` / `variant ∈ {a,b,c}` 在跨 task 引用一致
+- ✅ **Parallelism note**：在 task 17 后说明 Task 16/17 与 10-12 的并行关系，避免顺序执行导致总周期翻倍

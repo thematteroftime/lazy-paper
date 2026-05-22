@@ -197,7 +197,64 @@ runs/<paper>_v181_KL/  ✗ 删
 复核结果写到 `runs/_baseline_recheck.yaml` + 实验报告 §1 引用，使
 对比起点可审计。
 
-## 11. 不在本次 scope 的工作
+## 11. External reference + extended corpus（避免闭门造车）
+
+用户原则：「时间充裕、成本充裕，质量/深度/完善 > 速度」。本次实验
+不只比 3 变体的指标 delta，也要把 v1.10 候选放到**业界开源 deep-
+research / paper-synthesis 工作**的设计图谱里对照，并加 2 篇**跨
+领域 + 高 IF**论文做外部验证语料。
+
+### 11.1 开源 deep-research / paper-synthesis 工作 survey
+
+调研全部 6 个候选系统：
+
+| 系统 | 出处 | 关键对照点 |
+|---|---|---|
+| **STORM** | Stanford OVAL | 多智能体 outline-then-write、wikipedia-style 综述生成 — 对照 s05 outline + s08 compose；v1.10 候选 per-comparator drafting 灵感来源 |
+| **OpenScholar** | AI2 | retrieval-grounded scholarly QA、informed-retry 范式 — 对照 v1.9 informed-retry 设计 |
+| **LitLLM** | — | per-comparator drafting、citation grounding — 对照变体 B/C 设计 |
+| **gpt-researcher** | open-source autonomous research agent | 对照 `LAZY_PAPER_AGENT=1` 实验路径 |
+| **PaperQA2 / GPT-Pdf** | scientific paper QA | 对照 figure binding / verifier |
+| **Onyx citation processor** | 已 vendored 用作 citation 处理 | 已知 reference，但要复盘当前用得对不对 |
+
+**输出**：`docs/v1_10_external_reference.md` 含每系统的：
+1. 简介（来源、定位、核心机制）
+2. 对照点（figure citation / quote grounding / coverage 兜底 / informed-retry 类机制）
+3. 与 v1.10 三变体的异同（借鉴 vs 分歧）
+4. 决策建议（哪些 best practice 应吸纳进 v1.10）
+
+**工作量**：~30-45 min WebSearch + 1-2 h 写作。**质量优先**：每个
+系统至少看 README + 1 篇代表论文 abstract + 关键 code module。
+
+### 11.2 高 IF 扩展语料
+
+7 篇语料都是材料学/电容器领域。加 2 篇拓宽领域 + 提升难度：
+
+| # | 类别 | 期刊 IF | 用途 |
+|---|---|---|---|
+| HIF-1 | Nature / Science / Nat Rev Mat 综述 | 30-50+ | 测**长 survey** 场景：变体 B 的 cap 分级在 12+ comparator 链下扛不扛 |
+| HIF-2 | ML 高图论文（NeurIPS/ICML/CVPR + 8-15 张图） | proceedings 顶会 | 测**多图引用**：变体 C 的 figure_ids 硬约束在多图场景的实效 |
+
+**PDF 来源**：由 user 提供（可上传 PDF 到 input/，或指定开放访问
+URL）。如 user 暂不提供，从 arXiv 拉 1 篇开放材料学 / 1 篇 CS 论文
+作 fallback，但首选 user 挑选的高 IF 真实论文。
+
+**跑法**：每变体 +2 paper = 总跑数 27 → **33 跑**；额外 LLM 成本
+~$3-5。
+
+**指标采集**：与 7 篇内置语料完全相同，metrics.yaml 写到对应
+worktree 的 `runs/<paper>_v<variant>_r1/`。
+
+### 11.3 报告侧补充
+
+`docs/v1_10_variant_comparison.md` 加：
+- §6 **外部 reference 对照**：把 v1.10 三变体放进 §11.1 调研出的
+  设计图谱里，说"我们在哪些点跟主流一致 / 哪些点是 contrarian /
+  哪些点借鉴了谁"
+- §7 **高 IF 扩展验证**：HIF-1 / HIF-2 两篇的 6 指标 delta，对比
+  7 篇内置语料的均值，看变体在跨领域 / 高难度场景是否仍然 hold
+
+## 12. 不在本次 scope 的工作
 
 以下 v1.10 候选不在本实验中验证：
 
