@@ -563,6 +563,18 @@ unless guidance demands more.
 
 Length / language / quantitative rules from the base section_compose prompt
 still apply — see the USER message for {lang_instruction} and other hints.
+
+## Figure citation requirement (variant C hard constraint)
+
+When the USER message lists 'Figures topically relevant to this section':
+  - For EACH such fig_id, write at least one claim that:
+      * sets figure_ids = ["<fig_id>"]  (e.g. ["Fig. 3"])
+      * contains the literal "Fig. N" (English) or "图N" (Chinese) in
+        the claim's text
+  - This ensures the figure is embedded in the rendered output (s09
+    binding is literal-substring based).
+  - If multiple figures are relevant, write multiple claims — do not
+    cram all fig_ids into one claim.
 """
 
 
@@ -984,6 +996,70 @@ def compose_structured(
         except Exception as exc:
             print(f"[s08] retry-when-short failed: {exc!r}; keeping "
                   f"original draft", flush=True)
+
+    # variant-c: figure-retry — if section_figures non-empty and verified
+    # mentions < 50% of available figures, one strengthened retry.
+    if section_figures:
+        available_ids = {n.get("fig_id") for n in section_figures if n.get("fig_id")}
+        mentioned_ids: set[str] = set()
+        import re as _re
+        full_text = " ".join(c.text for c in verified.claims)
+        for fid in available_ids:
+            m = _re.match(r"Fig\.\s*(\d+)", fid)
+            if m:
+                num = m.group(1)
+                if (_re.search(rf"Fig\.\s*{num}", full_text)
+                        or _re.search(rf"图\s*{num}", full_text)):
+                    mentioned_ids.add(fid)
+            elif fid in full_text:
+                mentioned_ids.add(fid)
+        missing_figs = available_ids - mentioned_ids
+        if available_ids and (len(missing_figs) / len(available_ids)) >= 0.5:
+            print(
+                f"[s08] figure-retry: mentioned {len(mentioned_ids)}/"
+                f"{len(available_ids)} relevant figures — triggering retry",
+                flush=True,
+            )
+            fig_lines = "\n".join(
+                f"  - {fid}: write a claim with figure_ids=[\"{fid}\"] "
+                f"and \"{fid}\" literally in text"
+                for fid in sorted(missing_figs)
+            )
+            retry_system = _STRUCTURED_SYSTEM + (
+                "\n\n## CRITICAL — MISSING FIGURE CITATIONS\n"
+                f"Your draft did not cite {len(missing_figs)} relevant "
+                f"figures. ADD claims that cite each:\n\n{fig_lines}\n\n"
+                "PRESERVE existing well-grounded claims. Add new ones."
+            )
+            try:
+                fig_retry = _single_compose(
+                    llm, retry_system, user_msg, chunks,
+                    max_retries=max_retries, temperature=0.3,
+                )
+                fig_accepted, fig_rejected = verify_section_draft(
+                    fig_retry, chunks_by_id, ratio_threshold=verifier_threshold,
+                )
+                fig_verified = (SectionDraft(claims=fig_accepted)
+                                if len(fig_accepted) >= 2 else fig_retry)
+                new_full = " ".join(c.text for c in fig_verified.claims)
+                new_mentioned: set[str] = set()
+                for fid in available_ids:
+                    m = _re.match(r"Fig\.\s*(\d+)", fid)
+                    if m and (_re.search(rf"Fig\.\s*{m.group(1)}", new_full)
+                              or _re.search(rf"图\s*{m.group(1)}", new_full)):
+                        new_mentioned.add(fid)
+                    elif fid in new_full:
+                        new_mentioned.add(fid)
+                if len(new_mentioned) > len(mentioned_ids):
+                    print(
+                        f"[s08] figure-retry: lifted "
+                        f"{len(mentioned_ids)}→{len(new_mentioned)} figure mentions",
+                        flush=True,
+                    )
+                    verified, rejected = fig_verified, fig_rejected
+            except Exception as exc:
+                print(f"[s08] figure-retry failed: {exc!r}; keeping draft",
+                      flush=True)
 
     return verified, rejected
 
