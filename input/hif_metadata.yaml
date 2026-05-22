@@ -1,0 +1,38 @@
+- id: hif_1
+  arxiv_id: "2509.00384"
+  title: "Recent Advances in Unconventional Ferroelectrics and Multiferroics"
+  url: "https://arxiv.org/abs/2509.00384"
+  category: materials_review
+  journal: "Advanced Materials (2025)"
+  pages: 62
+  num_figures: 13
+  categories_arxiv:
+    - cond-mat.mtrl-sci
+    - physics.chem-ph
+  why_chosen: >
+    62-page long review published in Advanced Materials (Nature/Science equivalent impact),
+    submitted August 2025. Covers unconventional ferroelectrics (Hf-based, stacking
+    ferroelectricity, polar metallicity, wurtzite-type), multiferroics, and future
+    challenges — a broad survey spanning many material classes with extensive comparator
+    citation chains. Domain overlap with existing corpus (ferroelectric/dielectric
+    materials science). Confirms 13 numbered figures and comprehensive literature coverage
+    (15+ comparators guaranteed at 62 pages).
+
+- id: hif_2
+  arxiv_id: "2204.06125"
+  title: "Hierarchical Text-Conditional Image Generation with CLIP Latents"
+  url: "https://arxiv.org/abs/2204.06125"
+  category: ml_multi_figure
+  journal: "OpenAI Technical Report (DALL-E 2)"
+  pages: 27
+  num_figures_estimated: 17
+  file_size_mb: 41
+  categories_arxiv:
+    - cs.CV
+  why_chosen: >
+    DALL-E 2 (OpenAI, April 2022) — landmark text-to-image generation paper.
+    27 pages with at least Figure 17 referenced (pdfplumber extraction), 41 MB PDF
+    indicating extensive image content. High-citation landmark paper from a top ML
+    lab, corresponding to NeurIPS/ICML-tier impact. Selected over GPT-3 (2005.14165,
+    40+32 pages but fewer inline figures) because DALL-E 2's 41 MB file size vs GPT-3's
+    ~7 MB strongly indicates far more figures embedded. Licensed CC-BY 4.0 (open access).
