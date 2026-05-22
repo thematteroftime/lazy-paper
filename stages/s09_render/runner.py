@@ -94,7 +94,19 @@ def run(*, compose_dir: Path, fig_notes_dir: Path, out_dir: Path,
             raise ValueError(f"unknown format {fmt!r}; available: {sorted(RENDERERS)}")
         out_path = out_dir / f"preview.{fmt}"
         try:
-            effective_mode = citation_mode if citation_mode is not None else CitationMode.REMOVE
+            # Per-format default citation_mode (audit β#1: HtmlRenderer's
+            # docstring promises HYPERLINK; runner used to force REMOVE
+            # for all formats, silently stripping HTML citations.) When
+            # the caller passes citation_mode explicitly (e.g. KEEP via
+            # --debug-citations), that wins. Each renderer can further
+            # override its own default via env (e.g. HtmlRenderer
+            # honors LAZY_PAPER_HTML_CITATIONS).
+            if citation_mode is not None:
+                effective_mode = citation_mode
+            elif fmt == "html":
+                effective_mode = CitationMode.HYPERLINK
+            else:
+                effective_mode = CitationMode.REMOVE
             if fmt == "pptx":
                 renderer = RENDERERS[fmt](summaries=summaries,
                                          outline=outline,

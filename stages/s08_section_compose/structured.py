@@ -328,8 +328,9 @@ def _find_chunk_for_entity_span(
     # a placeholder doc name AND text-substring also misses, the entity
     # silently routes to chunk 0 and the user has no signal.
     if retrieved_chunks:
+        safe_text = (entity.text or "")[:60]  # audit α#1: defend against None
         print(f"[s08] _find_chunk_for_entity_span: fallback-2 (chunk 0) "
-              f"for entity={entity.text[:60]!r} doc={doc!r}", flush=True)
+              f"for entity={safe_text!r} doc={doc!r}", flush=True)
         return 0
     return None
 
@@ -343,8 +344,10 @@ def _evidence_quote(
     src = source_docs.get(doc, "")
     if not src:
         # Fallback: KG LLM filled a placeholder doc name (e.g. 'paper').
-        # Look for the entity's text inside any known source doc; take
-        # the longest plausible substring around the first match.
+        # Look for the entity's text inside any known source doc and
+        # return a window around the first match. Note: this snippet's
+        # span no longer matches `entity.source_span` (audit α#6) —
+        # callers that re-validate doc-name later may mismatch.
         needle = (entity.text or "").strip()
         if not needle or len(needle) < 4:
             return ""
@@ -353,11 +356,16 @@ def _evidence_quote(
             if idx < 0:
                 continue
             pad_left = max(0, idx - 30)
-            pad_right = min(len(src_text), idx + len(needle) + (max_chars - 30))
+            pad_right = min(len(src_text), pad_left + max_chars)
             return src_text[pad_left:pad_right].replace("\n", " ").strip()[:max_chars]
         return ""
+    # Audit α#5 / β#4: the old formula `end + (max_chars - (end - start) - 30)`
+    # could go negative for long spans (entity length > max_chars - 30),
+    # silently truncating the entity tail. Anchor `pad_right` to a fixed
+    # `max_chars` window from `pad_left`, which always contains the start
+    # of the entity even when the entity itself exceeds max_chars.
     pad_left = max(0, start - 30)
-    pad_right = min(len(src), end + (max_chars - (end - start) - 30))
+    pad_right = min(len(src), pad_left + max_chars)
     snippet = src[pad_left:pad_right].replace("\n", " ").strip()
     return snippet[:max_chars]
 
@@ -746,10 +754,16 @@ def compose_structured(
                     llm, _STRUCTURED_SYSTEM, user_msg, chunks,
                     max_retries, temperature=temp,
                 ))
-            except Exception:
+            except Exception as exc:
                 if not drafts:
                     raise
-                # Otherwise tolerate a single failed sample
+                # Tolerate later sample failures, but log them — without
+                # this print, a rate-limit / context-window error on
+                # sample N would silently drop N from the merge with no
+                # user signal (audit α#8).
+                print(f"[s08] best-of-N sample {i} failed: {exc!r}; "
+                      f"continuing with {len(drafts)} draft(s)",
+                      flush=True)
                 continue
         draft = _merge_drafts(drafts)
 
@@ -850,7 +864,11 @@ def compose_structured(
                         f"{len(required) - len(retry_post_missing)}/{len(required)}",
                         flush=True,
                     )
+                    # Also rebind `accepted` so the downstream retry-when-short
+                    # guard compares against the updated verifier-accepted set
+                    # (audit α#13: stale `accepted` reference).
                     verified, rejected = retry_verified, retry_rejected
+                    accepted = retry_accepted
             except Exception as exc:
                 print(f"[s08] retry-when-empty failed: {exc!r}; keeping "
                       f"original draft", flush=True)
@@ -908,8 +926,12 @@ def compose_structured(
             #  - required-mention coverage not regressed.
             current_missing = len(missing_required(required, verified))
             new_missing = len(missing_required(required, len_retry_verified))
+            # Audit β#3: require at least ONE verifier-accepted claim before
+            # swapping. Otherwise `0 >= 0` would silently swap one fully-
+            # ungrounded draft for another and log a misleading "lifted N→M".
             if (len(len_retry_text) > len(verified_text)
                     and len(len_retry_accepted) >= len(accepted)
+                    and len(len_retry_accepted) >= 1
                     and new_missing <= current_missing):
                 print(
                     f"[s08] retry-when-short: lifted "

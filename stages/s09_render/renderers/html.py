@@ -41,7 +41,9 @@ class HtmlRenderer(Renderer):
         #   2. env `LAZY_PAPER_HTML_CITATIONS=remove|keep|hyperlink` overrides.
         #   3. Caller's explicit citation_mode wins over the default.
         #   4. Else HYPERLINK.
-        env_mode = os.environ.get("LAZY_PAPER_HTML_CITATIONS", "").lower()
+        # `.strip()` first so trailing whitespace from .env files doesn't
+        # silently break the override (audit β#2).
+        env_mode = os.environ.get("LAZY_PAPER_HTML_CITATIONS", "").strip().lower()
         if citation_mode == CitationMode.KEEP:
             effective = CitationMode.KEEP
         elif env_mode == "remove":
