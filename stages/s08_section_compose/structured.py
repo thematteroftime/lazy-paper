@@ -279,6 +279,29 @@ def verify_section_draft(
                     "cited_chunk_ids": [matched_cid, *c.cited_chunk_ids],
                 })
             accepted.append(c)
+            # variant-c: figure_ids hard hint (advisory) — only for
+            # accepted claims; rejected claims are already dead, no
+            # point recording a figure advisory for them. Auditor 3
+            # caught this: original placement double-reported some
+            # rejected claims.
+            if c.figure_ids:
+                import re as _re
+                missing_figs = []
+                for fid in c.figure_ids:
+                    m = _re.match(r"Fig\.\s*(\d+)", fid)
+                    if m:
+                        num = m.group(1)
+                        patterns = [rf"Fig\.\s*{num}", rf"图\s*{num}"]
+                    else:
+                        patterns = [_re.escape(fid)]
+                    if not any(_re.search(p, c.text) for p in patterns):
+                        missing_figs.append(fid)
+                if missing_figs:
+                    rejected.append({
+                        "claim_text": c.text[:80],
+                        "reason": "figure_hint_unmet",
+                        "missing_figures": missing_figs,
+                    })
         else:
             rejected.append({
                 "text": c.text[:120],
@@ -286,26 +309,6 @@ def verify_section_draft(
                 "best_ratio": round(best_score, 3),
                 "cited_chunk_ids": list(c.cited_chunk_ids),
             })
-        # variant-c: figure_ids hard hint (advisory)
-        if c.figure_ids:
-            import re as _re
-            missing_figs = []
-            for fid in c.figure_ids:
-                m = _re.match(r"Fig\.\s*(\d+)", fid)
-                if m:
-                    num = m.group(1)
-                    patterns = [rf"Fig\.\s*{num}", rf"图\s*{num}"]
-                else:
-                    patterns = [_re.escape(fid)]
-                if not any(_re.search(p, c.text) for p in patterns):
-                    missing_figs.append(fid)
-            if missing_figs:
-                # advisory only — record but still accept
-                rejected.append({
-                    "claim_text": c.text[:80],
-                    "reason": "figure_hint_unmet",
-                    "missing_figures": missing_figs,
-                })
     return accepted, rejected
 
 
