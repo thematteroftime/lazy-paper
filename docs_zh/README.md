@@ -2,6 +2,8 @@
 
 这里是 `docs/` 下英文文档的中文翻译。代码、文件路径、CLI 参数、env-var 名、英文技术术语（Strategy KL、KG、RAG、instructor、MinerU 等）保留英文以便对照源码。
 
+> **当前版本**：v1.11.1（2026-05-24）· 300 个测试通过 · v1.10 Variant C + v1.11 first-principles refactor + v1.11.1 4-bug-fix。详见 `INTERNAL/HANDOFF.md`。
+
 ## 用户文档
 
 | 文档 | 说明 |
@@ -14,24 +16,27 @@
 
 | 文档 | 说明 |
 |---|---|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统架构 —— 9 阶段流水线 + Strategy KL 详解 + 数据流图 |
+| [ARCHITECTURE.md](../docs/ARCHITECTURE.md) | 系统架构（已经是简体中文，权威版本在 `docs/` 下，单一来源） |
 | [AGENT_GUIDE.md](./AGENT_GUIDE.md) | 给 AI agent（Claude Code / Cursor / Copilot）维护本项目时的指南 |
 | [INTERNAL/HANDOFF.md](./INTERNAL/HANDOFF.md) | 生产交接 —— env vars、当前状态、上手 checklist |
 
-## 验证报告（按版本倒序）
+## 历史验证报告
 
-| 文档 | 说明 |
-|---|---|
-| [v1_8_2_corpus_validation.md](./v1_8_2_corpus_validation.md) | **当前**：10 论文语料 + 3-subagent 审计加固 |
-| [v1_8_validation_results.md](./v1_8_validation_results.md) | v1.8.1：KL 稳定性修复，地板从 1 抬到 12 |
-| [v1_7_validation_results.md](./v1_7_validation_results.md) | v1.7.0（历史）：KL 首次上线、方差暴露问题 |
+历史版本（v1.7 – v1.9.2）验证报告归档在 [`archive/`](./archive/) 子目录：
+
+- `v1_7_validation_results.md`
+- `v1_8_validation_results.md`、`v1_8_2_corpus_validation.md`
+- `v1_9_validation_results.md`、`v1_9_1_variance_check.md`、`v1_9_2_20_paper_validation.md`
+
+当前 v1.10 / v1.11 验证状态见 [`../docs/v1_10_variant_comparison.md`](../docs/v1_10_variant_comparison.md)（英文）以及 [`INTERNAL/HANDOFF.md`](./INTERNAL/HANDOFF.md) 的状态 banner。
 
 ## 仍为英文的文档
 
 以下保留在 `../docs/` 下、未翻译：
 
-- `v1_4_roadmap.md`, `v1_5_experimental_results.md`, `v1_5_test_cases.md`, `v1_6_strategy_j_design.md` —— 历史设计文档，仅作存档参考
-- `superpowers/`, `INTERNAL/superpowers/` —— Claude Code 工作流相关
+- `v1_10_external_reference.md`、`v1_10_variant_comparison.md` —— v1.10 ship-time 的外部参考与 variant 决策报告
+- `archive/v1_4_*` / `v1_5_*` / `v1_6_*` —— 历史设计与实验文档
+- `superpowers/`、`INTERNAL/superpowers/` —— Claude Code 工作流相关
 - `CHANGELOG.md` —— 项目根目录的 changelog（结构化 release notes）
 
 如果你需要其中任何一篇的中文版，提 issue 即可。

@@ -66,9 +66,23 @@ first stable of the v1.11 line.
 
 ### Tests
 
-307 collected (+11 vs v1.11.0): caption-stub filter ×2,
+300 collected (net +4 vs v1.11.0's 296): caption-stub filter ×2,
 headline_metrics ×3, author-chunk advisory/hard/false-positive ×3,
-Untitled localise ×1, plus the v1.11.0 bilingual regressions.
+Untitled localise ×1 (+11 new); 7 v1.10 variant-matrix tests removed
+when the scaffolding script set was deleted (see Docs cleanup below).
+
+### Docs cleanup (companion)
+
+17 stage-validation docs (v1.4 → v1.9.2) archived to `docs/archive/`
+and `docs_zh/archive/` (git history preserved). 5 stale v1.10 variant-
+matrix scripts deleted (`aggregate_*`, `collect_variant_metrics`,
+`recheck_baseline`, `run_variant_matrix`) + the paired test file —
+no live callers remained. `docs_zh/ARCHITECTURE.md` (v1.8 era,
+545 lines) deleted as superset-duplicate of `docs/ARCHITECTURE.md`
+(already in simplified Chinese, 906+ lines); `docs_zh/README.md`
+redirects. README + README.zh now include a real-data pipeline
+walkthrough showing meng2024 stage-by-stage data flow (v110 vs v111
+demos illustrate headline_metrics + caption-stub fixes).
 
 ## [1.10.0] — 2026-05-23
 

@@ -150,13 +150,21 @@ LAZY_PAPER_VERIFIER_THRESHOLD=0.85  # min quote-vs-chunk match score
 LAZY_PAPER_RETRY_THRESHOLD=0.5      # post-verify coverage ≤ X triggers one retry
 ```
 
+Optional advanced opt-in (v1.11.1):
+
+```
+LAZY_PAPER_AUTHOR_HARDREJECT=1      # promote author-not-in-chunk from advisory to hard reject
+                                    # default 0 = advisory; flip to 1 only after telemetry
+                                    # confirms precision on your corpus
+```
+
 Trade-offs:
 
 - **Cost**: best-of-N=2 roughly doubles s08 LLM spend (s08 is the most expensive stage). Per-paper cost goes from ~$0.60–1.20 to ~$0.90–1.80.
 - **Latency**: s08 takes about 1.7–2× longer.
 - **Quality**: the verifier rejects unsupported claims; the retry-when-empty trigger recovers comparator citations that the default composer can drop.
 
-Validated on the 10-paper corpus: mean coverage 15.0/17 on the meng2024 benchmark (floor 12, range 12–17 across three runs). See `docs/v1_8_2_corpus_validation.md` for the full table.
+Validated on the 18-paper v1.9.2 corpus + v1.10 9-paper variant test: **meng2024 T1 = 9/9/9 (stdev 0)** across three independent runs after informed-retry shipped in v1.9.0 (was floor 12, mean 15.0 in v1.8.1). Full data in `docs/archive/v1_9_validation_results.md` and `docs/v1_10_variant_comparison.md`.
 
 Leave these unset for the fast/cheap default composer — it produces good results on most papers and is half the cost.
 
@@ -258,7 +266,7 @@ This is usually a rendering artifact from very long bullet text.
      runs/<id>/s09_render/preview.pptx
    ```
 2. If bullets are too long, the section text in `s08_section_compose/chapters/` may have very long sentences. Re-run s08 with `--force` (the LLM is stochastic; a fresh call often produces shorter bullets).
-3. See `docs/PPT_KNOWN_ISSUES.md` for documented layout limitations and workarounds.
+3. For deeper PPT-layout debugging (per-slide audit, density caps, font fallback): run `uv run python scripts/audit_pptx.py runs/<id>/s09_render/preview.pptx` and inspect the per-slide flags.
 
 ### WeasyPrint segfaults on macOS
 

@@ -8,7 +8,7 @@
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
   <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.1-blue"></a>
-  <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-307%20passing-22c55e"></a>
+  <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-300%20passing-22c55e"></a>
   <a href="docs_zh/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
@@ -59,6 +59,198 @@ flowchart LR
 ```
 
 每个阶段写 `done.yaml`、可断点续跑；每次 LLM 调用持久化 prompt 与 response 供追溯。
+
+## 真实数据流动示例
+
+上面的架构图说明了形状，下面的示例说明了内容 —— 每一段都是 `runs/meng2024_v110_demo/` 的原样切片（ACS Appl. Mater. Interfaces 2024 的 NBT 基 RFE 论文）。读完一遍就知道自己的 PDF 会被如何处理。
+
+### s01 → s02 —— OCR、然后规范化
+
+**输入** `papers/meng2024.pdf`（16 页、含图）。MinerU 逐页返回 markdown，lazy-paper 拼成 `s01_ocr/doc_*.md`。
+
+```text
+runs/meng2024_v110_demo/s01_ocr/doc_5.md
+... $$$$
+where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
+```
+
+**这一步做什么。** s02 把 OCR 失败留下的空 `$$$$` 公式块、错位的多栏文本剔除成注释，正文不动。
+
+```text
+runs/meng2024_v110_demo/s02_clean/doc_5.md
+... <!-- corrupted-column-flow -->
+where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
+```
+
+**判断点。** 下游若拿到空 LaTeX 块，DOCX/PDF 渲染会直接报错；改成注释而不是静默删除，人工复查清洁化产物时可以一眼看到原本哪里有数据。
+
+### s03 —— 章节聚合
+
+**输入** 全部 `s02_clean/doc_*.md`。lazy-paper 识别 `# 1. INTRODUCTION`、`## 2. EXPERIMENTAL SECTION` 风格的标题，把连续页面聚成章节文件。
+
+**输出**
+
+```yaml
+# runs/meng2024_v110_demo/s03_chapter/chapter_index.yaml
+- chapter_no: 1
+  title: INTRODUCTION
+  file: chapter_001_INTRODUCTION.md
+  sources: [doc_0.md, doc_1.md, doc_10.md, doc_11.md]
+  chars: 14929
+- chapter_no: 5
+  title: RESULTS AND DISCUSSION
+  file: chapter_005_RESULTS_AND_DISCUSSION.md
+  sources: [doc_2.md, doc_3.md, doc_5.md, doc_6.md, doc_7.md, doc_8.md, doc_9.md]
+  chars: 22129
+```
+
+**判断点。** 每章记录其 source 页号，后续 s06/s08 检索可以把候选集限定在正确分块，而非全文搜索。
+
+### s04 —— 图、引用、表
+
+三份产物，下游都要用：
+
+```yaml
+# s04_figures/figures.yaml —— Fig. 1 entry
+- fig_id: Fig. 1
+  image_rel_path: imgs/img_mineru_005.jpg
+  caption: Schematic diagram of the synergistic optimization strategy ...
+  source_doc: doc_1.md
+
+# s04_figures/mentions.yaml —— 章节 ↔ 图 交叉索引
+chapter_005_RESULTS_AND_DISCUSSION.md:
+  - Fig. 2a
+  - Fig. 11
+  - Fig. 12
+  - Fig. 13
+  ...
+```
+
+**判断点 —— caption-stub 过滤（v1.11.1）。** 某些 OCR 切分会把无意义片段（`(a)`、`A high quality photo of a dog playing in a green field`）当成图 caption。v1.11.1 起，未通过 stub-detector 的 caption 在 s07 视觉 LLM 调用前就被剔除。在跨域 unCLIP 论文（`runs/hif_2_v111_demo/`）上，该过滤丢掉了 46 条图条目中的 2 条 —— `Fig. 43` 的两条 prompt-stub caption；v1.10 会白白浪费两次视觉 LLM 调用。
+
+### s05 —— 大纲模板
+
+**输入** 用户给的 `Table of Contents-Relaxor AFE-ZGY-HW.docx`（领域引导）。lazy-paper 把它解析成节点树，guidance 中的 `{paper.system}`、`{paper.figures}`、`{paper.key_terms}` 用 Jinja 风格占位。
+
+```yaml
+# s05_template/template.yaml
+- level: 1
+  title: Introduction
+  guidance: |
+    (Research background and motivation: {paper.system})
+    Antiferroelectrics
+    Describe the fundamental characteristics of antiferroelectrics (AFE): crystal
+    structure, P-E hysteresis loop, phase transition behavior ...
+    Identify which AFE category {paper.system} belongs to. Draw on key terms
+    {paper.keywords}.
+  hints: {needs_table: false, needs_figure: false}
+```
+
+**判断点。** 模板表达"这节应该讲什么"，占位会在 s06 的 `context.yaml` 上解析；同一份模板可以套用同领域的任意论文。
+
+### s06 —— Context + 11 类 KG
+
+**输入** s03 的标题、摘要、引言章节。**输出** 结构化论文资料卡 + 强类型小型知识图谱。
+
+```yaml
+# s06_context/context.yaml （v1.11.1）
+title: Superior Energy-Storage Performances ... AFE-like Na0.5Bi0.5TiO3-Based RFE ...
+system: (1-x)(Na0.3Bi0.38Sr0.28TiO3)-xBi(Mg0.5Zr0.5)O3 (x = 0.00 ... 0.20) ceramics
+abbreviations:
+  - {abbr: NBST, expansion: Na0.3Bi0.38Sr0.28TiO3}
+  - {abbr: BMZ,  expansion: Bi(Mg0.5Zr0.5)O3}
+  - {abbr: W_rec, expansion: recoverable energy density}
+key_terms: [antiferroelectric-like, relaxor ferroelectric, defect dipole, ...]
+headline_metrics:                              # ← v1.11.1 修复
+  flagship: 0.85(Na0.3Bi0.38Sr0.28TiO3)-0.15Bi(Mg0.5Zr0.5)O3
+  W_rec: '5.00'
+  η: '90.09'
+```
+
+```text
+# s06_context/paper_kg.parquet —— 35 个实体，24 条关系
+material  m_85NBST15BMZ   0.85(Na0.3Bi0.38Sr0.28TiO3)-0.15Bi(Mg0.5Zr0.5)O3
+dopant    d_BMZ           Bi(Mg0.5Zr0.5)O3
+parameter p_Wrec          W_rec
+value     v_main_Wrec     5.00
+unit      u_Jcm3          J/cm³
+# rel: m_85NBST15BMZ —[has_W_rec]→ v_main_Wrec
+```
+
+**判断点 —— headline_metrics（v1.11.1 修复）。** v1.11.1 之前，prompt 过长时摘要抽取会丢 `flagship / W_rec / η` 三段。新版 prompt 保留此块；v1.10 demo 的 `context.yaml` 在 `critical_questions:` 处截止，v1.11.1 demo 多出 `headline_metrics:`，下游 s08 可凭这三个数把引用 Fig 11d/e 的 claim 锁住。
+
+### s07 —— 视觉 LLM 处理每张图
+
+**输入** 每张图的裁剪图像 + caption + 周边文本。视觉 LLM（默认 Qwen-VL-Max）返回：visual summary、逐 claim 与周边文本的核对结果、批判性的 deep observation。
+
+```yaml
+# s07_figure_analyze/fig_notes.yaml —— Fig. 1 entry（节选）
+- fig_id: Fig. 1
+  visual_summary: 图像展示了从NBST到NBST-BMZ陶瓷的协同优化策略示意图 ...
+  text_claim_check:
+    - claim: BMZ complex ions lead to local disorder, increasing random field ...
+      verdict: supported
+      note: 图中"Regulating phase structure"用不同颜色和形状表示局域无序 ...
+    - claim: Defect dipoles inhibit orientation and growth of PNRs ...
+      verdict: supported
+      note: 右侧PNR图中明确画出"Defect dipoles"并标注其对PNR的钉扎作用 ...
+  deep_observation: |
+    存在潜在逻辑跳跃：例如，"Refining grain size"与"Reducing ΔG"之间缺乏直接因果链 ...
+    未体现BMZ掺杂如何具体诱导缺陷偶极子形成，这可能是机制链条中的隐含假设。
+```
+
+**判断点 —— 批判 vs 描述。** `deep_observation` 后续会过"批判 vs 描述"门：若全是描述性动词（`shows / depicts`）而无批判标记（`limitation / missing / should`），整段被拒绝、视觉 LLM 以更尖锐的 prompt 重试。
+
+### s08 —— Section composer（Strategy KL）
+
+**输入** s05 的模板节点 + s06 的 context+KG + s07 的图笔记 + s03 的章节文本。对每节：
+
+1. **Retriever** —— 稠密 embedding + BM25 经 RRF 融合，KG 实体重叠加权，取 top-k 分块。
+2. **Composer LLM** —— 写出结构化响应（`claims[]`），每条 claim 标明引用的 chunk id、figure id 和原文 quote。
+3. **Verifier** —— 经 LaTeX/OCR 规范化后逐条核对 `cited_quote` 是否真的出现在源 chunk；剔除幻觉引用。
+4. **Retry-when-empty** —— 校验后覆盖率低于阈值时触发一次加强提示的重试。
+
+```json
+// s08_section_compose/01-Introduction.structured.json （单条 claim）
+{
+  "text": "反铁电体（AFE）的特征在于其晶体结构中相邻偶极子呈反平行排列，在电场作用下发生场致相变，表现为双电滞回线（P-E loop）以及电流-电场（I-E）曲线中出现四个明显的电流峰 ...",
+  "cited_chunk_ids": [2],
+  "cited_quote": "the evolution of P−E loops from a slim and pinched shape to a double-like one but also the I−E curves with four distinct current peaks observed in AFE ceramics",
+  "figure_ids": []
+}
+```
+
+**判断点 —— figure_ids 硬约束（v1.10 Variant C）。** 凡引用了图的 claim 必须在此列出 `fig_id`。渲染阶段拒绝插入未出现在某条 claim `figure_ids` 中的图像，从机制上消除"Fig. 7 显示 X"而正文从未提到 Fig. 7 的一类幻觉。
+
+### s09 —— 渲染为 DOCX · PDF · HTML · PPTX
+
+结构化 claims 流入 Jinja HTML 模板；WeasyPrint 转 PDF；python-docx / python-pptx 走相同中间树写 Office 格式。
+
+```html
+<!-- runs/meng2024_v110_demo/s09_render/preview.html —— 一段实际渲染段落 -->
+<p class="body-paragraph">
+  仍需解决的开放问题包括：缺陷偶极子的原子尺度构型 ... 0.85NBST-0.15BMZ
+  虽在340 kV/cm下实现了优异的储能性能，包括高可恢复储能密度和高效率
+  （Fig. 11d–e），但该Eb（~340 kV/cm）仍属中等水平 ...
+</p>
+```
+
+**判断点 —— 引用标记按模式渲染或剥除。** `[span:...]` 标记默认剥除以保证散文干净；传 `--debug-citations` 暴露标记供来源审计。
+
+### 跨域防御 —— 模板对不上时
+
+有时用户拿 AFE 模板去跑完全不相关的论文。`runs/hif_2_v110_demo/` 就是这种场景：unCLIP 图像生成论文被硬套到 relaxor-AFE 大纲上。composer 检测到不匹配后，会在每个跑题章节开头插入显式的越界声明，而不是硬编铁电内容：
+
+```text
+runs/hif_2_v110_demo/s08_section_compose/chapters/05-Dielectric_Properties_of_Relax.md
+
+本论文《Hierarchical Text-Conditional Image Generation with CLIP Latents》的主题
+是文本条件图像生成，完全不涉及反铁电体或弛豫反铁电体的介电性能 ...
+在unCLIP框架中，扩散prior在成对比较中优于自回归prior：扩散prior的
+photorealism偏好为48.9% ± 3.1%，diversity为70.5% ± 2.8% ...
+```
+
+章节本身仍按论文真实内容写出；opener 告诉读者：这个章节标题来自模板、不代表论文主旨。
 
 ## 快速开始
 
@@ -143,7 +335,7 @@ uv run python -m cli run \
 | 渲染器 | `python-docx`、`python-pptx`、`weasyprint`、`jinja2` | 每种格式一个无状态渲染器 |
 | 配置 | `pyyaml`、`python-dotenv` | YAML 工件 + `.env` 凭证 |
 | HTTP | `requests` | OCR API 调用 |
-| 开发 | `pytest>=8` | 296 个测试 |
+| 开发 | `pytest>=8` | 300 个测试 |
 
 ## 质量守护
 
@@ -187,7 +379,7 @@ OCR：`OCR_BACKEND=mineru`（推荐识图密集）或 `OCR_BACKEND=paddleocr`。
 ## 测试
 
 ```bash
-uv run pytest -q          # 296 个测试
+uv run pytest -q          # 300 个测试
 uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 ```
 
@@ -198,7 +390,7 @@ uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
   author  = {thematteroftime},
   title   = {lazy-paper: PDF research papers to multi-format deep analysis},
   url     = {https://github.com/thematteroftime/lazy-paper},
-  version = {1.9.0},
+  version = {1.11.1},
   year    = {2026}
 }
 ```

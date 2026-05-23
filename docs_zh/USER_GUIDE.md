@@ -150,12 +150,19 @@ LAZY_PAPER_VERIFIER_THRESHOLD=0.85  # quote vs. chunk 的最小匹配分数
 LAZY_PAPER_RETRY_THRESHOLD=0.5      # post-verify 覆盖率 ≤ X 时触发一次 retry
 ```
 
+进阶 opt-in（v1.11.1）：
+
+```
+LAZY_PAPER_AUTHOR_HARDREJECT=1      # 把 author-not-in-chunk 从 advisory 升级为硬拒
+                                    # 默认 0 = advisory；只在自己语料上确认精度后才设 1
+```
+
 取舍：
 - **成本**：best-of-N=2 大致让 s08 的 LLM 开销翻倍（s08 是最贵的 stage）。单篇论文总成本从约 \$0.60–1.20 上升到约 \$0.90–1.80。
 - **延迟**：s08 大约慢 1.7–2 倍（多份草稿在能并行时会并行执行）。
 - **质量**：verifier 会拒掉缺乏依据的 claim；retry-when-empty 触发器会用一次强化的 LLM 调用，把 v1.7 之前会丢掉的 comparator 引用救回来。
 
-已在 10 论文 corpus 上验证：meng2024 benchmark 平均覆盖率 15.0/17（地板 12，3 次区间 12–17）。完整表见 `docs_zh/v1_8_2_corpus_validation.md`。
+已在 18 论文 v1.9.2 语料 + v1.10 9 论文 variant test 上验证：**自 v1.9.0 informed-retry 起，meng2024 T1 = 9/9/9（stdev 0）** 三次独立 run。完整数据见 `docs_zh/archive/v1_9_validation_results.md` 与 `docs/v1_10_variant_comparison.md`。
 
 只想跑快速/低成本的基线？保留这些变量不设置即可 —— 默认 composer 在多数论文上效果就够好，成本只有一半。
 
@@ -257,7 +264,7 @@ uv run python -m cli run ... --paper-id mypaper
      runs/<id>/s09_render/preview.pptx
    ```
 2. 如果 bullet 过长，可能是 `s08_section_compose/chapters/` 里某节的句子太长。用 `--force` 重跑 s08（LLM 本身有随机性，新的一次调用往往会产出更短的 bullet）。
-3. 参见 `docs/PPT_KNOWN_ISSUES.md` 了解已知排版限制和绕过办法。
+3. 深度调试 PPT 排版（逐页审计、密度上限、字体回退）：跑 `uv run python scripts/audit_pptx.py runs/<id>/s09_render/preview.pptx` 查看逐页 flag。
 
 ### macOS 上 WeasyPrint 段错误
 

@@ -1,6 +1,35 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 280/280 pass · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus** · **Last release:** v1.10.0 (2026-05-23)
+> **Status:** shipped · **Tests:** 300/300 pass (2 deselected `-m live`) · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit** · **Last release:** v1.11.1 (2026-05-24)
+>
+> **v1.11.1** lands 4 HIGH bug fixes caught by a cycle-11 sentence-level
+> audit (3 subagents cross-checking output vs source paper). v1.11.0
+> passed the architecture-review ship gate but did NOT push; v1.11.1 is
+> the first stable of the v1.11 line.
+>
+> - **Bug #1+#2 (flagship metric drift)** — meng2024 ch07/09/13/15 had
+>   three different W_rec values for the same flagship sample. Fix:
+>   extract `headline_metrics` from the KG (`mat_main --has_W_rec-->`)
+>   into `context.yaml` as a hard ground-truth block; prompt now
+>   instructs composer to use those exact numbers.
+> - **Bug #3 (author misattribution)** — meng2024 ch13 attributed
+>   Ma et al.'s result to Cao et al. Fix: post-verify advisory
+>   `author_not_in_chunk_advisory`; default advisory,
+>   `LAZY_PAPER_AUTHOR_HARDREJECT=1` promotes to hard reject.
+> - **Bug #4 (OCR text-prompt as physics figure)** — hif_2 ch15
+>   fabricated a critique of "图 43" which was actually an unCLIP
+>   appendix figure whose OCR'd caption was the literal generation
+>   prompt. Fix: two-layer caption-stub filter
+>   (`is_generation_prompt_caption`) at s04 + s07 defense-in-depth.
+> - **Bilingual regression prevention** — `cli.py` writes
+>   `meta.yaml.lang`; s07 emits stderr WARNING when `lang=zh` but the
+>   first 5 visual_summary entries are < 30 % CJK chars; s09 builder
+>   localises Untitled fallback chapter heading to "未命名章节".
+>
+> **v1.11.0** was a first-principles refactor (commit `a4d90ab`) that
+> cut 3 over-engineered modules from v1.10: cross-citation reject
+> (~40 LOC), figure-retry pass (~85 LOC), headline-metric prompt rule.
+> Rationale recorded in `docs/ARCHITECTURE.md` §11.
 >
 > **v1.10.0** ships **Variant C — figure_ids hard constraint**: schema-level
 > figure citation + figure-retry pass + env-gated whitelist. Picked from a
@@ -117,6 +146,8 @@ Docker users: `docker compose build && docker compose run --rm lazy-paper run --
 | `LAZY_PAPER_MIN_SECTION_CLAIMS` | No | `4` | Same as above but on claim count. Either condition triggers retry |
 | `LAZY_PAPER_HTML_CITATIONS` | No | `hyperlink` | HTML citation rendering: `hyperlink` (clickable per-claim anchors + sources footer), `keep`, or `remove` |
 | `LAZY_PAPER_FIGURE_BIND` | No | unset | `1` enables figure-section binding: for each section, the top-4 topically-relevant figures are surfaced in the compose prompt so the LLM doesn't cite an off-topic figure. Off by default; observed regression on meng2024 T1 when on, so use selectively. |
+| `LAZY_PAPER_FIGURE_ID_WHITELIST` | No | `1` (on) | v1.10. Verifier strips unknown `fig_id`s from accepted claims and replaces in-text `Fig. N` / `图N` with the lang-aware `UNKNOWN_FIGURE_LABEL`. Set `0` to revert to advisory-only. |
+| `LAZY_PAPER_AUTHOR_HARDREJECT` | No | `0` (advisory) | v1.11.1. When `1`, post-verify drops any claim whose author-surname mentions don't appear in any cited chunk text. Default is advisory (`author_not_in_chunk_advisory` recorded in `critic_flags.yaml`); promote to hard reject only after telemetry confirms precision on your corpus. |
 | `LAZY_PAPER_AGENT` | No | unset | `1` enables the experimental pydantic-ai tool-calling agent compose path |
 | `LAZY_PAPER_TWO_STEP` | No | unset | `1` enables the experimental outline→expand two-step compose path |
 | `LAZY_PAPER_WHOLE_PAPER` | No | unset | `1` injects the whole paper text into each section compose (high cost) |
@@ -192,7 +223,7 @@ DOCX + HTML are always produced. PDF / PPTX are produced only when the
 `--formats` flag includes them; the v181 corpus runs above produced docx+html
 only. Output path: `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}`.
 
-**Tests**: 280 (2 deselected `-m live`). Run with `uv run pytest -q`.
+**Tests**: 300 (2 deselected `-m live`). Run with `uv run pytest -q`.
 
 ---
 
@@ -246,7 +277,7 @@ If you are an LLM-driven coding agent picking up this repo:
 
 1. Read this file first.
 2. Read `docs/ARCHITECTURE.md` for the stage-by-stage contract.
-3. Read `docs/AGENT_GUIDE.md` for the AI-specific workflow (subagent patterns, when to dispatch, anti-patterns observed during the v1.0–v1.1 development).
+3. Read `docs/AGENT_GUIDE.md` for the AI-specific workflow (subagent patterns, when to dispatch, current best practices distilled from the v1.0 → v1.11 release cycle).
 4. Always run `uv run pytest -q` before and after any change.
 5. When extending the pipeline, follow the stage layout: `stages/sNN_<name>/runner.py` + `stages/sNN_<name>/tests/`. Register in `cli.py::STAGE_ORDER`.
 6. When extending PPT layout, edit `stages/s09_render/renderers/pptx.py` and bump the relevant `_PROMPT_VERSION` in `pptx_summarizer.py` if you change anything that affects LLM prompts (cache invalidation).
@@ -256,7 +287,16 @@ If you are an LLM-driven coding agent picking up this repo:
 
 ## 10. Release history
 
-- **v1.4 plan** (planning, 2026-05-20, rewritten after 2nd research pass): research-validated **4-step** roadmap in `docs/v1_4_content_roadmap.md`. Category-correct anchor projects: **Microsoft GraphRAG** (entity/KG grounding) + **ByteDance DeerFlow** (scoped sub-agent pattern) + **OpenScholar / AllenAI** (scientific self-reflective citation-grounded gen) + **agentic-rag-for-dummies** (LangGraph-shaped reference impl). Architecture: (1) PaperKG extractor (one LLM pass per paper, GraphRAG-stripped to single-doc mode); (2) hierarchical parent-child hybrid retriever (~200 LOC); (3) 15× section sub-agents with self-reflection retrieve-or-commit gate; (4) two-tier critic — Python regex first (numeric / Fig.N / chem-formula → grep source), LLM critic only if regex flags. **LangGraph still rejected** — lift the node-shape semantics ~150 LOC; no framework dep. Cost +50% per paper (regex tier does most verification for free). ~9 days; can split as v1.3.4 (steps 1+2+4a, 5 days) → v1.4.0 (steps 3+4b, 4 days). First draft (PaperQA2 / STORM / Sakana / DSPy) **dropped** — wrong categories. Awaiting maintainer greenlight.
+Full per-version details in `CHANGELOG.md`. Highlights:
+
+- **v1.11.1** (2026-05-24): 4 HIGH bug fixes from cycle-11 sentence-level audit (flagship metric drift, author misattribution, OCR text-prompt-as-figure, bilingual regression prevention). 300 tests.
+- **v1.11.0** (2026-05-23, not pushed): first-principles refactor (`a4d90ab`) — cut cross-citation reject, figure-retry pass, headline-metric prompt rule (3 over-engineered modules deleted). 297 tests.
+- **v1.10.0** (2026-05-23): Variant C — figure_ids hard constraint, picked from a 3-variant × 9-paper × 3-audit-cycle test. Hits 100% figure embedding on multi-figure papers; meng2024 T1 = 9/9/9 zero variance.
+- **v1.9.2** (2026-05-22): 8 high-impact bug fixes from a 2-auditor + 3-reviewer + 2-confirmation cycle; HTML clickable citations become default.
+- **v1.9.0** (2026-05-22): informed-retry — per-entity diagnosis with anchor tokens; meng2024 T1 stdev 2.6 → **0**.
+- **v1.8.x** (2026-05-21): Strategy KL becomes recommended default (LaTeX/OCR normalization in verifier, retry-when-empty post-verify); meng2024 T1 floor 1 → 12.
+- **v1.7 / v1.6 / v1.5** (2026-05-20 / 19): KL → J → strategy-matrix evaluation harness (`scripts/evaluate.py`), 4-step v1.4 plan executed.
+- **v1.4 plan** (planning, 2026-05-20, rewritten after 2nd research pass): research-validated **4-step** roadmap (archived `docs/archive/v1_4_roadmap.md`). Category-correct anchor projects: **Microsoft GraphRAG** + **ByteDance DeerFlow** + **OpenScholar / AllenAI** + **agentic-rag-for-dummies**. Architecture: PaperKG extractor + hierarchical parent-child hybrid retriever + 15× section sub-agents + two-tier critic.
 - **v1.3.3** (2026-05-20): dynamic section-divider layout. Per-bullet height measured from estimated wrap count; bullets placed cumulatively with constant 0.18" inter-bullet gap; card stretches from 4.5" to up to 5.4" when content needs it; font shrinks only as last resort. Also `_read_fig_notes` recovers caption/deep_observation from `raw` field via regex when s07 YAML defensive-parse failed (fixed ali2025_flash Fig. 28 blank-looking slide).
 - **v1.3.2** (2026-05-20): whitespace-vs-truncate audit. `_BULLET_CAP_TABLE` recalibrated so every density allows multi-line wrap (2-3 lines per bullet) rather than 1-line + ellipsis. Section-divider ellipsis rate dropped 42% → 2.9% across the 10-paper corpus while preserving the 4.5" card height — bullets now fill the available vertical room with content instead of leaving it blank.
 - **v1.3.1** (2026-05-20): hardening release. 8 PPT defects from per-slide audit fixed: `_combined` obs overlap, sparse-card autofit clip, single-obs space waste, caption-header 50/55-char cut, 7-bullet cap too tight, soft-accept on quant-validation failure (catastrophic for EN papers), Priority-3 fallback `[:60]` mid-word cut, chapter prompt lang directive, fallback obs 200-char truncation, exotic Unicode punctuation. Corpus expanded 4→10 papers (added fu2020 / ge2025 / chai2026 / pamula2025 / meng2024 / gaur2022). New `scripts/audit_pptx.py` per-slide validator. 189 tests.
@@ -266,3 +306,16 @@ If you are an LLM-driven coding agent picking up this repo:
 - **v1.2.0** (2026-05-19): two PPT visual bugs (Unicode subscript font fallback, KEY POINTS card overlap on ≥6 bullets) — resolved. `_math.py` collapses Latin Unicode subscripts to `_<plain>`; `_section_divider` scales font down at n_bullets≥6; `SlidePlanner._truncate_bullet` caps length. 164 tests.
 - **v1.1.0** (2026-05-19): outline LLM call max_tokens raised + env ceiling; chapter heading numbering unified; deep-observation font 11→13pt; CLI `--only` comma-split + unknown-stage validation; image-data-url helper consolidated; 158 tests.
 - **v1.0.0** (2026-05-18): initial public release. 4 output formats, 9-stage pipeline, docker + bare-metal install paths.
+
+---
+
+## 11. Audit trail (cycle 10 → 12)
+
+| Cycle | Date | Type | Headline finding |
+|---|---|---|---|
+| cycle 10 | 2026-05-22 | 5-paper variance check | v1.9.1 |
+| cycle 10b | 2026-05-22 | 18-paper validation | v1.9.2 — 8 bug fixes |
+| cycle 11 | 2026-05-23 | 3-variant × 9-paper matrix | v1.10.0 Variant C selected |
+| cycle 11b | 2026-05-23 | architecture review | v1.11.0 cut 3 modules |
+| cycle 11c | 2026-05-24 | sentence-level audit (3 subagents) | v1.11.1 — 4 HIGH bugs fixed |
+| cycle 12 | 2026-05-24 | Audit A/B/C/D docs review | Stale scripts/tests deleted, historical docs archived, v1.11.1 docs synced |

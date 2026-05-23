@@ -5,7 +5,7 @@
 ## 给 agent 的 TL;DR
 
 1. **不要动 `runs/`**，除非用户明确要求清理。它是已验证测试语料库。
-2. **任何改动前后都要跑 `uv run pytest -q`**。如果你弄坏了测试，就修复或回滚。应有 280 个用例通过；live-LLM 测试通过 `-m live` 门控。
+2. **任何改动前后都要跑 `uv run pytest -q`**。如果你弄坏了测试，就修复或回滚。应有 300 个用例通过（2 个 deselected `-m live`）；live-LLM 测试通过 `-m live` 门控。
 3. **用 `LLM_MAX_TOKENS_CEILING` 环境变量在测试运行中控成本**（例如冒烟测试用 `LLM_MAX_TOKENS_CEILING=4000`）。
 4. **不要绕过 `llm.client.max_tokens()`**。所有 LLM 调用都经过它。把硬编码的 `max_tokens=N` 改高是回退行为。
 5. **改 prompt 必须同步升 `_PROMPT_VERSION`**（在 `stages/s09_render/pptx_summarizer.py` 中，或其他 LLM 阶段的等价物）—— 否则缓存响应不会失效。
@@ -38,6 +38,7 @@
 2. **`s05_template` 内容哈希**：自 v1.2.1 起，`done.yaml` 记录 `template_sha256_16`，CLI 在源 docx 变化时自动让 s05 失效 —— 不需要 `--force`。**然而**下游阶段（s08、s09）在 s05 刷新时并不会自动失效；它们仍需 `--force`（或直接删除目录）才能拾取新的章节标题。
 3. **PPTX summarizer 的 LLM 缓存**（`s09_render/llm_cache/`）：键为 `_PROMPT_VERSION` + lang + 输入内容的 SHA-256。改动 prompt 语义时务必升版本常量。
 4. **`s06`/`s07`/`s08` 的审计文件**：每次运行都会写，但阶段的 `done.yaml` 会让整个阶段被跳过。用 `--force` 或删除阶段目录。
+5. **`runs/<paper_id>/meta.yaml`**（v1.11.1）：持久化该 run 的 `lang` 字段，外部 auditor / demo 脚本不必再 grep `fig_notes.yaml` 推断语言。不是缓存键，仅作单一信息源。
 
 如果某篇论文产出错误输出且你怀疑是缓存陈旧，最粗暴的修复是 `rm -rf runs/<paper_id>/{s05_template,s08_section_compose,s09_render}` 然后重跑。
 
@@ -181,6 +182,16 @@ agent 每节最多跑 8 次工具循环（`query_kg`、`retrieve`、`check_sourc
 
 CI 或自动化批跑中不要启用 `LAZY_PAPER_AGENT=1`，除非已在你自己的论文语料上审计过 agent 输出。
 
+### 开启 author-hardreject（v1.11.1）
+
+v1.11.1 新增的 author-not-in-chunk 检查（`stages/s08_section_compose/structured.py:470-497`）**默认是 advisory** —— 在 `critic_flags.yaml` 记录 `author_not_in_chunk_advisory`，claim 保留。要升级为硬拒（claim 引的作者姓氏没出现在任何 cited chunk 文本里就丢掉整条 claim）：
+
+```bash
+LAZY_PAPER_AUTHOR_HARDREJECT=1 uv run python -m cli run ...
+```
+
+只在你的语料上确认精度后才开启。默认 advisory 的原因是 v1.11.1 首轮 18 篇语料发现一些合法 paraphrase（如 "Ma 等人" 在 quote 里但不在逐字 chunk 切片里）。如果你的语料对作者引用要求严格，开启之。
+
 ### 引用渲染模式与 --debug-citations
 
 默认情况下，`[span:doc_X:Y-Z]` 引用标记会从 DOCX 和 HTML 输出中剥除（模式：`REMOVE`）。要保留它们做调试：
@@ -255,7 +266,7 @@ CONTRIBUTING.md                 # 贡献规范
 
 ## 工作完成后
 
-1. `uv run pytest -q` → 280 个通过，2 个 deselected。
+1. `uv run pytest -q` → 300 个通过，2 个 deselected。
 2. 至少 2 篇论文的端到端冒烟测试（用 `--only s09_render --force` 重跑）。
 3. 更新 `CHANGELOG.md` 的 Unreleased 小节。
 4. 用清晰的 commit message 提交（解释 *why*，而不只是 *what*）。

@@ -1,4 +1,4 @@
-# Quality Test Framework (v1.7+)
+# Quality Test Framework (v1.7+, last refreshed for v1.11.1)
 
 A reproducible evaluation harness for lazy-paper's section-composer
 strategies. Replaces the ad-hoc grep-based comparisons used during v1.5
@@ -106,33 +106,36 @@ A `verified_ratio` below 0.7 indicates the LLM is paraphrasing rather
 than copying — diagnostic but doesn't directly affect the test-case
 score.
 
-## Strategy scorecards (v1.6 / v1.7 results)
+## Strategy scorecards — current (v1.11.x)
 
-### meng2024 ch01 (T1)
+Strategy KL has shipped as the recommended default since v1.8.1; informed-retry (v1.9.0) drove T1 variance to zero; v1.10 Variant C added the figure_ids hard constraint and lifted T4. The current canonical numbers:
 
-| Strategy | Score / 17 | Notes |
+### meng2024 ch01 (T1, max 17)
+
+| Strategy / Version | Score / 17 | Notes |
 |---|---|---|
 | v1.3.3 baseline (full-context) | ~12 | Ground truth — no retrieval at all |
 | v1.4.2 default | 0 | No comparators recovered |
-| v1.5 E (post-hoc critic) | 6 (mean 4.5) | Critic adds them when KG has them |
 | v1.6 J (pre-injection) | 9 | Schema-constrained citations |
-| v1.7 K (best-of-N=2, v2 KG) | 1 | LLM avoids bare formulas without authors |
-| v1.7 L (KG-v3 author entities) | 9 | Authors lift attribution |
-| **v1.7 KL (KG-v3 + best-of-N=2)** | **13** 🏆 | Combined effect closes the gap |
+| v1.7 KL (KG-v3 + best-of-N=2) | 13 / 1 / 1 (mean 5) | Single-run peak but high variance |
+| v1.8.1 KL (verifier + retry fixes) | 12 / 17 / 16 (mean 15, floor 12) | Variance bug fixed |
+| **v1.9.0+ KL (informed-retry)** | **9 / 9 / 9 (stdev 0)** | Per-entity diagnosis instead of vague reminder; zero variance |
+| v1.10 Variant C (figure_ids hard constraint) | 9 / 9 / 9 (stdev 0) | T1 preserved; T4 broken on ali2025_flash (4 → 5) |
+| **v1.11.1 (4 HIGH bug fixes)** | **9 / 9 / 9 (stdev 0)** | No regression; flagship metric / author / OCR-prompt / lang fixed |
 
-### Other test cases
+Note: from v1.9 onward T1 = 9 (not 17). The earlier 12–17 range was an artifact of v1.8.x KL's stochastic recovery; informed-retry replaced that with deterministic recovery of the 9 high-confidence patterns and ceased over-counting fuzzy matches. The score floor lifted from 1 (v1.7 KL) to 9 (v1.9+) at the cost of giving up the lucky 13–17 peaks.
 
-| Strategy | yang2025 (T2) | meng2024 ch10 (T3) | ali2025_flash (T4) |
-|---|---|---|---|
-| J | 3/3 ✓ | 4/5 | 4/5 |
-| KL | (test pending) | 2/5 ⚠ | (test pending) |
+### Other test cases (v1.11.x current)
 
-⚠ on KL T3 indicates a regression in non-benchmark chapters — KL's
-focus on comparator citation in survey sections is achieved at the cost
-of less-detailed prose in synthesis/characterization sections. This is
-a known trade-off; if you're optimizing for ch01 benchmark recovery,
-KL is best; if you're optimizing for chapter-level depth uniformity, J
-is more balanced.
+| Test | Score | Notes |
+|---|---|---|
+| T2 (yang2025, fabrication resistance) | 3/3 ✓ | Stable since v1.7+ |
+| T3 (meng2024 ch10, synthesis specificity) | 4/5 ✓ | KL writes the method + grain data |
+| T4 (ali2025_flash, comparison-section depth) | **5/5** 🏆 | Variant C broke baseline 4 → 5 |
+| T5 (fu2020, generic baseline) | 3/4 ✓ | |
+| T6 (chai2026, generic baseline) | 4/4 ✓ | |
+
+Historical v1.6/v1.7 per-strategy scoreboard archived in `docs/archive/v1_7_validation_results.md` and `docs/archive/v1_8_validation_results.md`.
 
 ## Adding a new test case
 
@@ -191,5 +194,8 @@ quality ceiling.
    per strategy on each paper: promote to default
 
 This is the discipline that produced v1.4.2 (Strategy C as default
-from a 4-way comparison) and v1.6.0 (Strategy J as opt-in from variance
-analysis). v1.7 work should follow the same loop.
+from a 4-way comparison), v1.6.0 (Strategy J as opt-in from variance
+analysis), v1.8.1 (KL promoted to recommended default after stability
+fix), v1.9.0 (informed-retry → stdev 0), v1.10 (Variant C from a
+3-variant × 9-paper × 3-cycle audit), and v1.11.1 (4 HIGH fixes from
+cycle-11 sentence-level audit).

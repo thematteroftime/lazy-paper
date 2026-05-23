@@ -5,7 +5,7 @@ This document is written for an AI coding agent (Claude Code, Cursor, Copilot, e
 ## TL;DR for agents
 
 1. **Don't touch `runs/`** unless the user explicitly asks you to clean it. It's the verified-test corpus.
-2. **Always run `uv run pytest -q` before and after any change**. If you break tests, fix them or revert. 280 should pass; live-LLM tests are gated behind `-m live`.
+2. **Always run `uv run pytest -q` before and after any change**. If you break tests, fix them or revert. 300 should pass (2 deselected as `-m live`); live-LLM tests are gated behind `-m live`.
 3. **Use `LLM_MAX_TOKENS_CEILING` env var to cap spend** in test runs (e.g. `LLM_MAX_TOKENS_CEILING=4000` for fast smoke tests).
 4. **Don't bypass `llm.client.max_tokens()`**. All LLM calls go through it. Bumping a hardcoded `max_tokens=N` is a regression.
 5. **Prompt edits require `_PROMPT_VERSION` bumps** in `stages/s09_render/pptx_summarizer.py` (or equivalent in other LLM stages) — otherwise cached responses won't invalidate.
@@ -38,6 +38,7 @@ Four layers:
 2. **`s05_template` content hash**: since v1.2.1, `done.yaml` records `template_sha256_16` and the CLI auto-invalidates s05 when the source docx changes — no `--force` needed. **However**, downstream stages (s08, s09) don't auto-invalidate when s05 refreshes; they still need `--force` (or directory removal) to pick up the new chapter titles.
 3. **PPTX summarizer LLM cache** (`s09_render/llm_cache/`): keyed on SHA-256 of `_PROMPT_VERSION` + lang + input content. Bump the version constant when prompt semantics change.
 4. **`s06`/`s07`/`s08` audit files**: written every run but the stage's `done.yaml` causes the whole stage to skip. Use `--force` or delete the stage dir.
+5. **`runs/<paper_id>/meta.yaml`** (v1.11.1): persists `lang` for the run so external auditors / demo scripts can grep one source-of-truth instead of re-parsing `fig_notes.yaml`. Not part of the cache key; informational only.
 
 If a paper produces wrong output and you suspect cache staleness, the bluntest fix is `rm -rf runs/<paper_id>/{s05_template,s08_section_compose,s09_render}` then re-run.
 
@@ -181,6 +182,16 @@ The agent runs up to 8 tool cycles per section (`query_kg`, `retrieve`, `check_s
 
 Do not enable `LAZY_PAPER_AGENT=1` in CI or automated batch runs until the agent output has been audited on your specific paper corpus.
 
+### Opting into author-hardreject (v1.11.1)
+
+The v1.11.1 author-not-in-chunk check (`stages/s08_section_compose/structured.py:470-497`) is **advisory by default** — it records `author_not_in_chunk_advisory` in `critic_flags.yaml` but the claim survives. To promote it to a hard reject (drop the entire claim when the cited author surname doesn't appear in any cited chunk text):
+
+```bash
+LAZY_PAPER_AUTHOR_HARDREJECT=1 uv run python -m cli run ...
+```
+
+Use only after auditing your corpus for false positives. The default is advisory because v1.11.1's first 18-paper corpus turned up a handful of legitimate paraphrases (e.g. "Ma 等人" appearing in the quote but not the verbatim surrounded `chunk_text` slice). On stricter corpora where every author claim must be grounded in the literal cited chunk, flip it on.
+
 ### Citation render modes and --debug-citations
 
 By default, `[span:doc_X:Y-Z]` citation markers are stripped from DOCX and HTML output (mode: `REMOVE`). To expose them for debugging:
@@ -255,7 +266,7 @@ CONTRIBUTING.md                 # contribution norms
 
 ## When you're done
 
-1. `uv run pytest -q` → 280 pass, 2 deselected.
+1. `uv run pytest -q` → 300 pass, 2 deselected.
 2. End-to-end smoke on at least 2 papers (re-run `--only s09_render --force`).
 3. Update `CHANGELOG.md` Unreleased section.
 4. Commit with a clear message (explain the *why*, not just the *what*).

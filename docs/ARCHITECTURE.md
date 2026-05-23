@@ -2,7 +2,7 @@
 
 > 面向新人(包括未来 Claude session 和外部贡献者)的系统级参考。读完后无需阅读源码就能理解整个 pipeline 是怎么把一篇 PDF 论文变成多格式深度分析的。
 >
-> 本文档对应代码版本 **v1.11.0** (2026-05-23 之后)，297 个 pytest 测试，9 个 pipeline stage。
+> 本文档对应代码版本 **v1.11.1** (2026-05-24)，300 个 pytest 测试，9 个 pipeline stage。
 >
 > 安装、CLI 命令、provider 配置等请看 [README.md](../README.md) / [USER_GUIDE.md](USER_GUIDE.md)；本文档专注于 **「系统是怎么工作的」**。
 
@@ -224,6 +224,8 @@ FIG_MENTION_RE = re.compile(r"(?:Fig(?:ure)?\.?|图)\s*(\d+)([a-z])?", re.IGNORE
 
 `mentions.yaml` 是 `{chapter_filename: [Fig. 1, Fig. 3, ...]}` 倒排索引，给 s07 找 surrounding-text excerpt 用。
 
+**`is_generation_prompt_caption` (v1.11.1, `runner.py:28-56`)**：caption-stub 过滤器，丢掉 `(letter) A/An <curated descriptor> <medium> of …` 这种模式（典型例：DALL-E 论文 OCR 出来的字面 generation prompt `(a) A high quality photo of a dog playing in a green field next to a lake.` — hif_2 Fig 43 之前被 s07 当成物理图分析）。这是两层防御中的第一层；s07 还会再 skip 一次（见 §4.7）。curated descriptor list 严格，保住真实材料 caption (`"(a) SEM image of NBST"`) 不被误伤。
+
 ### 4.5 s05_template — 解析大纲 docx
 
 | 项 | 内容 |
@@ -258,6 +260,17 @@ claim, method, comparator, author  (author 是 v1.7 KG-v3 加的)
 
 **为什么这一步可能失败 (soft-degrade)**：LLM 可能 schema parse 失败、parquet write 失败、source 空。失败时落 `kg_extract.failed` marker，s08 检测到这个 marker 就 fall back 到 v1.3.3 legacy compose path。**KG 失败永远不让整个 pipeline 倒**。
 
+**Step 3 — headline_metrics 注入 (v1.11.1)**：runner 在 KG 构建成功后，从 `paper_kg` 抽 `mat_main --has_W_rec--> value` / `--has_eta-->` 关系，把 flagship sample 的核心数值打包成 `headline_metrics` block 写进 `context.yaml`，例如：
+
+```yaml
+headline_metrics:
+  flagship: "0.8Bi(Mg0.5Ti0.5)O₃-0.2BaTiO₃"
+  W_rec: 5.00
+  eta: 90.09
+```
+
+`llm/prompts/section_compose.md` 的 "FLAGSHIP GROUND TRUTH" block 直接消费这些数值，强约束 composer 用准确的 flagship 数字而不是 scavenge comparator chunk 的邻近值（修复 v1.10 meng2024 ch07/09/13/15 跨章节 W_rec 漂移）。实现见 `stages/s06_context/runner.py:73-86` + `kg_extract.py:61`。
+
 **Prompt 切换**：`LAZY_PAPER_KG_PROMPT=paper_kg_v3.md` 用 v3 prompt (11 类带 author)；默认 `paper_kg.md` (10 类无 author)。Strategy KL 必须用 v3，因为 compose prompt 依赖 `<Author> et al.` 引文形式。
 
 ### 4.7 s07_figure_analyze — 视觉 LLM 分析每张图
@@ -276,6 +289,10 @@ claim, method, comparator, author  (author 是 v1.7 KG-v3 加的)
 
 `LANG_INSTRUCTIONS` (`runner.py:53`)：双语切换 — 加新语言加一条。
 
+**v1.11.1 防护**：
+- **Caption-stub skip** (`runner.py:93-96`)：对 `is_generation_prompt_caption` 命中的 figure 直接跳过 vision-LLM 调用，作为 s04 过滤的 defense-in-depth (老 baseline 没跑过 s04 新 filter 的情况)。
+- **zh-ratio guard** (`runner.py:151+`)：当 `--lang zh` 但前 5 条 `visual_summary` CJK 字符占比 < 30%，stderr WARNING — 这是某些 vision LLM 静默忽略 `lang_instruction` 的信号（v1.10 baseline 7/15 篇出现过此污染，零检测）。
+
 ### 4.8 s08_section_compose — 上帝 stage
 
 详见 §5。简要：
@@ -292,6 +309,8 @@ claim, method, comparator, author  (author 是 v1.7 KG-v3 加的)
 3. 默认 fallback → `_legacy_compose` (prompt-stuffed)
 
 任何 path 失败都向下 fallback，永不 crash 整章 pipeline。
+
+**`reviewer.py` 两层架构**：compose 完成后，每节都过 `reviewer.regex_check()` (line 71) — Python regex 在 source chunk + KG 里 grep 4 类 flag (`numeric_not_in_source` / `fig_not_in_yaml` / `formula_not_in_kg` / `unit_mismatch`)，结果落 `critic_flags.yaml`。**只有当 regex tier 抛 ≥1 flag 时**，`llm_review()` (line 199) 才会触发一次 LLM critic 调用生成 `CritiqueRevision` (针对性改写)。两层 gate 让大部分 quality check 在零 LLM 成本下完成，LLM critic 只在 regex 已经定位到问题时启动。Strategy KL 的 verifier (§5.5) 和这套 reviewer 是正交的：verifier 在 compose path 内部做 claim-level 取舍 (拒/接受/advisory)，reviewer 是 post-compose 的旁路审计 + 选择性改写。
 
 ### 4.9 s09_render — 4 renderer 出最终文件
 
@@ -313,6 +332,8 @@ class Chapter:  heading, level, blocks  # blocks 是 Paragraph | FigureBlock | T
 ```
 
 **`DocumentBuilder.build()`** (`builder.py:22`)：把 markdown 字符串转换成 Document。**图绑定**逻辑在这里：`_is_referenced` (`builder.py:113`) 检测 `Fig. N` 或 `图N` / `图 N` 字面是否出现在章节正文里；命中则把这张图 embed 进 `FigureBlock`，且**每张图全文档只 embed 一次** (第一个引用它的章节赢)。
+
+**`_UNTITLED_FALLBACK` (v1.11.1, `builder.py:13`)**：`{"zh": "未命名章节", "en": "Untitled"}` — 当 markdown 缺少 H1/H2 heading 时按 `lang` 给章节填一个本地化兜底名（之前 zh 论文也会出现 "Untitled" 英文字面，与全文中文上下文断裂）。
 
 **4 个 renderer 都继承 `Renderer` (`renderers/base.py`)**：
 - `docx.py` — python-docx；中文 set East-Asia font 宋体；Times New Roman 西文。
@@ -482,6 +503,7 @@ Emit the SectionDraft JSON now.
 | **figure mention literal** — figure_ids 非空但 text 里没出现字面 "Fig. N" / "图N" | advisory (`figure_hint_unmet`) | line 438-454 |
 | **OOS chapter overflow** — 任一 claim 命中 OOS opener regex + accepted > 3 | 截断到前 3 条 | line 463-480 |
 | **results section thin numerics** — title 含 results/性能/结果 但 anchors < 2 + claims ≥ 3 | advisory (logged，不 reject) | line 482-495 |
+| **author-not-in-chunk** (v1.11.1) — claim 文本提到 "Author Y et al." / "Author 等" 但所有 cited_chunk_ids 的 chunk 文本里都没出现该 surname | 默认 advisory (`author_not_in_chunk_advisory`)；`LAZY_PAPER_AUTHOR_HARDREJECT=1` 升级为硬拒整条 claim | line 470-497 |
 
 **4-tier quote match (`_quote_in_chunk`, line 170)**：
 1. exact substring → 1.0
@@ -691,7 +713,6 @@ tests/                                        # 顶层：CLI + lib + harness
   test_retriever.py                          # BM25 + RRF + entity boost
   test_citation.py                           # [span:...] marker rendering
   test_evaluate_harness.py                   # scripts/evaluate harness
-  test_collect_variant_metrics.py
   test_common/                               # 重复测 stages/_common 部分公共 lib
     test_paths.py, test_bbox.py, test_yaml_io.py, test_done.py
 
@@ -732,7 +753,7 @@ markers = ["live: tests that call real LLM/OCR APIs (skipped by default; run via
 addopts = "-m 'not live'"
 ```
 
-`uv run pytest -q` 跑 **297 passing, 2 deselected (live)**，typical < 5 秒。`uv run pytest -m live` 才真打到 LLM/OCR endpoint。
+`uv run pytest -q` 跑 **300 passing, 2 deselected (live)**，typical < 5 秒。`uv run pytest -m live` 才真打到 LLM/OCR endpoint。
 
 ### 9.3 关键测试类别
 
@@ -761,6 +782,8 @@ addopts = "-m 'not live'"
 | `PADDLEOCR_TOKEN` | OCR_BACKEND=paddleocr 时必填 |
 | `LLM_VISION_API_KEY` | s07 vision LLM key (默认 DashScope) |
 | `LLM_TEXT_API_KEY` | s06/s08/s09 text LLM key (默认 DeepSeek) |
+
+**v1.11.1 — `meta.yaml.lang` 持久化** (`cli.py:262-266`)：每次 `lazy-paper run` 都把 `--lang` 写进 `runs/<paper_id>/meta.yaml`，方便外部 auditor/demo 脚本不读 `fig_notes.yaml` 也能知道这一 run 的 baseline 语言（v1.10 baseline-pollution 排查时的痛点 — 没有 single source of truth 看 run-lang）。
 
 ### 10.2 LLM endpoint 切换
 
@@ -806,7 +829,7 @@ LAZY_PAPER_MIN_SECTION_CLAIMS=4       # retry-when-short 触发的 claim 下限 
 LAZY_PAPER_VERIFIER_THRESHOLD=0.85    # quote-vs-chunk fuzzy match 阈值
 LAZY_PAPER_RETRY_THRESHOLD=0.5        # post-verify coverage ≤ 这个值触发 retry-when-empty
 LAZY_PAPER_REQUIRED_CAP=5             # 非 survey 章节 required-mention 上限
-LAZY_PAPER_REQUIRED_CAP_SURVEY=12     # survey 章节 (现仅文档化，runner 实际 hardcode 5)
+LAZY_PAPER_AUTHOR_HARDREJECT=0        # v1.11.1：author-not-in-chunk 默认 advisory；=1 升级为硬拒
 ```
 
 ### 10.7 retriever 调参
@@ -842,7 +865,7 @@ LAZY_PAPER_WHOLE_PAPER=1              # 跳过 retriever，直接喂全文 (Stra
 
 ## 11. v1.11 设计决策记录
 
-v1.11 是一次 **first-principles refactor** (commit `a4d90ab`)，主动**删掉**了 3 个 over-engineered 模块。理由记录于此以防未来重蹈覆辙。
+v1.11.0 是一次 **first-principles refactor** (commit `a4d90ab`)，主动**删掉**了 3 个 over-engineered 模块。v1.11.1 在 cycle 11 sentence-level audit 后补了 4 个 HIGH bug fix（v1.11.0 没 push，v1.11.1 是 v1.11 线第一个 stable）。理由记录于此以防未来重蹈覆辙。
 
 ### 11.1 cross-citation reject (cut)
 
@@ -875,6 +898,15 @@ cycle 5-7 加入并保留的：
 - DOMAIN MISMATCH OVERRIDE prompt 路径 (cycle 5)
 - `normalize_ocr_latex` BS3 (`\%` 等 LaTeX escape) + BS4 (`NFKD` super/subscript + Unicode dash 折叠) (cycle 2 Auditor 2)
 
+### 11.5 v1.11.1 — 4 个 HIGH bug fix (cycle 11)
+
+v1.11.0 通过了 architecture-review ship gate (hardcode scan + lang threading + test count)，但 cycle 11 sentence-level audit (3 个 subagent 交叉验证 output vs source paper) 又抓出 4 个 HIGH issue。v1.11.0 没有被 push；v1.11.1 是 v1.11 线第一个 stable。
+
+- **Bug #1+#2 — flagship metric 跨章节漂移**：meng2024 ch07/09/13/15 对同一 flagship sample 给出 3 个不同 W_rec 值。根因：s08 在 retrieval chunk 里 scavenge comparator 邻近数字。Fix：s06 从 KG 抽 flagship 的 `headline_metrics` 注入 `context.yaml`，prompt 在 "FLAGSHIP GROUND TRUTH" block 强约束 composer 用准值。见 §4.6 Step 3。
+- **Bug #3 — author misattribution**：meng2024 ch13 把 Ma et al. 的 La(Mg)-doped-NBT 结果错归到 Cao et al. (邻近 chunk 里的另一作者)。Fix：post-verify advisory `author_not_in_chunk_advisory`，默认 advisory，`LAZY_PAPER_AUTHOR_HARDREJECT=1` 升级为硬拒。见 §5.5 verifier table 末行。
+- **Bug #4 — OCR text-prompt 当物理图分析**：hif_2 ch15 对 "图 43" 输出捏造物理 critique，实际该图是 unCLIP appendix 的 generation prompt 字面 `(a) A high quality photo of a dog…`。Fix：`is_generation_prompt_caption` 双层过滤 (s04 + s07 defense-in-depth)。见 §4.4。
+- **Bilingual regression prevention** (Audit C)：`cli.py` 写 `meta.yaml.lang`；`s07` zh-ratio guard；`s09_render/builder.py` 本地化 `_UNTITLED_FALLBACK`。见 §4.7 / §4.9 / §10.1。
+
 ---
 
 ## 12. 已知限制 / v1.12 候选
@@ -899,8 +931,7 @@ CHANGELOG v1.10 "Deferred to v1.11" 还有未完工的：
 - 维护者交接: [`docs/INTERNAL/HANDOFF.md`](INTERNAL/HANDOFF.md)
 - v1.10 variant 对比报告: [`docs/v1_10_variant_comparison.md`](v1_10_variant_comparison.md)
 - v1.10 外部参考 (6 个 OSS 系统): [`docs/v1_10_external_reference.md`](v1_10_external_reference.md)
-- v1.6 Strategy J 设计: [`docs/v1_6_strategy_j_design.md`](v1_6_strategy_j_design.md)
-- v1.8 validation: [`docs/v1_8_validation_results.md`](v1_8_validation_results.md)
+- 历史版本验证报告 (v1.4–v1.9): [`docs/archive/`](archive/)
 - 测试框架细节: [`docs/TEST_FRAMEWORK.md`](TEST_FRAMEWORK.md)
 - 全量 changelog: [`CHANGELOG.md`](../CHANGELOG.md)
 - 第三方代码归属: [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)
