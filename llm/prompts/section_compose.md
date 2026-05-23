@@ -35,6 +35,7 @@ This paper's source has been OCR'd from PDF. Many numerical values, units, and c
 
 - Preserve EVERY numerical value, parameter, unit, and chemical formula from the source — do NOT round, summarize away, or generalize numbers.
 - Examples MUST keep specific values: "Wrec=8.6 J/cm³, η=85%" NOT "high energy density and efficiency".
+- **FLAGSHIP GROUND TRUTH**: if `paper_context` includes a `headline_metrics` block, those are the EXACT values for the paper's flagship sample. When you reference the flagship by name, you MUST use those numbers, NOT a value from a nearby comparator/cited work. Comparator works (e.g. "Cao et al.", "Ma et al.") have their own numbers; mixing the flagship's chemistry with a comparator's W_rec is the most common factual error and is forbidden.
 - Mathematical relationships: present in Unicode (η, σ, Δ, ε₀, μ, ², ³, ₐ, ᵦ, etc.), NOT LaTeX.
 - Reference figures BY NUMBER and panel labels: "如图3(c)所示" / "Fig. 3(c) shows" — not just "the figure".
 - Reference tables: "表1列出..." with the specific values.

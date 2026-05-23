@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.1] — 2026-05-24
+
+### Fixed — 4 HIGH bugs caught by cycle 11 sentence-level audit
+
+v1.11.0 passed the architecture-review ship gate (hardcode scan, lang
+threading, test count) but a follow-up precision audit (3 subagents
+cross-checking output vs source paper) caught 4 HIGH issues that
+surface-level checks missed. v1.11.0 was NOT pushed; v1.11.1 is the
+first stable of the v1.11 line.
+
+- **Bug #1+#2: Cross-chapter flagship-metric inconsistency**
+  (`stages/s06_context/{kg_extract,runner}.py`,
+  `llm/prompts/section_compose.md`). meng2024 ch07/09/13/15 emitted
+  three different W_rec values for the same flagship sample because
+  s08 was scavenging numbers from neighbouring comparator chunks. Fix:
+  extract the flagship sample's `headline_metrics` from the KG
+  (`mat_main --has_W_rec--> value`) and pipe them into `context.yaml`
+  as a hard ground-truth block; prompt now instructs the composer to
+  use those exact values for the flagship and never substitute
+  comparator numbers.
+
+- **Bug #3: Author misattribution in comparator citations**
+  (`stages/s08_section_compose/structured.py`). meng2024 ch13
+  attributed Ma et al.'s La(Mg1/2Zr1/2)O₃-doped-NBT result to Cao
+  et al. (a real author on a different mechanism appearing in a
+  neighbouring chunk). Fix: post-verify advisory check that flags any
+  claim whose author-surname mentions don't appear in any cited chunk.
+  Default mode is advisory (kept in `critic_flags.yaml` as
+  `author_not_in_chunk_advisory`); set `LAZY_PAPER_AUTHOR_HARDREJECT=1`
+  to promote to a hard rejection after telemetry confirms precision on
+  your corpus.
+
+- **Bug #4: OCR text-prompts analysed as physics figures**
+  (`stages/s04_figures/runner.py`, `stages/s07_figure_analyze/runner.py`).
+  hif_2 ch15 emitted a fabricated physics critique of "图 43", which
+  was actually an unCLIP appendix figure whose OCR'd caption was the
+  literal generation prompt `(a) A high quality photo of a dog playing
+  in a green field next to a lake.`. Fix: two-layer caption-stub
+  filter (`is_generation_prompt_caption`) drops `(letter) A/An
+  <curated descriptor> <medium> of` patterns at s04 (and again at s07
+  as defence-in-depth for older baselines). Tight regex with a curated
+  descriptor list keeps real materials captions ("(a) SEM image of
+  NBST", "(a) Cross-section TEM of grain") untouched.
+
+### Added — bilingual regression prevention (cycle 11 Audit C)
+
+- `cli.py` now writes the `lang` field to `meta.yaml` — auditors and
+  demo scripts can grep for baseline language without re-reading
+  every `fig_notes.yaml`.
+- `s07_figure_analyze` emits a stderr WARNING when `lang=zh` is
+  requested but the first 5 `visual_summary` entries are < 30 % CJK
+  chars (catches vision LLMs that silently ignored the
+  `lang_instruction` — root cause of the v1.10 baseline pollution
+  that affected 7/15 papers).
+- `s09_render/builder.py` localises the "Untitled" fallback chapter
+  heading to "未命名章节" for `lang=zh`.
+
+### Tests
+
+307 collected (+11 vs v1.11.0): caption-stub filter ×2,
+headline_metrics ×3, author-chunk advisory/hard/false-positive ×3,
+Untitled localise ×1, plus the v1.11.0 bilingual regressions.
+
 ## [1.10.0] — 2026-05-23
 
 ### Added — Variant C: figure_ids hard constraint (3-cycle audit-validated)

@@ -259,6 +259,11 @@ def main(argv: list[str] | None = None) -> int:
         "runs_dir": str(run_root.resolve()),
         "stages_completed": STAGE_ORDER,
         "duration_s": time.time() - t0,
+        # v1.11.1: persist `lang` so demo scripts and audits can verify
+        # baseline language without re-reading every fig_notes.yaml.
+        # Bug history: v1.10 baseline runs lacked this field, causing the
+        # 7/15-paper bilingual contamination found in cycle 11.
+        "lang": args.lang,
     }
     dump_yaml(run_root / paper_id / "meta.yaml", meta)
     _print_done_summary(paper_id, meta["duration_s"], run_root / paper_id / "s09_render")

@@ -460,6 +460,44 @@ def verify_section_draft(
                 "cited_chunk_ids": list(c.cited_chunk_ids),
             })
 
+    # v1.11.1 Bug #3: author-chunk consistency advisory. Cycle 11 Audit A
+    # caught meng2024 ch13 attributing "La(Mg1/2Zr1/2)O₃ … W_rec≈2.20" to
+    # "Cao et al." when the real source was Ma et al. (Cao appears in a
+    # neighbouring comparator chunk on a different mechanism). For each
+    # accepted claim, extract surname-style author mentions and check
+    # they appear in at least one of the claim's cited chunks. Default
+    # advisory-only (record in rejected, keep the claim) — set
+    # LAZY_PAPER_AUTHOR_HARDREJECT=1 to drop the claim entirely after
+    # telemetry from a v1.11.1 + corpus batch validates the precision.
+    import os as _os
+    _author_hard = _os.environ.get("LAZY_PAPER_AUTHOR_HARDREJECT") == "1"
+    if accepted:
+        survivors: list[GroundedClaim] = []
+        for c in accepted:
+            authors = {m.group(1).lower()
+                       for m in _ANCHOR_AUTHOR_RE.finditer(c.text)}
+            if not authors:
+                survivors.append(c)
+                continue
+            cited_blob = " ".join(
+                chunks_by_id[cid].text
+                for cid in c.cited_chunk_ids
+                if cid in chunks_by_id
+            ).lower()
+            missing = sorted(a for a in authors if a not in cited_blob)
+            if not missing:
+                survivors.append(c)
+                continue
+            rejected.append({
+                "claim_text": c.text[:80],
+                "reason": "author_not_in_chunk" if _author_hard
+                          else "author_not_in_chunk_advisory",
+                "missing_authors": missing,
+            })
+            if not _author_hard:
+                survivors.append(c)
+        accepted = survivors
+
     # P1 (Cycle 6 Meta + Parallel B): chapter-level OOS cap. Once ANY
     # claim fires the OOS-opener pattern ("源论文未涉及" / "the source
     # paper does not address"), the entire chapter is treated as OOS:

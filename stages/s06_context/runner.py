@@ -68,10 +68,9 @@ def run(*, chapters_dir: Path, out_dir: Path) -> dict:
         encoding="utf-8",
     )
     data = safe_parse_yaml(response.content) or {}
-    dump_yaml(out_dir / "context.yaml", data)
 
     # v1.4: KG sub-step (soft-degrade)
-    from stages.s06_context.kg_extract import build_paper_kg
+    from stages.s06_context.kg_extract import build_paper_kg, extract_headline_metrics
     kg = build_paper_kg(chapters_dir=chapters_dir, out_dir=out_dir)
     extra = {"tokens": response.usage.get("total_tokens")}
     if kg is None:
@@ -79,5 +78,13 @@ def run(*, chapters_dir: Path, out_dir: Path) -> dict:
     else:
         extra["kg_entities"] = len(kg.entities)
         extra["kg_relations"] = len(kg.relations)
+        # v1.11.1 Bug #1+#2: pipe flagship headline metrics into context.yaml
+        # so s08 sees them in {paper_context} and the LLM stops scavenging
+        # comparator values when discussing the main sample.
+        headline = extract_headline_metrics(kg)
+        if headline:
+            data["headline_metrics"] = headline
+
+    dump_yaml(out_dir / "context.yaml", data)
     mark_done(out_dir, extra)
     return data

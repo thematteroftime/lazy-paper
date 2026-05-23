@@ -58,6 +58,44 @@ def _extract_via_llm(system: str, user: str) -> PaperKG:
     )
 
 
+def extract_headline_metrics(kg: PaperKG) -> dict[str, str]:
+    """Pick the flagship sample's key metrics out of the KG.
+
+    Returns {'flagship': formula, 'W_rec': '5.00 J/cm^3', 'eta': '90.09 %', ...}
+    or {} if no flagship material is identified.
+
+    Why: v1.10 baseline had a meng2024 cross-chapter inconsistency where
+    ch07/09/13/15 quoted three different W_rec values for the same flagship
+    sample (5.00, 4.50, 2.94) because the section composer pulled numbers
+    from neighbouring comparator citations. The KG already captures the
+    correct `mat_main --has_W_rec--> 5.00` relation; piping it into
+    `context.yaml` (consumed by the s08 prompt) gives the LLM a single
+    source of truth instead of letting it scavenge values from chunks.
+    """
+    materials = [e for e in kg.entities if e.type == "material"]
+    if not materials:
+        return {}
+    # Prefer the canonical `mat_main` id; otherwise fall back to the
+    # first material entity. The prompt sets `mat_main` for the flagship.
+    main = next((m for m in materials if m.id == "mat_main"), materials[0])
+    val_by_id = {e.id: e for e in kg.entities if e.type == "value"}
+    unit_by_id = {e.id: e for e in kg.entities if e.type == "unit"}
+    val_to_unit_id = {r.subject: r.object for r in kg.relations
+                      if r.predicate == "has_unit"}
+
+    out: dict[str, str] = {"flagship": main.text}
+    for r in kg.relations:
+        if r.subject != main.id or not r.predicate.startswith("has_"):
+            continue
+        key = r.predicate.removeprefix("has_")
+        val = val_by_id.get(r.object)
+        if not val:
+            continue
+        unit = unit_by_id.get(val_to_unit_id.get(val.id, ""))
+        out[key] = f"{val.text} {unit.text}".strip() if unit else val.text
+    return out
+
+
 def build_paper_kg(*, chapters_dir: Path, out_dir: Path) -> PaperKG | None:
     """Returns the KG on success, None on failure (writes `kg_extract.failed`).
 

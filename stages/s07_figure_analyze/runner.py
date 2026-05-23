@@ -9,6 +9,7 @@ import yaml
 
 from llm.client import LLM, max_tokens
 from stages._common import dump_yaml, mark_done, safe_parse_yaml
+from stages.s04_figures.runner import is_generation_prompt_caption
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "figure_analyze.md"
 # Canonical fig_id is "Fig. N" / "Fig. Na" (set by s04 _normalize_fig_id).
@@ -89,6 +90,11 @@ def run(*, figures_dir: Path, chapters_dir: Path, context_dir: Path, out_dir: Pa
         entries = by_fig[fid]
         # Use the longest caption among the entries as canonical
         caption = max((e.get("caption", "") for e in entries), key=len, default="")
+        # v1.11.1 Layer B: skip vision LLM for generation-prompt captions
+        # that s04 missed (e.g. older figures.yaml extracted before the
+        # s04 filter existed). No notes entry; downstream sees nothing.
+        if is_generation_prompt_caption(caption):
+            continue
         excerpts = _excerpts(chapters_dir, mentions, fid)
         # Collect all image paths (sub-panels)
         img_paths: list[Path] = []
@@ -142,6 +148,20 @@ def run(*, figures_dir: Path, chapters_dir: Path, context_dir: Path, out_dir: Pa
             parsed["image_abs_path"] = str(img_paths[0]) if img_paths else ""
             notes.append(parsed)
 
+    # v1.11.1: zh-ratio guard against silent lang-instruction drift. When
+    # --lang zh is requested but a curated sample of visual_summary text
+    # contains <30% CJK chars, the LLM ignored the lang_instruction (e.g.
+    # old prompts hardcoded "in English"). Warn so the user knows the
+    # baseline is polluted and re-extracts if needed.
+    if lang == "zh" and notes:
+        sample = " ".join(str(n.get("visual_summary", ""))[:200] for n in notes[:5])
+        if sample:
+            cjk = sum(1 for c in sample if "一" <= c <= "鿿")
+            ratio = cjk / max(1, len(sample))
+            if ratio < 0.3:
+                print(f"[s07] WARNING: lang=zh requested but visual_summary "
+                      f"sample is {ratio:.0%} CJK (expected ≥30%). "
+                      "Prompt may have leaked English instruction.")
     dump_yaml(out_dir / "fig_notes.yaml", notes)
-    mark_done(out_dir, {"figures": len(notes)})
+    mark_done(out_dir, {"figures": len(notes), "lang": lang})
     return {"figures": len(notes)}

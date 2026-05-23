@@ -618,6 +618,67 @@ def test_anchor_author_loose_whitespace():
     assert "Tang" in _claim_anchors("Tang et al. proposed")
 
 
+def test_author_chunk_advisory_default(monkeypatch):
+    """v1.11.1 Bug #3: by default, a claim attributing work to an author
+    whose surname doesn't appear in any cited chunk is recorded as advisory
+    (kept in accepted) — captures the meng2024 ch13 'Cao 等人' case for
+    review without dropping content."""
+    monkeypatch.delenv("LAZY_PAPER_AUTHOR_HARDREJECT", raising=False)
+    chunks = {0: Chunk(id="c0", text="Ma et al. reported W_rec=7.5 J/cm³",
+                       doc_name="d", char_start=0, char_end=40)}
+    draft = SectionDraft(claims=[
+        GroundedClaim(text="Cao 等人 report W_rec=2.20", cited_chunk_ids=[0],
+                      cited_quote="Ma et al. reported"),
+        GroundedClaim(text="Ma et al. report W_rec=7.5", cited_chunk_ids=[0],
+                      cited_quote="Ma et al. reported"),
+    ])
+    accepted, rejected = verify_section_draft(draft, chunks, ratio_threshold=0.85)
+    advisory = [r for r in rejected
+                if r.get("reason") == "author_not_in_chunk_advisory"]
+    assert len(advisory) == 1
+    assert advisory[0]["missing_authors"] == ["cao"]
+    # Both claims remain accepted under advisory mode (telemetry, not block)
+    assert len(accepted) == 2
+
+
+def test_author_chunk_hardreject_when_env_set(monkeypatch):
+    """LAZY_PAPER_AUTHOR_HARDREJECT=1 promotes the advisory to a hard
+    rejection — claim is dropped from `accepted`."""
+    monkeypatch.setenv("LAZY_PAPER_AUTHOR_HARDREJECT", "1")
+    chunks = {0: Chunk(id="c0", text="Ma et al. reported W_rec=7.5",
+                       doc_name="d", char_start=0, char_end=30)}
+    draft = SectionDraft(claims=[
+        GroundedClaim(text="Cao 等人 report W_rec=2.20", cited_chunk_ids=[0],
+                      cited_quote="Ma et al. reported"),
+        GroundedClaim(text="Ma et al. report W_rec=7.5", cited_chunk_ids=[0],
+                      cited_quote="Ma et al. reported"),
+    ])
+    accepted, rejected = verify_section_draft(draft, chunks, ratio_threshold=0.85)
+    hard = [r for r in rejected if r.get("reason") == "author_not_in_chunk"]
+    assert len(hard) == 1
+    accepted_texts = [c.text for c in accepted]
+    assert "Cao 等人 report W_rec=2.20" not in accepted_texts
+    assert "Ma et al. report W_rec=7.5" in accepted_texts
+
+
+def test_author_chunk_passes_when_surname_in_chunk(monkeypatch):
+    """A claim mentioning an author whose name DOES appear in a cited
+    chunk must not be flagged — guards against false positives."""
+    monkeypatch.delenv("LAZY_PAPER_AUTHOR_HARDREJECT", raising=False)
+    chunks = {0: Chunk(id="c0", text="As Smith et al. reported in [12], the W_rec is 5.0",
+                       doc_name="d", char_start=0, char_end=60)}
+    draft = SectionDraft(claims=[
+        GroundedClaim(text="Smith et al. found W_rec=5.0", cited_chunk_ids=[0],
+                      cited_quote="Smith et al. reported"),
+        GroundedClaim(text="A claim with no author mention.", cited_chunk_ids=[0],
+                      cited_quote="reported in"),
+    ])
+    accepted, rejected = verify_section_draft(draft, chunks, ratio_threshold=0.85)
+    assert not any(r.get("reason", "").startswith("author_not_in_chunk")
+                   for r in rejected)
+    assert len(accepted) == 2
+
+
 def test_dedup_anchors_unit_aware_no_false_collision():
     """Cycle 5 A3: same author + same number but different unit must
     NOT collide (e.g., 'Li 5 GPa' fracture vs 'Li 5 J/cm³' energy)."""

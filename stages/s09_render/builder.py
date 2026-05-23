@@ -10,6 +10,9 @@ from stages.s09_render.model import (
 )
 
 
+_UNTITLED_FALLBACK = {"zh": "未命名章节", "en": "Untitled"}
+
+
 class DocumentBuilder:
     """Pure transform: markdown + fig_notes → Document. No IO."""
 
@@ -54,11 +57,10 @@ class DocumentBuilder:
         blocks.extend(self._collect_referenced_figures(body, fig_notes, embedded))
         return Chapter(heading=heading, level=level, blocks=tuple(blocks))
 
-    @staticmethod
-    def _parse_heading(lines: list[str]) -> tuple[str, int, int]:
+    def _parse_heading(self, lines: list[str]) -> tuple[str, int, int]:
         if lines and lines[0].startswith("# "):
             return lines[0][2:].strip(), 1, 1
-        return "Untitled", 1, 0
+        return _UNTITLED_FALLBACK.get(self.lang, _UNTITLED_FALLBACK["zh"]), 1, 0
 
     def _split_paragraphs(self, body: str):
         for para in body.split("\n\n"):

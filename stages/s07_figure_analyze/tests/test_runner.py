@@ -98,3 +98,41 @@ def test_run_multi_panel_grouping(tmp_path: Path):
     notes = yaml.safe_load((out_dir / "fig_notes.yaml").read_text(encoding="utf-8"))
     assert len(notes) == 1
     assert len(notes[0]["image_paths"]) == 2
+
+
+def test_generation_prompt_caption_skips_llm(tmp_path: Path):
+    """v1.11.1 Bug #4 Layer B: figures.yaml entries with CLIP-style
+    captions (e.g. hif_2 Fig. 43 dog photo) bypass the vision LLM
+    so they don't reach s08 prompts and pollute the chapters."""
+    figs_dir = tmp_path / "figs"; figs_dir.mkdir()
+    real = figs_dir / "real.jpg"; real.write_bytes(b"\xff\xd8\xff\xe0")
+    stub = figs_dir / "stub.jpg"; stub.write_bytes(b"\xff\xd8\xff\xe0")
+    (figs_dir / "figures.yaml").write_text(yaml.safe_dump([
+        {"fig_id": "Fig. 1", "image_rel_path": "real.jpg",
+         "image_abs_path": str(real), "caption": "P-E hysteresis loops",
+         "source_doc": "doc_0.md"},
+        {"fig_id": "Fig. 43", "image_rel_path": "stub.jpg",
+         "image_abs_path": str(stub),
+         "caption": "(a) A high quality photo of a dog playing in a green field.",
+         "source_doc": "doc_0.md"},
+    ], allow_unicode=True), encoding="utf-8")
+    (figs_dir / "mentions.yaml").write_text(yaml.safe_dump({}, allow_unicode=True), encoding="utf-8")
+    chapters_dir = tmp_path / "ch"; chapters_dir.mkdir()
+    context_dir = tmp_path / "ctx"; context_dir.mkdir()
+    (context_dir / "context.yaml").write_text("title: t\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    fake_llm = MagicMock()
+    fake_llm.chat.return_value = MagicMock(
+        content="fig_id: Fig. 1\nvisual_summary: x\ntext_claim_check: []\ndeep_observation: x\ncaption: x\n",
+        usage={"total_tokens": 50}, model="qwen-vl", latency_ms=10.0,
+    )
+    with patch("stages.s07_figure_analyze.runner.LLM", return_value=fake_llm):
+        run(figures_dir=figs_dir, chapters_dir=chapters_dir,
+            context_dir=context_dir, out_dir=out_dir)
+
+    assert fake_llm.chat.call_count == 1, "Fig. 43 must skip the LLM"
+    notes = yaml.safe_load((out_dir / "fig_notes.yaml").read_text(encoding="utf-8"))
+    fids = {n.get("fig_id") for n in notes}
+    assert "Fig. 1" in fids
+    assert "Fig. 43" not in fids, f"generation-prompt fig must be skipped; got {fids}"

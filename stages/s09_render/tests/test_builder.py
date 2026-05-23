@@ -15,6 +15,18 @@ def test_builder_splits_paragraphs_on_double_newline():
     assert [p.text for p in paragraphs] == ["first para", "second para"]
 
 
+def test_builder_untitled_fallback_localized():
+    """v1.11.1: chapter without a leading `# Title` falls back to a
+    language-aware string ('Untitled' for en, '未命名章节' for zh)."""
+    builder_zh = DocumentBuilder(lang="zh", paper_title="t")
+    doc_zh = builder_zh.build(chapters_md={"01.md": "no heading body\n"}, fig_notes=[])
+    assert doc_zh.chapters[0].heading == "未命名章节"
+
+    builder_en = DocumentBuilder(lang="en", paper_title="t")
+    doc_en = builder_en.build(chapters_md={"01.md": "no heading body\n"}, fig_notes=[])
+    assert doc_en.chapters[0].heading == "Untitled"
+
+
 def test_builder_attaches_referenced_figures_by_english_id():
     builder = DocumentBuilder(lang="en", paper_title="t")
     doc = builder.build(

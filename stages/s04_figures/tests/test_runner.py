@@ -309,6 +309,50 @@ def test_single_bbox_figure_still_produces_merged_jpg(tmp_path: Path):
     assert fig1.get("merged_from"), "merged_from should list source bbox"
 
 
+def test_generation_prompt_caption_filter():
+    """v1.11.1 Bug #4: CLIP/unCLIP appendix figures with caption like
+    '(a) A high quality photo of a dog' are not real research figures
+    and must be dropped before reaching the vision LLM."""
+    from stages.s04_figures.runner import is_generation_prompt_caption
+    # CASE: hif_2 Fig. 43 verbatim
+    assert is_generation_prompt_caption(
+        "(a) A high quality photo of a dog playing in a green field next to a lake."
+    )
+    # Variants
+    assert is_generation_prompt_caption("(b) An impressionist painting of Times Square at night")
+    assert is_generation_prompt_caption("(c) A vibrant portrait painting of Salvador Dali")
+    assert is_generation_prompt_caption("A photorealistic rendering of a cat on a skateboard")
+    # MUST NOT drop real captions
+    assert not is_generation_prompt_caption("Fig. 1. P-E hysteresis loops of NBST ceramics")
+    assert not is_generation_prompt_caption("(a) SEM image of NBST")
+    assert not is_generation_prompt_caption("(a) Temperature dependence of dielectric constant")
+    assert not is_generation_prompt_caption(
+        "Random samples from unCLIP for prompt 'A teddybear on a skateboard in Times Square.'"
+    )
+    assert not is_generation_prompt_caption("")
+
+
+def test_generation_prompt_figure_dropped_from_yaml(tmp_path: Path):
+    """Bug #4 end-to-end: an img paired with a generation-prompt caption
+    must NOT appear in figures.yaml."""
+    src = tmp_path / "src"; (src / "imgs").mkdir(parents=True)
+    (src / "imgs" / "real.jpg").write_bytes(b"\xff")
+    (src / "imgs" / "stub.jpg").write_bytes(b"\xff")
+    (src / "doc_0.md").write_text(
+        '<img src="imgs/real.jpg">\n\nFig. 1. SEM image of NBST.\n\n'
+        '<img src="imgs/stub.jpg">\n\n'
+        "Fig. 43. (a) A high quality photo of a dog playing in a green field.\n",
+        encoding="utf-8",
+    )
+    chapters_dir = tmp_path / "ch"; chapters_dir.mkdir()
+    out_dir = tmp_path / "out"
+    run(docs_dir=src, chapters_dir=chapters_dir, out_dir=out_dir)
+    figs = yaml.safe_load((out_dir / "figures.yaml").read_text(encoding="utf-8"))
+    fig_ids = {f.get("fig_id") for f in figs}
+    assert "Fig. 1" in fig_ids, "real figure must be kept"
+    assert "Fig. 43" not in fig_ids, f"generation-prompt figure must be dropped; got {fig_ids}"
+
+
 def test_chinese_fig_caption_matched():
     """v1.11 cross-domain: 图N caption + 图N mention must be detected
     by s04 regexes, previously English-only."""

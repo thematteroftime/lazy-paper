@@ -25,6 +25,36 @@ TAB_CAP_RE = re.compile(
 )
 FIG_MENTION_RE = re.compile(r"(?:Fig(?:ure)?\.?|图)\s*(\d+)([a-z])?", re.IGNORECASE)
 
+# v1.11.1: drop generation-prompt-style captions that slip in from
+# text-to-image papers (CLIP / unCLIP appendix figures). Caught case:
+# hif_2 Fig. 43 caption "(a) A high quality photo of a dog playing
+# in a green field next to a lake." was being LLM-analyzed as a real
+# physics figure. Anchored on the explicit `(letter) A/An <descriptor>
+# <medium> of <noun>` template; real materials captions don't use
+# this article+adjective+medium structure.
+GENERATION_PROMPT_RE = re.compile(
+    r"^\s*"
+    # OPTIONAL sub-panel label, parens required so we don't consume the
+    # leading article "A" of a no-label prompt as a sub-panel letter
+    r"(?:\([a-zA-Z]\)\.?\s+)?"
+    r"An?\s+"
+    # at least one curated descriptor (anchors the prompt-style signal)
+    r"(?:high\s+quality|highly\s+detailed|detailed|impressionist|professional|"
+    r"clean|stunning|beautiful|colorful|black\s+and\s+white|oil|watercolor|"
+    r"realistic|hyper(?:realistic)?|cinematic|vintage|abstract|minimalist|"
+    r"vibrant|photorealistic)\s+"
+    # optionally up to 2 connector words ("portrait", "close-up", etc.)
+    r"(?:\w+\s+){0,2}"
+    r"(?:photo(?:graph)?|painting|drawing|illustration|portrait|picture|sketch|"
+    r"rendering|render)\s+of\b",
+    re.IGNORECASE,
+)
+
+
+def is_generation_prompt_caption(caption: str) -> bool:
+    """True iff `caption` looks like a CLIP/unCLIP text-to-image prompt example."""
+    return bool(caption and GENERATION_PROMPT_RE.match(caption))
+
 
 def _normalize_fig_id(raw: str) -> str:
     """Normalize any 'Fig N' / 'Figure N' / '图 N' form to canonical 'Fig. N'."""
@@ -312,6 +342,8 @@ def run(*, docs_dir: Path, chapters_dir: Path, out_dir: Path,
                     best_dist = dist
                     best_fid = fid
                     best_cap = cap
+            if is_generation_prompt_caption(best_cap):
+                continue
             figures.append({
                 "fig_id": best_fid or f"_unmatched_{Path(rel).stem}",
                 "image_rel_path": rel,
