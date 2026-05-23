@@ -32,3 +32,4 @@ mypaper/
 .worktrees/
 
 .claude/
+.coverage
