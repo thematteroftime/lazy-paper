@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-05-23
+
+### Added — Variant C: figure_ids hard constraint (3-cycle audit-validated)
+
+Picks the winner of the v1.10 variant test (3 variants × 9 papers + 2 HIF
+extended corpus = 33 LLM runs across 3 git worktrees). Full report:
+`docs/v1_10_variant_comparison.md`.
+
+- **`GroundedClaim.figure_ids: list[str]`** — schema field tells s09
+  binding which figures the claim cites. Default `[]` (back-compat).
+- **`_STRUCTURED_SYSTEM` prompt** adds "Figure citation requirement"
+  section: for every figure listed in section_figures, write one claim
+  with `figure_ids=["Fig. N"]` and the literal "Fig. N"/"图N" in text.
+- **`verify_section_draft` advisory** — when an accepted claim's
+  figure_ids don't appear literally in the text, an advisory entry
+  (reason=`figure_hint_unmet`) is recorded; the claim is still kept.
+- **`compose_structured` figure-retry pass** — when section_figures
+  non-empty AND >=50% of available figures aren't mentioned in the
+  verified draft, one strengthened retry call adds them. Swap guards
+  (parity with retry-when-short β#3): require strictly more figure
+  mentions AND >=1 verifier-accepted claim AND required-mention
+  coverage not regressed.
+- **Env-gated whitelist** — `LAZY_PAPER_FIGURE_ID_WHITELIST=1` strips
+  unknown fig_ids from accepted claims (default OFF since cycle 1+2
+  evidence shows "unknown" fig_ids are usually s04_figures OCR-vs-
+  paper-actual numbering misalignment, not LLM hallucination).
+- **Audit log split** — `critic_flags.yaml` now distinguishes
+  `verifier_rejected` (real quote misses) from `figure_advisories`
+  (`figure_hint_unmet` + `figure_id_unknown`). Operators no longer
+  misread an inflated reject count.
+
+### Fixed — normalize_ocr_latex BS3+BS4 (cross-variant lift)
+
+`stages/_common/normalize.py`: surface 2 new normalize passes to
+collapse the verifier's false-reject backlog (~41-74 per s08 run
+per Auditor 2 cycle 1 inventory):
+
+- **BS3** — LaTeX escape sequences `\%`, `\&`, `\_`, `\^`, `\$`
+  lose their leading backslash so they match the LLM's unescaped
+  quote. Mirrors the existing `reviewer.py::_LATEX_NOISE` regex.
+- **BS4** — Unicode super/subscript folding via `unicodedata.NFKD`:
+  `³` → `3`, `₂` → `2`, etc., so `J/cm³` matches the LLM's `J/cm3`.
+  Greek letters (α/β/π) explicitly NOT decomposed. NFKD doesn't
+  fold U+2212 minus / U+2013 en-dash / U+2014 em-dash to ASCII `-`,
+  so a separate `_UNICODE_DASH` regex follows the NFKD pass.
+
+BS1+BS2 (letter-spaced subscript) deferred to v1.11 due to inherent
+OCR↔LLM asymmetry that BS3+BS4 don't share.
+
+### Validation
+
+- **33 LLM runs** across 3 worktrees (7 corpus + 2 HIF × 3 variants;
+  meng2024 ×3 each for variance probe).
+- **M1 zero-variance probe** (meng2024 T1, spec §7 floor ≤ baseline
+  stdev 1503): A=310, B=713, C=358 — all PASS.
+- **M2 figure embed ratio** (true distinct-figures, not panels): C
+  hits 100% on every multi-figure paper (ali2025 26/26, hif_1 20/20,
+  hif_2 17/17, he2023 8/8, meng2024 7/7); A/B mostly 10-30%.
+- **M4 TestCase scores**: C preserves baseline meng2024 T1 = 9/9/9
+  (only variant to do so) AND breaks baseline on ali2025_flash T4
+  (4 → 5). A introduces variance (5/9/9, stdev 1.88), B is worst
+  (5/17/15, stdev 5.25).
+- **3 audit cycles** (cycle 1 + cycle 2 + cycle 3 final ship gate)
+  with 3 specialist auditors each — caught 5 bugs in variant C
+  (all fixed) + identified normalize BS3+BS4 (shipped) + 7 v1.11
+  candidates ranked by ROI.
+
+### Side effects
+
+- `M2_figures_embedded` metric in `scripts/collect_variant_metrics.py`
+  now counts `<figure>` blocks (one per distinct fig) instead of
+  `<img>` tags (multi-panel inflated). New `M2_figures_hallucinated`
+  field surfaces s04↔LLM numbering misalignment (v1.11 #2).
+
+### Test suite
+
+273 passed, 2 deselected (was 255 in v1.9.2 — 18 new tests: 11
+normalize + 7 figure-hard-constraint).
+
+### Deferred to v1.11
+
+- **#1** normalize_ocr_latex BS1+BS2 (letter-spaced subscript) — M
+- **#2** s04_figures caption-aware numbering (fix the OCR-vs-paper
+  numbering misalignment that produces "phantom" hallucinations) — M
+- **#3** prompt comparator gap (Jiang/Ma et al. systemically missed;
+  build_required_mentions should scan full paper text) — M
+- **#4** template-vs-paper subject-mismatch graceful degrade — L
+- **#5** Variant B redesign: dynamic cap = min(comparator_count, 10) — S
+- **#6** real-time LLM cost meter into metrics.yaml (M6) — S
+- **#7** DOCX HYPERLINK dead-code fix (thread sources into renderers) — M
+- **#8** _merge_drafts 60-char prefix + (author,value) dedup — S
+- **#9** 6 hardcodes → env vars (spec §11) — S
+
 ## [1.9.2] — 2026-05-22
 
 ### Fixed — bugs surfaced by 2-auditor + 3-reviewer + 2-confirmation cycle

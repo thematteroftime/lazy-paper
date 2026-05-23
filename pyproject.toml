@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lazy-paper"
-version = "1.9.2"
+version = "1.10.0"
 description = "Turn a PDF research paper into a structured, multi-format (DOCX/PDF/HTML/PPTX) bilingual deep analysis."
 readme = "README.md"
 license = { file = "LICENSE" }
