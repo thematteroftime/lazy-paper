@@ -114,3 +114,79 @@ def test_verify_accepts_when_figure_mentioned():
         for r in rejected
     )
     assert no_fig_advisory
+
+
+def test_figure_id_whitelist_advisory_default(monkeypatch):
+    """Default: unknown fig_id flagged in rejected as 'figure_id_unknown'
+    but claim is still accepted and figure_ids preserved.
+    Per cycle 1+2 evidence (unknown fig_ids are usually s04 numbering
+    misalignment, not LLM hallucination), default is advisory not hard.
+    """
+    monkeypatch.delenv("LAZY_PAPER_FIGURE_ID_WHITELIST", raising=False)
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft
+    )
+    from llm.retriever import Chunk
+    draft = SectionDraft(claims=[
+        GroundedClaim(
+            text="As shown in Fig. 9 and Fig. 1, the trend is clear.",
+            cited_chunk_ids=[0],
+            cited_quote="content",
+            figure_ids=["Fig. 9", "Fig. 1"],
+        ),
+        GroundedClaim(
+            text="A second supporting claim.",
+            cited_chunk_ids=[0],
+            cited_quote="content here",
+        ),
+    ])
+    chunks_by_id = {0: Chunk(id="c0", text="content here",
+                              doc_name="d", char_start=0, char_end=12)}
+    accepted, rejected = verify_section_draft(
+        draft, chunks_by_id, ratio_threshold=0.85,
+        available_fig_ids={"Fig. 1"},
+    )
+    assert len(accepted) == 2
+    # figure_ids preserved (advisory mode)
+    assert accepted[0].figure_ids == ["Fig. 9", "Fig. 1"]
+    # advisory entry recorded
+    unknown_advisories = [r for r in rejected
+                          if r.get("reason") == "figure_id_unknown"]
+    assert len(unknown_advisories) == 1
+    assert unknown_advisories[0]["unknown_figures"] == ["Fig. 9"]
+
+
+def test_figure_id_whitelist_hard_when_env_set(monkeypatch):
+    """Env=1: unknown fig_id stripped from claim.figure_ids; claim
+    still accepted (don't drop the prose, just sanitize the binding)."""
+    monkeypatch.setenv("LAZY_PAPER_FIGURE_ID_WHITELIST", "1")
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft
+    )
+    from llm.retriever import Chunk
+    draft = SectionDraft(claims=[
+        GroundedClaim(
+            text="As shown in Fig. 9 and Fig. 1.",
+            cited_chunk_ids=[0],
+            cited_quote="content",
+            figure_ids=["Fig. 9", "Fig. 1"],
+        ),
+        GroundedClaim(
+            text="A second supporting claim.",
+            cited_chunk_ids=[0],
+            cited_quote="content here",
+        ),
+    ])
+    chunks_by_id = {0: Chunk(id="c0", text="content here",
+                              doc_name="d", char_start=0, char_end=12)}
+    accepted, rejected = verify_section_draft(
+        draft, chunks_by_id, ratio_threshold=0.85,
+        available_fig_ids={"Fig. 1"},
+    )
+    assert len(accepted) == 2
+    # unknown stripped, known preserved
+    assert accepted[0].figure_ids == ["Fig. 1"]
+    # advisory still recorded for audit visibility
+    unknown_advisories = [r for r in rejected
+                          if r.get("reason") == "figure_id_unknown"]
+    assert len(unknown_advisories) == 1

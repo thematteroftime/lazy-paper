@@ -209,6 +209,8 @@ def verify_section_draft(
     draft: SectionDraft,
     chunks_by_id: "dict[int, Chunk]",
     ratio_threshold: float = 0.85,
+    *,
+    available_fig_ids: set[str] | None = None,
 ) -> tuple[list[GroundedClaim], list[dict]]:
     """Drop claims whose `cited_quote` doesn't fuzzy-match any chunk.
 
@@ -285,7 +287,37 @@ def verify_section_draft(
             # caught this: original placement double-reported some
             # rejected claims.
             if c.figure_ids:
+                import os as _os
                 import re as _re
+                # whitelist advisory: any fig_id not in available_fig_ids
+                # is recorded but the claim itself is still accepted.
+                # When LAZY_PAPER_FIGURE_ID_WHITELIST=1 the claim's
+                # figure_ids field is overwritten to drop unknowns
+                # (advisory→hard). Default OFF per cycle 1+2 evidence
+                # that "unknown" fig_ids are usually s04_figures
+                # numbering misalignment, not LLM hallucination.
+                unknown_figs: list[str] = []
+                if available_fig_ids is not None:
+                    unknown_figs = [f for f in c.figure_ids
+                                     if f not in available_fig_ids]
+                if unknown_figs:
+                    rejected.append({
+                        "claim_text": c.text[:80],
+                        "reason": "figure_id_unknown",
+                        "unknown_figures": unknown_figs,
+                        "available_fig_ids": sorted(available_fig_ids or ()),
+                    })
+                    if _os.environ.get(
+                        "LAZY_PAPER_FIGURE_ID_WHITELIST"
+                    ) == "1":
+                        # Hard mode: strip unknowns from the claim so
+                        # they never reach s09 binding.
+                        kept = [f for f in c.figure_ids
+                                 if f in (available_fig_ids or set())]
+                        c = c.model_copy(update={"figure_ids": kept})
+                        # Replace the just-appended claim with sanitized copy
+                        accepted[-1] = c
+                # Mention-in-text advisory (unchanged):
                 missing_figs = []
                 for fid in c.figure_ids:
                     m = _re.match(r"Fig\.\s*(\d+)", fid)
@@ -819,8 +851,15 @@ def compose_structured(
         _os.environ.get("LAZY_PAPER_VERIFIER_THRESHOLD", "0.85")
     )
     chunks_by_id = {i: c for i, c in enumerate(chunks)}
+    # variant-c: extract available fig_ids so verifier can flag (or
+    # whitelist-reject when env enables) unknown figure_ids.
+    avail_fig_ids: set[str] | None = None
+    if section_figures:
+        avail_fig_ids = {n.get("fig_id") for n in section_figures
+                          if n.get("fig_id")}
     accepted, rejected = verify_section_draft(
         draft, chunks_by_id, ratio_threshold=verifier_threshold,
+        available_fig_ids=avail_fig_ids,
     )
     verified = SectionDraft(claims=accepted) if len(accepted) >= 2 else draft
 
@@ -896,6 +935,7 @@ def compose_structured(
                 retry_accepted, retry_rejected = verify_section_draft(
                     retry_draft, chunks_by_id,
                     ratio_threshold=verifier_threshold,
+                    available_fig_ids=avail_fig_ids,
                 )
                 retry_verified = (SectionDraft(claims=retry_accepted)
                                   if len(retry_accepted) >= 2
@@ -957,6 +997,7 @@ def compose_structured(
             len_retry_accepted, len_retry_rejected = verify_section_draft(
                 len_retry_draft, chunks_by_id,
                 ratio_threshold=verifier_threshold,
+                available_fig_ids=avail_fig_ids,
             )
             len_retry_verified = (SectionDraft(claims=len_retry_accepted)
                                   if len(len_retry_accepted) >= 2
@@ -1041,6 +1082,7 @@ def compose_structured(
                 )
                 fig_accepted, fig_rejected = verify_section_draft(
                     fig_retry, chunks_by_id, ratio_threshold=verifier_threshold,
+                    available_fig_ids=avail_fig_ids,
                 )
                 fig_verified = (SectionDraft(claims=fig_accepted)
                                 if len(fig_accepted) >= 2 else fig_retry)
