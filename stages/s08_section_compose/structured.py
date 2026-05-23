@@ -48,6 +48,14 @@ class GroundedClaim(BaseModel):
     text: str = Field(min_length=2)
     cited_chunk_ids: list[int] = Field(default_factory=list)
     cited_quote: str = Field(default="")
+    figure_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Figure IDs (e.g. 'Fig. 3') that this claim references. "
+            "When non-empty, claim.text MUST contain the fig_id literal "
+            "(or Chinese-form '图N') — checked by verify_section_draft."
+        ),
+    )
 
     @field_validator("cited_chunk_ids")
     @classmethod
@@ -201,6 +209,8 @@ def verify_section_draft(
     draft: SectionDraft,
     chunks_by_id: "dict[int, Chunk]",
     ratio_threshold: float = 0.85,
+    *,
+    available_fig_ids: set[str] | None = None,
 ) -> tuple[list[GroundedClaim], list[dict]]:
     """Drop claims whose `cited_quote` doesn't fuzzy-match any chunk.
 
@@ -271,6 +281,59 @@ def verify_section_draft(
                     "cited_chunk_ids": [matched_cid, *c.cited_chunk_ids],
                 })
             accepted.append(c)
+            # variant-c: figure_ids hard hint (advisory) — only for
+            # accepted claims; rejected claims are already dead, no
+            # point recording a figure advisory for them. Auditor 3
+            # caught this: original placement double-reported some
+            # rejected claims.
+            if c.figure_ids:
+                import os as _os
+                import re as _re
+                # whitelist advisory: any fig_id not in available_fig_ids
+                # is recorded but the claim itself is still accepted.
+                # When LAZY_PAPER_FIGURE_ID_WHITELIST=1 the claim's
+                # figure_ids field is overwritten to drop unknowns
+                # (advisory→hard). Default OFF per cycle 1+2 evidence
+                # that "unknown" fig_ids are usually s04_figures
+                # numbering misalignment, not LLM hallucination.
+                unknown_figs: list[str] = []
+                if available_fig_ids is not None:
+                    unknown_figs = [f for f in c.figure_ids
+                                     if f not in available_fig_ids]
+                if unknown_figs:
+                    rejected.append({
+                        "claim_text": c.text[:80],
+                        "reason": "figure_id_unknown",
+                        "unknown_figures": unknown_figs,
+                        "available_fig_ids": sorted(available_fig_ids or ()),
+                    })
+                    if _os.environ.get(
+                        "LAZY_PAPER_FIGURE_ID_WHITELIST"
+                    ) == "1":
+                        # Hard mode: strip unknowns from the claim so
+                        # they never reach s09 binding.
+                        kept = [f for f in c.figure_ids
+                                 if f in (available_fig_ids or set())]
+                        c = c.model_copy(update={"figure_ids": kept})
+                        # Replace the just-appended claim with sanitized copy
+                        accepted[-1] = c
+                # Mention-in-text advisory (unchanged):
+                missing_figs = []
+                for fid in c.figure_ids:
+                    m = _re.match(r"Fig\.\s*(\d+)", fid)
+                    if m:
+                        num = m.group(1)
+                        patterns = [rf"Fig\.\s*{num}", rf"图\s*{num}"]
+                    else:
+                        patterns = [_re.escape(fid)]
+                    if not any(_re.search(p, c.text) for p in patterns):
+                        missing_figs.append(fid)
+                if missing_figs:
+                    rejected.append({
+                        "claim_text": c.text[:80],
+                        "reason": "figure_hint_unmet",
+                        "missing_figures": missing_figs,
+                    })
         else:
             rejected.append({
                 "text": c.text[:120],
@@ -535,6 +598,18 @@ unless guidance demands more.
 
 Length / language / quantitative rules from the base section_compose prompt
 still apply — see the USER message for {lang_instruction} and other hints.
+
+## Figure citation requirement (variant C hard constraint)
+
+When the USER message lists 'Figures topically relevant to this section':
+  - For EACH such fig_id, write at least one claim that:
+      * sets figure_ids = ["<fig_id>"]  (e.g. ["Fig. 3"])
+      * contains the literal "Fig. N" (English) or "图N" (Chinese) in
+        the claim's text
+  - This ensures the figure is embedded in the rendered output (s09
+    binding is literal-substring based).
+  - If multiple figures are relevant, write multiple claims — do not
+    cram all fig_ids into one claim.
 """
 
 
@@ -776,8 +851,15 @@ def compose_structured(
         _os.environ.get("LAZY_PAPER_VERIFIER_THRESHOLD", "0.85")
     )
     chunks_by_id = {i: c for i, c in enumerate(chunks)}
+    # variant-c: extract available fig_ids so verifier can flag (or
+    # whitelist-reject when env enables) unknown figure_ids.
+    avail_fig_ids: set[str] | None = None
+    if section_figures:
+        avail_fig_ids = {n.get("fig_id") for n in section_figures
+                          if n.get("fig_id")}
     accepted, rejected = verify_section_draft(
         draft, chunks_by_id, ratio_threshold=verifier_threshold,
+        available_fig_ids=avail_fig_ids,
     )
     verified = SectionDraft(claims=accepted) if len(accepted) >= 2 else draft
 
@@ -853,6 +935,7 @@ def compose_structured(
                 retry_accepted, retry_rejected = verify_section_draft(
                     retry_draft, chunks_by_id,
                     ratio_threshold=verifier_threshold,
+                    available_fig_ids=avail_fig_ids,
                 )
                 retry_verified = (SectionDraft(claims=retry_accepted)
                                   if len(retry_accepted) >= 2
@@ -914,6 +997,7 @@ def compose_structured(
             len_retry_accepted, len_retry_rejected = verify_section_draft(
                 len_retry_draft, chunks_by_id,
                 ratio_threshold=verifier_threshold,
+                available_fig_ids=avail_fig_ids,
             )
             len_retry_verified = (SectionDraft(claims=len_retry_accepted)
                                   if len(len_retry_accepted) >= 2
@@ -956,6 +1040,92 @@ def compose_structured(
         except Exception as exc:
             print(f"[s08] retry-when-short failed: {exc!r}; keeping "
                   f"original draft", flush=True)
+
+    # variant-c: figure-retry — if section_figures non-empty and verified
+    # mentions < 50% of available figures, one strengthened retry.
+    if section_figures:
+        available_ids = {n.get("fig_id") for n in section_figures if n.get("fig_id")}
+        mentioned_ids: set[str] = set()
+        import re as _re
+        full_text = " ".join(c.text for c in verified.claims)
+        for fid in available_ids:
+            m = _re.match(r"Fig\.\s*(\d+)", fid)
+            if m:
+                num = m.group(1)
+                if (_re.search(rf"Fig\.\s*{num}", full_text)
+                        or _re.search(rf"图\s*{num}", full_text)):
+                    mentioned_ids.add(fid)
+            elif fid in full_text:
+                mentioned_ids.add(fid)
+        missing_figs = available_ids - mentioned_ids
+        if available_ids and (len(missing_figs) / len(available_ids)) >= 0.5:
+            print(
+                f"[s08] figure-retry: mentioned {len(mentioned_ids)}/"
+                f"{len(available_ids)} relevant figures — triggering retry",
+                flush=True,
+            )
+            fig_lines = "\n".join(
+                f"  - {fid}: write a claim with figure_ids=[\"{fid}\"] "
+                f"and \"{fid}\" literally in text"
+                for fid in sorted(missing_figs)
+            )
+            retry_system = _STRUCTURED_SYSTEM + (
+                "\n\n## CRITICAL — MISSING FIGURE CITATIONS\n"
+                f"Your draft did not cite {len(missing_figs)} relevant "
+                f"figures. ADD claims that cite each:\n\n{fig_lines}\n\n"
+                "PRESERVE existing well-grounded claims. Add new ones."
+            )
+            try:
+                fig_retry = _single_compose(
+                    llm, retry_system, user_msg, chunks,
+                    max_retries=max_retries, temperature=0.3,
+                )
+                fig_accepted, fig_rejected = verify_section_draft(
+                    fig_retry, chunks_by_id, ratio_threshold=verifier_threshold,
+                    available_fig_ids=avail_fig_ids,
+                )
+                fig_verified = (SectionDraft(claims=fig_accepted)
+                                if len(fig_accepted) >= 2 else fig_retry)
+                new_full = " ".join(c.text for c in fig_verified.claims)
+                new_mentioned: set[str] = set()
+                for fid in available_ids:
+                    m = _re.match(r"Fig\.\s*(\d+)", fid)
+                    if m and (_re.search(rf"Fig\.\s*{m.group(1)}", new_full)
+                              or _re.search(rf"图\s*{m.group(1)}", new_full)):
+                        new_mentioned.add(fid)
+                    elif fid in new_full:
+                        new_mentioned.add(fid)
+                # Swap guards (parity with retry-when-short β#3 patch):
+                #   - figure mentions strictly increased (intent)
+                #   - C-2: at least 1 verifier-accepted claim in retry
+                #     (else we'd swap a fully-ungrounded retry just
+                #     because it textually mentions a figure)
+                #   - C-1: required-mention coverage did not regress
+                #     (else figure-retry could silently drop comparators)
+                current_missing = len(missing_required(required, verified))
+                new_missing = len(missing_required(required, fig_verified))
+                if (len(new_mentioned) > len(mentioned_ids)
+                        and len(fig_accepted) >= 1
+                        and new_missing <= current_missing):
+                    print(
+                        f"[s08] figure-retry: lifted "
+                        f"{len(mentioned_ids)}→{len(new_mentioned)} figure "
+                        f"mentions (accepted={len(fig_accepted)}, "
+                        f"required missing {current_missing}→{new_missing})",
+                        flush=True,
+                    )
+                    verified, rejected = fig_verified, fig_rejected
+                elif len(new_mentioned) > len(mentioned_ids):
+                    print(
+                        f"[s08] figure-retry: REJECTED — "
+                        f"accepted={len(fig_accepted)}, "
+                        f"coverage {current_missing}→{new_missing} missing. "
+                        f"Keeping original draft.",
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(f"[s08] figure-retry failed: {exc!r}; keeping draft",
+                      flush=True)
 
     return verified, rejected
 
