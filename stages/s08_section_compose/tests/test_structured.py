@@ -720,3 +720,81 @@ def test_verify_non_results_section_skips_numerics_advisory():
     thin_advisories = [r for r in rejected
                        if r.get("reason") == "results_section_thin_numerics"]
     assert thin_advisories == []
+
+
+def test_cross_citation_misattribution_rejected():
+    """Cycle 7 specialist Bug #1: claim says Author X reports value Y,
+    but cited_quote pairs that Y with Author Z instead. Verifier rejects."""
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft,
+    )
+    from llm.retriever import Chunk
+    # Claim attributes 133 J/cm³ to "Li et al." (BKT-BMN system) —
+    # but the actual cited quote pairs 133 with "Kim et al." (PMN-PT).
+    # This is the exact ali2025 ch08 hallucination pattern.
+    draft = SectionDraft(claims=[
+        GroundedClaim(
+            text="Li et al. in BKT-BMN achieved W_rec=133 J/cm³, η=75%.",
+            cited_chunk_ids=[0],
+            cited_quote="Kim et al. reported W_rec=133 J/cm³ and η=75% in PMN-PT system",
+        ),
+        GroundedClaim(
+            text="A second claim to keep accepted >= 2 path differs.",
+            cited_chunk_ids=[0],
+            cited_quote="Kim et al. reported W_rec=133 J/cm³ and η=75% in PMN-PT system",
+        ),
+    ])
+    chunks_by_id = {0: Chunk(
+        id="c0",
+        text="Kim et al. reported W_rec=133 J/cm³ and η=75% in PMN-PT system",
+        doc_name="d", char_start=0, char_end=70,
+    )}
+    accepted, rejected = verify_section_draft(draft, chunks_by_id)
+    # First claim (Li attribution) must be rejected as cross-citation.
+    cross_rejects = [r for r in rejected
+                     if r.get("reason") == "cross_citation_misattribution"]
+    assert len(cross_rejects) == 1
+    mismatched_set = {tuple(p) for p in cross_rejects[0]["mismatched_pairs"]}
+    # value side includes the space exactly as the OCR rendered it.
+    assert any(p[0] == "Li" and "133" in p[1] for p in mismatched_set)
+
+
+def test_cross_citation_legitimate_paraphrase_not_rejected():
+    """When the claim and quote agree on the (author, value) pair, the
+    verifier should NOT reject — paraphrase is fine."""
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft,
+    )
+    from llm.retriever import Chunk
+    draft = SectionDraft(claims=[
+        GroundedClaim(
+            text="Kim et al. achieved 133 J/cm³ in PMN-PT.",
+            cited_chunk_ids=[0],
+            cited_quote="Kim et al. reported W_rec=133 J/cm³ in PMN-PT",
+        ),
+        GroundedClaim(
+            text="Another supporting claim.",
+            cited_chunk_ids=[0],
+            cited_quote="Kim et al. reported W_rec=133 J/cm³ in PMN-PT",
+        ),
+    ])
+    chunks_by_id = {0: Chunk(
+        id="c0",
+        text="Kim et al. reported W_rec=133 J/cm³ in PMN-PT",
+        doc_name="d", char_start=0, char_end=50,
+    )}
+    accepted, rejected = verify_section_draft(draft, chunks_by_id)
+    cross_rejects = [r for r in rejected
+                     if r.get("reason") == "cross_citation_misattribution"]
+    assert cross_rejects == []  # paraphrase OK
+
+
+def test_extract_author_value_pairs():
+    """_extract_author_value_pairs collects (author, value+unit) within window."""
+    from stages.s08_section_compose.structured import _extract_author_value_pairs
+    pairs = _extract_author_value_pairs(
+        "Kim et al. reported W_rec=133 J/cm³ and η=75% in PMN-PT system."
+    )
+    pair_set = set(pairs)
+    assert any(p[0] == "Kim" and "133" in p[1] for p in pair_set)
+    assert any(p[0] == "Kim" and "75" in p[1] for p in pair_set)

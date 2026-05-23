@@ -243,6 +243,24 @@ def _claim_anchors(text: str) -> list[str]:
     return out
 
 
+def _extract_author_value_pairs(text: str, *, window: int = 80) -> list[tuple[str, str]]:
+    """Find (author, value+unit) pairs where the value appears within
+    `window` chars after the author surname. Used by the cross-citation
+    cross-attribution check (Cycle 7 specialist Bug #1).
+
+    The value-side string is the full match including the space the OCR
+    saw (e.g. "133 J/cm³"), so it normalize-compares cleanly against the
+    cited_quote.
+    """
+    pairs: list[tuple[str, str]] = []
+    for am in _ANCHOR_AUTHOR_RE.finditer(text):
+        author = am.group(1)
+        tail = text[am.end():am.end() + window]
+        for vm in _ANCHOR_VALUE_RE.finditer(tail):
+            pairs.append((author, vm.group(0)))
+    return pairs
+
+
 def _claim_dedup_anchors(text: str) -> list[str]:
     """Like _claim_anchors but uses value+unit composite for the value
     side, so "5 GPa" and "5 J/cm³" are distinct dedup keys. Cycle 5 A3
@@ -343,6 +361,40 @@ def verify_section_draft(
             anchor_advisory = [a for a in anchors
                                if _normalize_for_match(a) not in q_norm]
         if matched_cid is not None:
+            # Cross-citation cross-attribution check (Cycle 7 specialist
+            # Bug #1): if the claim says "Kim ... 133 J/cm³" but the
+            # cited_quote actually pairs that value with a different
+            # author (or pairs different value with Kim), the LLM has
+            # mis-attributed numbers. Reject — this is the recurring
+            # ali2025 ch08 "133/75% to wrong author" hallucination class.
+            claim_pairs = _extract_author_value_pairs(c.text)
+            if claim_pairs:
+                quote_norm = _normalize_for_match(c.cited_quote)
+                quote_pairs_norm = {
+                    (_normalize_for_match(a), _normalize_for_match(v))
+                    for a, v in _extract_author_value_pairs(c.cited_quote)
+                }
+                mismatched = []
+                for a, v in claim_pairs:
+                    a_n, v_n = _normalize_for_match(a), _normalize_for_match(v)
+                    # If the value appears in the quote but NOT paired
+                    # with this author → cross-attribution. (Whitelist
+                    # cases where the quote contains both anchors loosely,
+                    # i.e. the value is present and the author is also
+                    # present anywhere in quote — that's just paraphrase.)
+                    value_in_quote = v_n in quote_norm
+                    author_in_quote = a_n in quote_norm
+                    paired = (a_n, v_n) in quote_pairs_norm
+                    if value_in_quote and not (author_in_quote or paired):
+                        mismatched.append((a, v))
+                if mismatched:
+                    rejected.append({
+                        "text": c.text[:120],
+                        "quote": c.cited_quote[:120],
+                        "reason": "cross_citation_misattribution",
+                        "mismatched_pairs": [list(p) for p in mismatched],
+                    })
+                    continue
             if matched_cid not in c.cited_chunk_ids:
                 c = c.model_copy(update={
                     "cited_chunk_ids": [matched_cid, *c.cited_chunk_ids],
@@ -736,6 +788,23 @@ When the USER message lists 'Figures topically relevant to this section':
     SAME number of substantive claims as you would without this rule.
     Keep claim count and prose length on target.** Be selective about
     WHICH figures each claim cites; do NOT shrink the section.
+
+## Headline metric inclusion (Cycle 7 specialist Bug #4/#5)
+
+For sections whose title contains "Application(s)", "Performance",
+"Results", "Discussion", "Quantitative", or the Chinese equivalents
+(应用 / 性能 / 结果 / 讨论 / 定量): you MUST include the paper's
+HEADLINE performance metrics — typically the values stated in the
+paper's abstract. For energy-storage materials papers these are
+usually:
+  - W_rec / U_e (recoverable energy density, J/cm³)
+  - η (efficiency, %)
+  - E_b / breakdown field (kV/cm or MV/cm)
+  - P_max / polarization (μC/cm²)
+Look for them in the Paper context block + the retrieved chunks
+covering the abstract. Including these is non-negotiable for these
+section types — a section claiming "high energy storage" without the
+specific number is incomplete.
 
 ## DOMAIN MISMATCH OVERRIDE
 
