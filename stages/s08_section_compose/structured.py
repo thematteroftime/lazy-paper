@@ -654,8 +654,9 @@ If the section title and guidance describe a topic (e.g. "Synthesis of
 Relaxor AFE Ceramics") that is genuinely NOT addressed in the source
 chunks (e.g. the paper is a deep-learning paper, not materials science),
 prefer truthfulness over template fidelity:
-  - Output 1-3 claims of the form "The source paper does not address
-    <topic>; the closest relevant content is <actual finding>."
+  - Output 2-3 claims of the form "The source paper does not address
+    <topic>; the closest relevant content is <actual finding>." (must
+    be ≥2 — SectionDraft schema rejects single-claim drafts).
   - Do not fabricate material/parameter claims to fill the template.
   - The figure_ids cap above still applies.
 """
