@@ -55,7 +55,7 @@ Per spec §10 (post-hoc corrected: evaluator is fully deterministic, not LLM-jud
 | yang2025 | 11700 | 12860 | 13490 | 10769 |
 | hif_1 | — | 8654 | 9473 | 10171 |
 | hif_2 | — | 15178 | 13768 | 13209 |
-| **avg** | 12108 | 12166 | 12361 | 12591 |
+| **avg** | 11979 | 12166 | 12350 | 12591 |
 
 C 平均最高 (+4% vs baseline)，但论文间波动大。
 
