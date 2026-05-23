@@ -521,3 +521,98 @@ def test_compose_structured_uses_instructor_and_runs_verifier(monkeypatch):
     assert len(verified.claims) == 2  # 1 rejected by verifier
     assert len(rejected) == 1
     assert "fabricated" in rejected[0]["text"]
+
+
+# v1.11 Tier 1 — Meta-Auditor M1+M2 confirmed user-visible bug fixes
+
+def test_figure_ids_pydantic_max_length():
+    """M2 #2: schema must hard-cap figure_ids at 3 per claim
+    (ali2025_flash ch11 hit 62 refs/chapter before this cap)."""
+    import pytest
+    from pydantic import ValidationError
+    from stages.s08_section_compose.structured import GroundedClaim
+    # 3 figs OK
+    c = GroundedClaim(
+        text="As shown in Fig. 1, Fig. 2, Fig. 3 the trend holds.",
+        cited_chunk_ids=[0], cited_quote="content",
+        figure_ids=["Fig. 1", "Fig. 2", "Fig. 3"],
+    )
+    assert len(c.figure_ids) == 3
+    # 4 figs rejected
+    with pytest.raises(ValidationError):
+        GroundedClaim(
+            text="x", cited_chunk_ids=[0], cited_quote="",
+            figure_ids=["Fig. 1", "Fig. 2", "Fig. 3", "Fig. 4"],
+        )
+
+
+def test_verify_rejects_schema_prefix_leak():
+    """M2 #3: claim.text starting with 'GroundedClaim:' / 'Claim:' is
+    schema noise leaking through; must be rejected before reaching prose."""
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft,
+    )
+    from llm.retriever import Chunk
+    draft = SectionDraft(claims=[
+        GroundedClaim(
+            text="GroundedClaim: Kerr et al. demonstrated 5 J/cm³.",
+            cited_chunk_ids=[0], cited_quote="content",
+        ),
+        GroundedClaim(
+            text="Claim: Jiang et al. reported 2.94 J/cm³.",
+            cited_chunk_ids=[0], cited_quote="content here",
+        ),
+        GroundedClaim(
+            text="This is a normal claim.",
+            cited_chunk_ids=[0], cited_quote="content here",
+        ),
+    ])
+    chunks_by_id = {0: Chunk(id="c0", text="content here",
+                              doc_name="d", char_start=0, char_end=12)}
+    accepted, rejected = verify_section_draft(
+        draft, chunks_by_id, ratio_threshold=0.85,
+    )
+    leak_rejects = [r for r in rejected
+                    if r.get("reason") == "schema_prefix_leak"]
+    assert len(leak_rejects) == 2  # both prefixed claims rejected
+    accepted_texts = [c.text for c in accepted]
+    assert "This is a normal claim." in accepted_texts
+    assert not any(t.startswith("GroundedClaim:") for t in accepted_texts)
+    assert not any(t.startswith("Claim:") for t in accepted_texts)
+
+
+def test_claim_dedup_collapses_chinese_english_rephrase():
+    """M2 #1: same fact written in English + 中文 must collapse via
+    distinctive-token tier, even when anchor regex misses."""
+    from stages.s08_section_compose.structured import _claim_dedup_key
+    # No author / no SI-unit value → falls past anchor tier, but distinctive
+    # chemical tokens (bi0, na0, tio3, codoped) should collapse.
+    en = ("Researchers achieved 8.3 J/cm3 in Ca2+/Nb5+-codoped "
+          "Bi0.5Na0.5TiO3-based ceramics through defect-dipole design.")
+    zh = ("通过缺陷偶极子设计，研究者在Ca2+/Nb5+-codoped Bi0.5Na0.5TiO3 "
+          "陶瓷上获得了 8.3 J/cm3。")
+    k_en = _claim_dedup_key(en)
+    k_zh = _claim_dedup_key(zh)
+    # Both should be anchor-based ("8.3" matches the value regex) OR
+    # distinct-token based — either way the key must match.
+    assert k_en == k_zh, f"expected dedup; got {k_en!r} vs {k_zh!r}"
+
+
+def test_anchor_value_regex_expanded_units():
+    """M2: value-anchor regex was missing common units (mC/cm², GPa,
+    bare J/cm) → claims fell to prefix-key per language and didn't dedup."""
+    from stages.s08_section_compose.structured import _claim_anchors
+    # bare J/cm (no superscript) was previously missed
+    assert "8.3" in _claim_anchors("Tang et al. reported 8.3 J/cm.")
+    # mC/cm² was missed
+    assert "12.5" in _claim_anchors("Zhang et al. showed 12.5 mC/cm²")
+    # GPa was missed
+    assert "5" in _claim_anchors("Li 等人 测得 5 GPa")
+
+
+def test_anchor_author_loose_whitespace():
+    """M2: Chinese 'Tang等人' (no space) was missed; loosened to \\s*."""
+    from stages.s08_section_compose.structured import _claim_anchors
+    assert "Tang" in _claim_anchors("Tang等人提出了一种新材料")
+    assert "Tang" in _claim_anchors("Tang 等人提出了一种新材料")
+    assert "Tang" in _claim_anchors("Tang et al. proposed")

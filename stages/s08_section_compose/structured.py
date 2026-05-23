@@ -50,10 +50,13 @@ class GroundedClaim(BaseModel):
     cited_quote: str = Field(default="")
     figure_ids: list[str] = Field(
         default_factory=list,
+        max_length=3,
         description=(
             "Figure IDs (e.g. 'Fig. 3') that this claim references. "
             "When non-empty, claim.text MUST contain the fig_id literal "
-            "(or Chinese-form '图N') — checked by verify_section_draft."
+            "(or Chinese-form '图N') — checked by verify_section_draft. "
+            "Hard cap 3 per claim (Meta-Auditor M2 — 62-citation runaway "
+            "on ali2025_flash ch11 was the trigger). Prefer fewer."
         ),
     )
 
@@ -183,9 +186,21 @@ def _quote_in_chunk(quote: str, chunk_text: str,
     return coverage
 
 
-_ANCHOR_AUTHOR_RE = re.compile(r"\b([A-Z][a-z]+)\s+(?:et\s+al\.?|等(?:人|等)?)")
+# Loosened whitespace per Meta-Auditor M2: Chinese forms often appear as
+# "Tang等人" without space → was missed → dedup fell to 120-char prefix.
+_ANCHOR_AUTHOR_RE = re.compile(
+    r"\b([A-Z][a-z]+)\s*(?:et\s+al\.?|等(?:人|等)?)"
+)
+# Expanded unit list per Meta-Auditor M2: was missing common spellings
+# that show up in chapter prose (J/cm without superscript, mC/cm², etc.).
 _ANCHOR_VALUE_RE = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(?:J/cm[³3]|MV/cm|kV/cm|μC/cm[²2]|%)"
+    r"(\d+(?:\.\d+)?)\s*"
+    r"(?:J/cm[³23]?|MV/cm|kV/cm|kV/mm|μC/cm[²2]|mC/cm[²2]|%|GPa|MPa)"
+)
+# Schema prefix that occasionally leaks into the LLM output prose
+# (Meta-Auditor M2 caught in ali2025_flash v190 ch03):
+_SCHEMA_PREFIX_RE = re.compile(
+    r"^\s*(?:GroundedClaim|Claim|claim|SectionDraft)\s*:", re.IGNORECASE,
 )
 
 
@@ -237,6 +252,15 @@ def verify_section_draft(
     accepted: list[GroundedClaim] = []
     rejected: list[dict] = []
     for c in draft.claims:
+        # Schema-prefix leak (Meta-Auditor M2): the LLM occasionally writes
+        # "GroundedClaim: ..." or "Claim: ..." as the literal text. Reject
+        # outright — these always reach end-user prose otherwise.
+        if _SCHEMA_PREFIX_RE.match(c.text):
+            rejected.append({
+                "text": c.text[:120],
+                "reason": "schema_prefix_leak",
+            })
+            continue
         if not c.cited_quote.strip():
             accepted.append(c)
             continue
@@ -599,6 +623,16 @@ unless guidance demands more.
 Length / language / quantitative rules from the base section_compose prompt
 still apply — see the USER message for {lang_instruction} and other hints.
 
+## FORBIDDEN (these will be hard-rejected by the verifier)
+
+  - Never start a claim's text with "GroundedClaim:", "Claim:", or any
+    other schema-style prefix — that's the JSON field name, not prose.
+    Write the claim as plain natural-language sentences.
+  - Never restate the same fact in different wording across claims —
+    one fact = one claim. The merge pass deduplicates by (author, value)
+    anchors + distinctive chemical tokens; if you write the same fact
+    once in English and again in Chinese, only the first survives.
+
 ## Figure citation requirement (variant C hard constraint)
 
 When the USER message lists 'Figures topically relevant to this section':
@@ -610,6 +644,20 @@ When the USER message lists 'Figures topically relevant to this section':
     binding is literal-substring based).
   - If multiple figures are relevant, write multiple claims — do not
     cram all fig_ids into one claim.
+  - HARD CAP: at most 3 figure_ids per claim AND at most 5 distinct
+    figure_ids across the whole section. Pick the most directly
+    relevant ones; do NOT list every available figure.
+
+## DOMAIN MISMATCH OVERRIDE
+
+If the section title and guidance describe a topic (e.g. "Synthesis of
+Relaxor AFE Ceramics") that is genuinely NOT addressed in the source
+chunks (e.g. the paper is a deep-learning paper, not materials science),
+prefer truthfulness over template fidelity:
+  - Output 1-3 claims of the form "The source paper does not address
+    <topic>; the closest relevant content is <actual finding>."
+  - Do not fabricate material/parameter claims to fill the template.
+  - The figure_ids cap above still applies.
 """
 
 
@@ -669,16 +717,24 @@ def _single_compose(
 def _claim_dedup_key(text: str) -> str:
     """Return a paraphrase-resistant dedupe signature for a claim.
 
-    Two claims that name the same author/value pair OR start with the same
-    120-char prefix collapse to the same key. The anchor-based half catches
-    paraphrases like
-        "Jiang et al. 在Ca²⁺/Nb⁵⁺共掺杂…W_rec=2.94 J/cm³"
-        "Jiang et al. 在Ca²⁺/Nb⁵⁺-codoped…W_rec=2.94 J/cm³"
-    that the previous prefix-only check kept as separate claims.
+    Three-tier signature, picked in order:
+      1. (author, value) anchors — catches "Jiang et al. … 2.94 J/cm³"
+         English + Chinese paraphrases.
+      2. Distinctive chemical/formula tokens — catches "Bi0.5Na0.5TiO3"
+         restated in different prose without author/value attribution
+         (Meta-Auditor M2 caught this gap on meng2024 Introduction:
+         same fact stated in EN + 2 Chinese variants slipped past
+         anchor-only check, then prefix fell back per-language and
+         the three didn't collapse).
+      3. 120-char prefix — last-resort for descriptive prose with
+         neither anchors nor distinctive tokens.
     """
     anchors = _claim_anchors(text)
     if anchors:
         return "anchors:" + "|".join(sorted(anchors))
+    distinctive = sorted(_distinctive_tokens(text))[:5]
+    if distinctive:
+        return "distinct:" + "|".join(distinctive)
     return "prefix:" + text.strip()[:120]
 
 
@@ -987,7 +1043,9 @@ def compose_structured(
             "block above.** Do NOT skip the literature-citation comparators "
             "(`<Author> et al.`) to make room for general prose; instead, "
             "ADD additional substantive claims on top of those required "
-            "mentions. The no-duplicate rule still applies."
+            "mentions. The no-duplicate rule still applies.\n"
+            "PRESERVE existing well-grounded claims from the prior draft; "
+            "add new ones, do not regenerate everything (M1 D3)."
         )
         try:
             len_retry_draft = _single_compose(
