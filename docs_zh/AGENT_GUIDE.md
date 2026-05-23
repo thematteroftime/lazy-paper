@@ -5,7 +5,7 @@
 ## 给 agent 的 TL;DR
 
 1. **不要动 `runs/`**，除非用户明确要求清理。它是已验证测试语料库。
-2. **任何改动前后都要跑 `uv run pytest -q`**。如果你弄坏了测试，就修复或回滚。应有 255 个用例通过；live-LLM 测试通过 `-m live` 门控。
+2. **任何改动前后都要跑 `uv run pytest -q`**。如果你弄坏了测试，就修复或回滚。应有 280 个用例通过；live-LLM 测试通过 `-m live` 门控。
 3. **用 `LLM_MAX_TOKENS_CEILING` 环境变量在测试运行中控成本**（例如冒烟测试用 `LLM_MAX_TOKENS_CEILING=4000`）。
 4. **不要绕过 `llm.client.max_tokens()`**。所有 LLM 调用都经过它。把硬编码的 `max_tokens=N` 改高是回退行为。
 5. **改 prompt 必须同步升 `_PROMPT_VERSION`**（在 `stages/s09_render/pptx_summarizer.py` 中，或其他 LLM 阶段的等价物）—— 否则缓存响应不会失效。
@@ -255,7 +255,7 @@ CONTRIBUTING.md                 # 贡献规范
 
 ## 工作完成后
 
-1. `uv run pytest -q` → 255 个通过，2 个 deselected。
+1. `uv run pytest -q` → 280 个通过，2 个 deselected。
 2. 至少 2 篇论文的端到端冒烟测试（用 `--only s09_render --force` 重跑）。
 3. 更新 `CHANGELOG.md` 的 Unreleased 小节。
 4. 用清晰的 commit message 提交（解释 *why*，而不只是 *what*）。

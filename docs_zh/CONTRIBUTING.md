@@ -14,7 +14,7 @@ cp .env.example .env  # 填入你的 API key
 ## 跑测试
 
 ```bash
-uv run pytest             # 255 个测试，~25s
+uv run pytest             # 280 个测试，~30s
 uv run pytest -m live     # 实时 LLM 烟雾测试（默认跳过）
 ```
 

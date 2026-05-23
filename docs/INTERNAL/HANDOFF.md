@@ -1,6 +1,16 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 255/255 pass · **End-to-end verified on 18-paper corpus** · **Last release:** v1.9.2 (2026-05-22)
+> **Status:** shipped · **Tests:** 280/280 pass · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus** · **Last release:** v1.10.0 (2026-05-23)
+>
+> **v1.10.0** ships **Variant C — figure_ids hard constraint**: schema-level
+> figure citation + figure-retry pass + env-gated whitelist. Picked from a
+> 3-variant × 9-paper × 3-audit-cycle test (33 LLM runs, 9 specialist
+> auditors). Hits true 100% figure embedding on multi-figure papers
+> (ali2025_flash 26/26, hif_1 20/20, hif_2 17/17), preserves meng2024 T1
+> = 9/9/9 zero-variance, and breaks baseline on ali2025_flash T4 (4→5).
+> Also ships `normalize_ocr_latex` BS3+BS4 (LaTeX escape collapsing +
+> Unicode NFKD) to lift verifier accuracy across all variants. Full
+> validation in `docs/v1_10_variant_comparison.md`.
 >
 > **v1.9.2** lands 8 high-impact bug fixes (2-auditor + 3-reviewer +
 > 2-confirmation cycle) on top of v1.9.0's informed-retry. The fixes
@@ -171,7 +181,7 @@ DOCX + HTML are always produced. PDF / PPTX are produced only when the
 `--formats` flag includes them; the v181 corpus runs above produced docx+html
 only. Output path: `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}`.
 
-**Tests**: 255 (2 deselected `-m live`). Run with `uv run pytest -q`.
+**Tests**: 280 (2 deselected `-m live`). Run with `uv run pytest -q`.
 
 ---
 
