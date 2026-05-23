@@ -426,15 +426,37 @@ def verify_section_draft(
                         "unknown_figures": unknown_figs,
                         "available_fig_ids": sorted(available_fig_ids or ()),
                     })
+                    # Parallel B (v1.11): default flipped to ON. The
+                    # cycle-1 evidence basis ("unknowns are usually s04
+                    # numbering misalignment, not LLM hallucination") was
+                    # right BUT writing claims that reference figures s09
+                    # can't bind leaves the reader with "图17" hyperlinks
+                    # to nothing. Until s04 caption-aware numbering
+                    # (v1.12), the safer default is: strip unknown
+                    # fig_ids from the structured field AND substitute
+                    # the literal "Fig. N" / "图N" in claim.text with a
+                    # neutral phrase so the rendered prose still flows.
+                    # Set LAZY_PAPER_FIGURE_ID_WHITELIST=0 to opt out.
                     if _os.environ.get(
-                        "LAZY_PAPER_FIGURE_ID_WHITELIST"
-                    ) == "1":
-                        # Hard mode: strip unknowns from the claim so
-                        # they never reach s09 binding.
+                        "LAZY_PAPER_FIGURE_ID_WHITELIST", "1"
+                    ) != "0":
                         kept = [f for f in c.figure_ids
                                  if f in (available_fig_ids or set())]
-                        c = c.model_copy(update={"figure_ids": kept})
-                        # Replace the just-appended claim with sanitized copy
+                        new_text = c.text
+                        for fid in unknown_figs:
+                            m = _re.match(r"Fig\.\s*(\d+)", fid)
+                            if m:
+                                num = m.group(1)
+                                new_text = _re.sub(
+                                    rf"Fig\.\s*{num}\b|图\s*{num}\b",
+                                    "源论文相关图示", new_text,
+                                )
+                            else:
+                                new_text = new_text.replace(
+                                    fid, "源论文相关图示")
+                        c = c.model_copy(update={
+                            "figure_ids": kept, "text": new_text,
+                        })
                         accepted[-1] = c
                 # Mention-in-text advisory (unchanged):
                 missing_figs = []
@@ -461,27 +483,24 @@ def verify_section_draft(
                 "cited_chunk_ids": list(c.cited_chunk_ids),
             })
 
-    # P1 (Cycle 6 Meta): hard cap on out-of-scope claims. DOMAIN MISMATCH
-    # OVERRIDE prompt says "2-3 claims" but the LLM doesn't always obey
-    # (hif_2 ch04 emitted 11-13 OOS claims). Truncate excess past
-    # _MAX_OOS_CLAIMS, keeping the first ones (LLM puts its strongest
-    # OOS framing claims first).
-    oos_indices = [i for i, c in enumerate(accepted)
-                    if _OOS_CLAIM_RE.search(c.text)]
-    if len(oos_indices) > _MAX_OOS_CLAIMS:
-        drop_idx = set(oos_indices[_MAX_OOS_CLAIMS:])
-        kept: list[GroundedClaim] = []
-        for i, c in enumerate(accepted):
-            if i in drop_idx:
-                rejected.append({
-                    "claim_text": c.text[:80],
-                    "reason": "oos_overflow",
-                    "kept_oos": _MAX_OOS_CLAIMS,
-                    "total_oos": len(oos_indices),
-                })
-            else:
-                kept.append(c)
-        accepted = kept
+    # P1 (Cycle 6 Meta + Parallel B): chapter-level OOS cap. Once ANY
+    # claim fires the OOS-opener pattern ("源论文未涉及" / "the source
+    # paper does not address"), the entire chapter is treated as OOS:
+    # keep only the first _MAX_OOS_CLAIMS claims total. hif_2 ch04
+    # emitted 1 OOS opener + 11 off-topic descriptive claims; pre-fix
+    # claim-level cap kept all 11 (only 1 matched the opener regex).
+    # Chapter-level catches the descriptive overflow too.
+    has_oos_opener = any(_OOS_CLAIM_RE.search(c.text) for c in accepted)
+    if has_oos_opener and len(accepted) > _MAX_OOS_CLAIMS:
+        dropped = accepted[_MAX_OOS_CLAIMS:]
+        accepted = accepted[:_MAX_OOS_CLAIMS]
+        for c in dropped:
+            rejected.append({
+                "claim_text": c.text[:80],
+                "reason": "oos_chapter_overflow",
+                "kept": _MAX_OOS_CLAIMS,
+                "total": _MAX_OOS_CLAIMS + len(dropped),
+            })
 
     # P0 (Cycle 6): results-class section with zero numeric anchors is
     # suspiciously thin. Emit advisory (claims still accepted) so audit
@@ -788,6 +807,17 @@ When the USER message lists 'Figures topically relevant to this section':
     SAME number of substantive claims as you would without this rule.
     Keep claim count and prose length on target.** Be selective about
     WHICH figures each claim cites; do NOT shrink the section.
+  - DEEP figure-claim discipline (Parallel C): a claim that cites a
+    figure must NOT be a bare "如图N所示" / "Fig. N shows" placeholder.
+    Every figure-citing claim must include (a) the specific panel or
+    region (e.g. "Fig. 3(c)", "图4 左侧"), (b) at least one numeric
+    anchor from the source (W_rec / η / E_b / temperature / etc.) when
+    the figure depicts quantitative data, AND (c) the mechanism /
+    causal link (why does this figure matter — what does the data tell
+    you that you couldn't infer from text alone). The "visual" and
+    "observation" fields under each figure in this block are your
+    primary source for (b) and (c). Bare placeholder citations are
+    rejected.
 
 ## Headline metric inclusion (Cycle 7 specialist Bug #4/#5)
 
@@ -970,13 +1000,29 @@ def _figure_relevance(
 
 
 def _format_section_figures_block(notes: list[dict]) -> str:
+    """Format figure notes for the LLM compose prompt.
+
+    Parallel C (v1.11) fix: was passing only fig_id + caption[:140], so
+    s07's rich `deep_observation` (120-220 chars) and `visual_summary`
+    (300-500 chars) were "sleeping" in YAML. The LLM had nothing to
+    write about each figure beyond its label → "如图N所示" placeholder
+    citations. Now passes both fields so the LLM can produce DEEP
+    figure-aware claims.
+    """
     if not notes:
         return "(no figures topically relevant to this section)"
     lines: list[str] = []
     for n in notes:
         fid = n.get("fig_id", "?")
         cap = str(n.get("caption", "")).replace("\n", " ")[:140]
-        lines.append(f"- {fid}: {cap}")
+        vis = str(n.get("visual_summary", "")).replace("\n", " ")[:280]
+        obs = str(n.get("deep_observation", "")).replace("\n", " ")[:240]
+        entry = [f"- {fid}: {cap}"]
+        if vis:
+            entry.append(f"    visual: {vis}")
+        if obs:
+            entry.append(f"    observation: {obs}")
+        lines.append("\n".join(entry))
     return "\n".join(lines)
 
 

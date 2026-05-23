@@ -564,18 +564,10 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                     f"[{c.doc_name}] {c.text[:200]}"
                     for c in (retriever.retrieve(guidance, top_k=4) if retriever else [])
                 ]
-                for e in missing_entities:
-                    doc, start, end = e.source_span
-                    src = source_docs.get(doc, "")
-                    if src:
-                        # widen the window so the LLM sees enough surrounding context
-                        ctx_start = max(0, start - 150)
-                        ctx_end = min(len(src), end + 250)
-                        snippet = src[ctx_start:ctx_end].replace("\n", " ").strip()
-                        evidence_parts.append(
-                            f"[entity ↔ {doc}:{start}-{end}] {e.text}\n"
-                            f"  source context: ...{snippet}..."
-                        )
+                # Cycle 8 hot-fix: when Strategy A coverage critic was
+                # deleted, this loop's source — `missing_entities` —
+                # also vanished. The loop is now a no-op (legacy path
+                # doesn't have per-entity coverage flags any more).
                 evidence = "\n".join(evidence_parts)
                 try:
                     rev = llm_review(composed, flags, evidence)

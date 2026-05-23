@@ -649,29 +649,87 @@ def test_dedup_anchors_unicode_unit_normalized():
     assert _claim_dedup_key(a) == _claim_dedup_key(b)
 
 
-def test_verify_truncates_oos_claims_to_3():
-    """Cycle 6 P1: DOMAIN MISMATCH OVERRIDE prompt says 2-3 claims but
-    LLM emitted 11-13 OOS claims on hif_2 ch04. Verifier truncates."""
+def test_verify_truncates_oos_claims_chapter_level():
+    """Parallel B v1.11: chapter-level OOS cap. ANY claim firing OOS
+    opener triggers truncation of WHOLE chapter to first 3 claims,
+    even if subsequent claims don't match opener regex (real hif_2
+    ch04 had 1 opener + 11 off-topic descriptive claims). Claim-
+    level cap would only catch the 1 opener; chapter-level catches all."""
     from stages.s08_section_compose.structured import (
         verify_section_draft, GroundedClaim, SectionDraft,
     )
     from llm.retriever import Chunk
-    # 5 OOS claims — should keep first 3, reject 2 with reason=oos_overflow
-    oos_claims = [
+    claims = [
+        # 1 OOS opener
         GroundedClaim(
-            text=f"源论文未涉及该主题，最接近的内容是 fact {i}.",
+            text="源论文未涉及弛豫反铁电体，专注于 unCLIP 模型。",
             cited_chunk_ids=[0], cited_quote="",
-        )
-        for i in range(5)
+        ),
+        # 4 off-topic descriptive (NOT matching opener regex)
+        GroundedClaim(
+            text="unCLIP 由先验网络和解码器网络组成。",
+            cited_chunk_ids=[0], cited_quote="",
+        ),
+        GroundedClaim(
+            text="扩散先验在光真实感上达到 48.9%。",
+            cited_chunk_ids=[0], cited_quote="",
+        ),
+        GroundedClaim(
+            text="自回归先验对应值为 47.1%。",
+            cited_chunk_ids=[0], cited_quote="",
+        ),
+        GroundedClaim(
+            text="多样性指标 70.5% 远高于 GLIDE。",
+            cited_chunk_ids=[0], cited_quote="",
+        ),
     ]
-    draft = SectionDraft(claims=oos_claims)
+    draft = SectionDraft(claims=claims)
     chunks_by_id = {0: Chunk(id="c0", text="dummy",
                               doc_name="d", char_start=0, char_end=5)}
     accepted, rejected = verify_section_draft(draft, chunks_by_id)
-    assert len(accepted) == 3
-    oos_overflow_rejects = [r for r in rejected
-                             if r.get("reason") == "oos_overflow"]
-    assert len(oos_overflow_rejects) == 2
+    assert len(accepted) == 3  # capped chapter-wide
+    overflow_rejects = [r for r in rejected
+                        if r.get("reason") == "oos_chapter_overflow"]
+    assert len(overflow_rejects) == 2
+
+
+def test_oos_cap_not_triggered_for_normal_chapter():
+    """Negative: no OOS opener → no truncation."""
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft,
+    )
+    from llm.retriever import Chunk
+    claims = [
+        GroundedClaim(text=f"Normal claim {i}.",
+                       cited_chunk_ids=[0], cited_quote="")
+        for i in range(5)
+    ]
+    draft = SectionDraft(claims=claims)
+    chunks_by_id = {0: Chunk(id="c0", text="dummy",
+                              doc_name="d", char_start=0, char_end=5)}
+    accepted, rejected = verify_section_draft(draft, chunks_by_id)
+    assert len(accepted) == 5
+    overflow_rejects = [r for r in rejected
+                        if r.get("reason") == "oos_chapter_overflow"]
+    assert overflow_rejects == []
+
+
+def test_format_section_figures_block_includes_deep_obs():
+    """Parallel C v1.11 fix: figures block must pass visual_summary +
+    deep_observation to LLM, not just caption[:140]. Was the v1.6
+    silent regression that left figure-content in YAML 'sleeping'."""
+    from stages.s08_section_compose.structured import _format_section_figures_block
+    notes = [{
+        "fig_id": "Fig. 3",
+        "caption": "P-E loops at 25 °C, 100 °C and 200 °C.",
+        "visual_summary": "Three nested loops in red/green/blue; vertical axis P (μC/cm²) -60 to 60; horizontal axis E (kV/cm) -200 to 200. All loops slim with low remnant polarization.",
+        "deep_observation": "The temperature stability is demonstrated; W_rec degradation is 8% from 25 °C to 200 °C, suggesting PNR-pinning effect.",
+    }]
+    out = _format_section_figures_block(notes)
+    assert "visual:" in out
+    assert "observation:" in out
+    assert "PNR" in out
+    assert "W_rec" in out
 
 
 def test_verify_results_section_thin_numerics_advisory():
