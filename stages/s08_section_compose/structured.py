@@ -195,7 +195,7 @@ _ANCHOR_AUTHOR_RE = re.compile(
 # that show up in chapter prose (J/cm without superscript, mC/cm², etc.).
 _ANCHOR_VALUE_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*"
-    r"(?:J/cm[³23]?|MV/cm|kV/cm|kV/mm|μC/cm[²2]|mC/cm[²2]|%|GPa|MPa)"
+    r"(J/cm[³23]?|MV/cm|kV/cm|kV/mm|μC/cm[²2]|mC/cm[²2]|%|GPa|MPa)"
 )
 # Schema prefix that occasionally leaks into the LLM output prose
 # (Meta-Auditor M2 caught in ali2025_flash v190 ch03):
@@ -216,7 +216,24 @@ def _claim_anchors(text: str) -> list[str]:
     for m in _ANCHOR_AUTHOR_RE.finditer(text):
         out.append(m.group(1))
     for m in _ANCHOR_VALUE_RE.finditer(text):
+        # Value-only (no unit) — the verifier checks the value appears
+        # in the quote, and quotes don't always carry the unit verbatim.
+        # Dedup uses a separate value+unit helper (`_claim_dedup_anchors`)
+        # so that "5 GPa" and "5 J/cm³" don't collide.
         out.append(m.group(1))
+    return out
+
+
+def _claim_dedup_anchors(text: str) -> list[str]:
+    """Like _claim_anchors but uses value+unit composite for the value
+    side, so "5 GPa" and "5 J/cm³" are distinct dedup keys. Cycle 5 A3
+    caught: anchor-only dedup collided two unrelated Li-et-al. claims.
+    """
+    out: list[str] = []
+    for m in _ANCHOR_AUTHOR_RE.finditer(text):
+        out.append(m.group(1))
+    for m in _ANCHOR_VALUE_RE.finditer(text):
+        out.append(f"{m.group(1)}_{m.group(2)}")
     return out
 
 
@@ -730,7 +747,7 @@ def _claim_dedup_key(text: str) -> str:
       3. 120-char prefix — last-resort for descriptive prose with
          neither anchors nor distinctive tokens.
     """
-    anchors = _claim_anchors(text)
+    anchors = _claim_dedup_anchors(text)
     if anchors:
         return "anchors:" + "|".join(sorted(anchors))
     distinctive = sorted(_distinctive_tokens(text))[:5]

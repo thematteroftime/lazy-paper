@@ -616,3 +616,25 @@ def test_anchor_author_loose_whitespace():
     assert "Tang" in _claim_anchors("Tang等人提出了一种新材料")
     assert "Tang" in _claim_anchors("Tang 等人提出了一种新材料")
     assert "Tang" in _claim_anchors("Tang et al. proposed")
+
+
+def test_dedup_anchors_unit_aware_no_false_collision():
+    """Cycle 5 A3: same author + same number but different unit must
+    NOT collide (e.g., 'Li 5 GPa' fracture vs 'Li 5 J/cm³' energy)."""
+    from stages.s08_section_compose.structured import _claim_dedup_key
+    fracture = "Li et al. achieved 5 GPa fracture toughness in this work."
+    energy = "Li et al. demonstrated 5 J/cm³ energy density in BST."
+    k1 = _claim_dedup_key(fracture)
+    k2 = _claim_dedup_key(energy)
+    assert k1 != k2, f"unit-aware dedup failed: both keys = {k1!r}"
+
+
+def test_claim_anchors_returns_value_only_for_verifier():
+    """Verifier checks anchor-in-quote substring. The anchor must be
+    the bare value (no unit) — quotes don't always carry unit verbatim."""
+    from stages.s08_section_compose.structured import _claim_anchors
+    anchors = _claim_anchors("Jiang et al. reported 2.94 J/cm³ value.")
+    # bare value, not "2.94J/cm³" — verifier will substring-match "2.94"
+    # against quote even when quote lacks the unit.
+    assert "2.94" in anchors
+    assert "Jiang" in anchors
