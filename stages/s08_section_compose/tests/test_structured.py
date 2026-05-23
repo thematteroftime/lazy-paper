@@ -647,3 +647,76 @@ def test_dedup_anchors_unicode_unit_normalized():
     a = "Tang et al. demonstrated 5 J/cm³ energy density."
     b = "Tang et al. demonstrated 5 J/cm3 energy density."
     assert _claim_dedup_key(a) == _claim_dedup_key(b)
+
+
+def test_verify_truncates_oos_claims_to_3():
+    """Cycle 6 P1: DOMAIN MISMATCH OVERRIDE prompt says 2-3 claims but
+    LLM emitted 11-13 OOS claims on hif_2 ch04. Verifier truncates."""
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft,
+    )
+    from llm.retriever import Chunk
+    # 5 OOS claims — should keep first 3, reject 2 with reason=oos_overflow
+    oos_claims = [
+        GroundedClaim(
+            text=f"源论文未涉及该主题，最接近的内容是 fact {i}.",
+            cited_chunk_ids=[0], cited_quote="",
+        )
+        for i in range(5)
+    ]
+    draft = SectionDraft(claims=oos_claims)
+    chunks_by_id = {0: Chunk(id="c0", text="dummy",
+                              doc_name="d", char_start=0, char_end=5)}
+    accepted, rejected = verify_section_draft(draft, chunks_by_id)
+    assert len(accepted) == 3
+    oos_overflow_rejects = [r for r in rejected
+                             if r.get("reason") == "oos_overflow"]
+    assert len(oos_overflow_rejects) == 2
+
+
+def test_verify_results_section_thin_numerics_advisory():
+    """Cycle 6 P0: results-class section with no numeric anchors flagged
+    (advisory only — claims still accepted). meng2024 ch07 / ali2025 ch07
+    were missing main metrics like 'W_rec=5.00 J/cm³'."""
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft,
+    )
+    from llm.retriever import Chunk
+    # 3 claims, no numeric anchors — advisory should fire
+    claims = [
+        GroundedClaim(text=f"Generic application claim {i} without metrics.",
+                       cited_chunk_ids=[0], cited_quote="")
+        for i in range(3)
+    ]
+    draft = SectionDraft(claims=claims)
+    chunks_by_id = {0: Chunk(id="c0", text="dummy",
+                              doc_name="d", char_start=0, char_end=5)}
+    accepted, rejected = verify_section_draft(
+        draft, chunks_by_id, section_title="07-Applications_of_Relaxor_AFEs",
+    )
+    assert len(accepted) == 3  # all kept
+    thin_advisories = [r for r in rejected
+                       if r.get("reason") == "results_section_thin_numerics"]
+    assert len(thin_advisories) == 1
+
+
+def test_verify_non_results_section_skips_numerics_advisory():
+    """Non-results section title should NOT trigger thin-numerics advisory."""
+    from stages.s08_section_compose.structured import (
+        verify_section_draft, GroundedClaim, SectionDraft,
+    )
+    from llm.retriever import Chunk
+    claims = [
+        GroundedClaim(text=f"Introduction claim {i}.",
+                       cited_chunk_ids=[0], cited_quote="")
+        for i in range(3)
+    ]
+    draft = SectionDraft(claims=claims)
+    chunks_by_id = {0: Chunk(id="c0", text="dummy",
+                              doc_name="d", char_start=0, char_end=5)}
+    _, rejected = verify_section_draft(
+        draft, chunks_by_id, section_title="01-Introduction",
+    )
+    thin_advisories = [r for r in rejected
+                       if r.get("reason") == "results_section_thin_numerics"]
+    assert thin_advisories == []

@@ -203,6 +203,25 @@ _SCHEMA_PREFIX_RE = re.compile(
     r"^\s*(?:GroundedClaim|Claim|claim|SectionDraft)\s*:", re.IGNORECASE,
 )
 
+# Out-of-scope claim opener — produced by the DOMAIN MISMATCH OVERRIDE
+# prompt path when the section topic isn't in the source paper. Cycle 6
+# Meta caught: hif_2 ch04/ch05 emitted 11-13 OOS claims when the prompt
+# said "2-3" — LLM didn't honor the limit, so the verifier enforces it.
+_OOS_CLAIM_RE = re.compile(
+    r"(?:源论文|该论文|本文|the\s+source\s+paper|this\s+paper)"
+    r".{0,30}?(?:未?(?:涉及|讨论|covers?|address)|"
+    r"(?:does\s+not|did\s+not)\s+(?:cover|address|discuss))",
+    re.IGNORECASE,
+)
+_MAX_OOS_CLAIMS = 3
+
+# Results-class section titles where a draft without numeric anchors is
+# likely shallow (Cycle 6 P0). Advisory only — flagged but not rejected.
+_RESULTS_SECTION_RE = re.compile(
+    r"(?i)(result|performance|quantitative|measurement|application"
+    r"|discussion|metric|结果|性能|讨论|应用|定量|度量|表征)"
+)
+
 
 def _claim_anchors(text: str) -> list[str]:
     """Extract specific anchor tokens (author surnames + numeric values) a
@@ -249,6 +268,7 @@ def verify_section_draft(
     ratio_threshold: float = 0.85,
     *,
     available_fig_ids: set[str] | None = None,
+    section_title: str | None = None,
 ) -> tuple[list[GroundedClaim], list[dict]]:
     """Drop claims whose `cited_quote` doesn't fuzzy-match any chunk.
 
@@ -388,6 +408,44 @@ def verify_section_draft(
                 "best_ratio": round(best_score, 3),
                 "cited_chunk_ids": list(c.cited_chunk_ids),
             })
+
+    # P1 (Cycle 6 Meta): hard cap on out-of-scope claims. DOMAIN MISMATCH
+    # OVERRIDE prompt says "2-3 claims" but the LLM doesn't always obey
+    # (hif_2 ch04 emitted 11-13 OOS claims). Truncate excess past
+    # _MAX_OOS_CLAIMS, keeping the first ones (LLM puts its strongest
+    # OOS framing claims first).
+    oos_indices = [i for i, c in enumerate(accepted)
+                    if _OOS_CLAIM_RE.search(c.text)]
+    if len(oos_indices) > _MAX_OOS_CLAIMS:
+        drop_idx = set(oos_indices[_MAX_OOS_CLAIMS:])
+        kept: list[GroundedClaim] = []
+        for i, c in enumerate(accepted):
+            if i in drop_idx:
+                rejected.append({
+                    "claim_text": c.text[:80],
+                    "reason": "oos_overflow",
+                    "kept_oos": _MAX_OOS_CLAIMS,
+                    "total_oos": len(oos_indices),
+                })
+            else:
+                kept.append(c)
+        accepted = kept
+
+    # P0 (Cycle 6): results-class section with zero numeric anchors is
+    # suspiciously thin. Emit advisory (claims still accepted) so audit
+    # log surfaces it for the retry-when-short pass to catch.
+    if section_title and _RESULTS_SECTION_RE.search(section_title):
+        total_anchors = sum(
+            len(_ANCHOR_VALUE_RE.findall(c.text)) for c in accepted
+        )
+        if total_anchors < 2 and len(accepted) >= 3:
+            rejected.append({
+                "reason": "results_section_thin_numerics",
+                "section_title": section_title,
+                "total_value_anchors": total_anchors,
+                "claim_count": len(accepted),
+            })
+
     return accepted, rejected
 
 
@@ -655,6 +713,11 @@ still apply — see the USER message for {lang_instruction} and other hints.
     one fact = one claim. The merge pass deduplicates by (author, value)
     anchors + distinctive chemical tokens; if you write the same fact
     once in English and again in Chinese, only the first survives.
+  - Never propose forward-looking design recommendations (e.g.
+    "consider adding La doping", "future work could use CAFE region")
+    unless the source chunks EXPLICITLY state them. Cycle 6 caught the
+    model inventing "La doping" when the source only discussed Li/Al,
+    and "CAFE" when the source uses "RAFE". Stick to what chunks say.
 
 ## Figure citation requirement (variant C hard constraint)
 
@@ -943,6 +1006,7 @@ def compose_structured(
     accepted, rejected = verify_section_draft(
         draft, chunks_by_id, ratio_threshold=verifier_threshold,
         available_fig_ids=avail_fig_ids,
+        section_title=section_title,
     )
     verified = SectionDraft(claims=accepted) if len(accepted) >= 2 else draft
 
