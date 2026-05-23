@@ -228,12 +228,18 @@ def _claim_dedup_anchors(text: str) -> list[str]:
     """Like _claim_anchors but uses value+unit composite for the value
     side, so "5 GPa" and "5 J/cm³" are distinct dedup keys. Cycle 5 A3
     caught: anchor-only dedup collided two unrelated Li-et-al. claims.
+
+    Unit is NFKD-normalized + lowercased so that "5 J/cm³" and "5 J/cm3"
+    (same fact, Unicode-superscript vs ASCII rendering) still collapse.
+    Cycle 5 Meta M1 D3 caught this paraphrase split.
     """
+    import unicodedata as _ud
     out: list[str] = []
     for m in _ANCHOR_AUTHOR_RE.finditer(text):
         out.append(m.group(1))
     for m in _ANCHOR_VALUE_RE.finditer(text):
-        out.append(f"{m.group(1)}_{m.group(2)}")
+        unit = _ud.normalize("NFKD", m.group(2)).lower()
+        out.append(f"{m.group(1)}_{unit}")
     return out
 
 
@@ -661,9 +667,12 @@ When the USER message lists 'Figures topically relevant to this section':
     binding is literal-substring based).
   - If multiple figures are relevant, write multiple claims — do not
     cram all fig_ids into one claim.
-  - HARD CAP: at most 3 figure_ids per claim AND at most 5 distinct
-    figure_ids across the whole section. Pick the most directly
-    relevant ones; do NOT list every available figure.
+  - HARD CAP on figure_ids per CLAIM (not on claim count!): at most
+    3 figure_ids per claim AND at most 5 distinct figure_ids across
+    the whole section. **This caps the figure list only — write the
+    SAME number of substantive claims as you would without this rule.
+    Keep claim count and prose length on target.** Be selective about
+    WHICH figures each claim cites; do NOT shrink the section.
 
 ## DOMAIN MISMATCH OVERRIDE
 

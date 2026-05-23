@@ -638,3 +638,12 @@ def test_claim_anchors_returns_value_only_for_verifier():
     # against quote even when quote lacks the unit.
     assert "2.94" in anchors
     assert "Jiang" in anchors
+
+
+def test_dedup_anchors_unicode_unit_normalized():
+    """Meta-Auditor M1 D3: '5 J/cm³' (Unicode super) and '5 J/cm3' (ASCII)
+    must collapse — they're the same fact, just different rendering."""
+    from stages.s08_section_compose.structured import _claim_dedup_key
+    a = "Tang et al. demonstrated 5 J/cm³ energy density."
+    b = "Tang et al. demonstrated 5 J/cm3 energy density."
+    assert _claim_dedup_key(a) == _claim_dedup_key(b)
