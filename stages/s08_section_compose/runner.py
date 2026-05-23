@@ -219,7 +219,7 @@ def _build_retrieval_query(title: str, guidance: str, kg, keywords: list[str]) -
     parts = [title, guidance]
     if kg is not None:
         try:
-            from stages.s08_section_compose.coverage import entities_in_scope
+            from stages.s08_section_compose.structured import entities_in_scope
             scoped = entities_in_scope(title, guidance, kg)
             # cap to first 20 entity texts to keep query bounded
             parts.extend(e.text for e in scoped[:20])
@@ -554,25 +554,6 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
         # redundant critic when structured succeeded.
         if kg is not None and not structured_used:
             flags = regex_check(composed, source_docs, kg=kg, fig_yaml=figures)
-
-            # Strategy A: coverage critic — flag in-scope KG entities missing from draft
-            missing_entities = []
-            if os.environ.get("LAZY_PAPER_COVERAGE") == "1":
-                from stages.s08_section_compose.coverage import (
-                    entities_in_scope, coverage_missing, truncate_for_flag,
-                )
-                scope = entities_in_scope(title_cn, guidance, kg)
-                missing_entities = truncate_for_flag(coverage_missing(composed, scope))
-                if missing_entities:
-                    for e in missing_entities:
-                        flags.append(Flag(
-                            span=(0, 0),
-                            claim=f"{e.type}: {e.text}",
-                            problem="entity_coverage_missing",
-                            evidence=f"[{e.source_span[0]}] (KG entity)",
-                        ))
-                    print(f"[critic-coverage] {basename}: {len(missing_entities)} "
-                          f"entities in scope but missing from draft", flush=True)
 
             if flags:
                 from stages.s08_section_compose.reviewer import llm_review

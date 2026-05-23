@@ -1130,6 +1130,78 @@ def compose_structured(
     return verified, rejected
 
 
+# Common materials-science terms that match many entities trivially — matching
+# on these alone shouldn't count an entity as "covered" / distinctive.
+_STOP_TOKENS = {
+    "based", "ceramics", "ceramic", "rfe", "afe", "rafe", "pnr", "pnrs",
+    "nbt", "ferroelectric", "antiferroelectric", "relaxor", "energy",
+    "storage", "doping", "doped", "modified", "performance", "system",
+    "material", "materials", "phase", "loop", "loops",
+}
+
+# Section-title keywords that justify pulling in ALL comparators from the KG
+# for query expansion. These are the sections that survey prior work.
+_COMPARATOR_SECTION_KEYWORDS = {
+    "introduction", "background", "prior", "comparison", "literature",
+    "related", "review", "discussion", "limitations", "conclusion",
+    "引言", "背景", "对比", "比较", "综述", "讨论", "结论",
+}
+
+
+def _tokens(text: str) -> set[str]:
+    """Cheap tokenizer: 3+ char ASCII or 2+ char CJK."""
+    out: set[str] = set()
+    for m in re.finditer(r"[A-Za-z0-9_]{3,}|[一-鿿]{2,}", text):
+        out.add(m.group(0).lower())
+    return out
+
+
+def _distinctive_tokens(text: str) -> set[str]:
+    """Tokens worth requiring a draft to match. Excludes generic vocabulary
+    and prefers chemical-formula-shaped strings (mixed letters+digits or
+    5+ char alphanum). For "Ca2+/Nb5+-codoped Bi0.5Na0.5TiO3-based RFE
+    ceramics" this returns {"ca2", "nb5", "codoped", "bi0", "na0", "tio3"}
+    rather than including generic "based"/"ceramics"/"rfe"."""
+    out: set[str] = set()
+    for m in re.finditer(r"[A-Za-z0-9.+/_-]{3,}", text):
+        tok = m.group(0).lower()
+        if tok in _STOP_TOKENS:
+            continue
+        has_digit = any(c.isdigit() for c in tok)
+        has_letter = any(c.isalpha() for c in tok)
+        if (has_digit and has_letter) or len(tok) >= 5:
+            out.add(tok)
+    for m in re.finditer(r"[一-鿿]{4,}", text):
+        out.add(m.group(0))
+    return out
+
+
+def entities_in_scope(section_title: str, section_guidance: str,
+                      kg: "PaperKG") -> list["Entity"]:
+    """Heuristic: KG entities relevant to this section. Used for retrieval
+    query expansion (s08 runner) — pulls in comparator/claim entities on
+    survey-style sections + tokens-overlap for other types.
+    """
+    section_tokens = _tokens(section_title + " " + section_guidance)
+    if not section_tokens:
+        return []
+    title_lower = section_title.lower()
+    pulls_comparators = any(
+        kw in title_lower for kw in _COMPARATOR_SECTION_KEYWORDS
+    )
+    in_scope: list["Entity"] = []
+    for e in kg.entities:
+        if e.type in ("material", "parameter"):
+            in_scope.append(e)
+            continue
+        if pulls_comparators and e.type in ("comparator", "claim"):
+            in_scope.append(e)
+            continue
+        if section_tokens & _tokens(e.text):
+            in_scope.append(e)
+    return in_scope
+
+
 def missing_required(
     required: list[RequiredMention],
     draft: SectionDraft,
@@ -1140,11 +1212,10 @@ def missing_required(
     Earlier (v1.7) impl checked whether the entity's `evidence_chunk_id`
     was cited by any claim — but a claim can cite a chunk and still write
     generic content that doesn't include the comparator. The content-based
-    check (substring + distinctive-token match + author-name match,
-    same logic as coverage.py) is the only reliable way to know if the
-    LLM ACTUALLY mentioned the required entity.
+    check (substring + distinctive-token match + author-name match) is
+    the only reliable way to know if the LLM ACTUALLY mentioned the
+    required entity.
     """
-    from stages.s08_section_compose.coverage import _distinctive_tokens
     full_text = " ".join(c.text for c in draft.claims).lower()
     out: list[RequiredMention] = []
     for r in required:
