@@ -157,25 +157,36 @@ template.docx ── s05_template ───────────────�
 
 ## 5. Verified state
 
-End-to-end validated on a 13-paper corpus under Strategy KL (v1.8.1+). Most
-recent comprehensive run: 2026-05-21, full report in
-`docs/v1_8_2_corpus_validation.md`.
+Most recent validation: **v1.10 — 3-variant × 9-paper × 3-audit-cycle test
+(2026-05-23)**, full report in `docs/v1_10_variant_comparison.md`. Plus
+the v1.8.x 13-paper corpus (`docs/v1_8_2_corpus_validation.md`, 2026-05-21)
+that established Strategy KL as production-ready.
 
-| Paper | Pipeline | Notable score |
-|---|---|---|
-| meng2024 (3 runs) | 15/15 chapters each | T1 benchmark recovery 12 / 17 / 16 (mean 15.0, floor 12) |
-| yang2025 | 15/15 | T2 fabrication-resistance 3/3 ✓ |
-| fu2020 | 15/15 | T5 basic 3/4 ✓ |
-| chai2026 | 15/15 | T6 basic 4/4 ✓ |
-| ali2025_flash | 15/15 | T4 comparison depth 0/5 ⚠ (LLM sampling variance; see corpus report) |
-| gaur2022 | 15/15 | generic ✓ (retry-when-empty fires 2×) |
-| ge2025 | 15/15 | generic ✓ (retry 2×) |
-| he2023 | 15/15 | generic ✓ |
-| liu2022 | 15/15 | generic ✓ |
-| pamula2025 | 15/15 | generic ✓ (retry 3×) |
-| pan2025 | 15/15 | generic ✓ (retry 2×) |
-| randall2021 | 15/15 | generic ✓ |
-| yao2022 | 15/15 | generic ✓ |
+Headline numbers under **Variant C** (winner, v1.10 default with
+`LAZY_PAPER_FIGURE_BIND=1`):
+
+| Paper | Pipeline | M2 fig embed | M4 TestCase |
+|---|---|---|---|
+| meng2024 (3 runs) | 15/15 each | 7/7 (100%) | T1 = 9/9/9 (stdev 0) ✓ floor; T3 = 4/4/4 |
+| yang2025 | 15/15 | 5/5 | T2 = 3/3 ✓ |
+| fu2020 | 15/15 | (baseline only) | T5 = 3/4 ✓ |
+| chai2026 | 15/15 | 2/2 | T6 = 4/4 ✓ |
+| ali2025_flash | 15/15 | **26/26 (100%)** | T4 = **5/5 🏆 (broke baseline 4)** |
+| gaur2022 | 15/15 | 1/1 | generic ✓ |
+| he2023 | 15/15 | 8/8 (100%) | generic ✓ |
+| pan2025 | 15/15 | 4/4 | generic ✓ |
+| hif_1 (Adv Mat survey, 62p, v1.10 +) | 15/15 | **20/20 (100%)** | (cross-domain) |
+| hif_2 (DALL-E 2, 17 figs, v1.10 +) | 15/15 | **17/17 (100%)** | (cross-domain) |
+
+For variant A/B M2/M4 comparison + zero-variance stdev table, see
+`docs/v1_10_variant_comparison.md` §3.
+
+**Important — environment unlocks M2 figure binding**: the 100% column
+above requires `LAZY_PAPER_FIGURE_BIND=1`. Without it, variant C still
+benefits (LLM volunteers figure refs from the base prompt + schema
+captures them), but rate is lower — see `.env.example` for the full
+recommended env combo and `docs/v1_10_variant_comparison.md §7` for
+the env-on vs env-off numbers.
 
 DOCX + HTML are always produced. PDF / PPTX are produced only when the
 `--formats` flag includes them; the v181 corpus runs above produced docx+html
