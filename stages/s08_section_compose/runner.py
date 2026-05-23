@@ -475,6 +475,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                     prior_findings=prior_findings_block,
                     paper_context=paper_context_str[:3000],
                     section_figures=section_figures,
+                    lang=lang,
                 )
                 composed = draft.render(mode="REMOVE")
                 # Soft-warn audit: required mentions the LLM didn't cover

@@ -6,17 +6,31 @@ from pathlib import Path
 
 from stages._common import dump_yaml, mark_done, slugify
 
+# ─── Bilingual section anchors (add a new key to extend a language) ───────
+# Each entry: lowercased English form OR Chinese literal. Matched against
+# the line's title; if any matches the chapter starts. Chinese papers
+# previously collapsed to a single chapter because only English anchors
+# were here.
 SECTION_ANCHORS = {
+    # English IMRaD
     "abstract", "introduction", "experimental", "experiments",
     "materials and methods", "methods", "methodology",
     "results", "results and discussion", "discussion",
     "conclusion", "conclusions", "summary",
     "acknowledgements", "acknowledgments",
     "references", "supplementary", "appendix",
+    # Chinese equivalents
+    "摘要", "引言", "前言", "绪论", "实验", "实验方法",
+    "材料与方法", "材料和方法", "方法", "结果", "结果与讨论",
+    "结果和讨论", "讨论", "结论", "总结", "致谢", "参考文献",
+    "补充材料", "附录",
 }
 
+# Heading regex: number prefix optional; title starts with [A-Z一-鿿]
+# (latin capital OR CJK), continues with mixed alphanumeric + CJK + spaces.
 _ANCHOR_LINE_RE = re.compile(
-    r"^\s*(#{0,4}\s*)?(\d+(?:\.\d+){0,2}\.?\s+)?(?P<title>[A-Z][A-Za-z &/-]{2,60})\s*$"
+    r"^\s*(#{0,4}\s*)?(\d+(?:\.\d+){0,2}\.?\s+)?"
+    r"(?P<title>[A-Z一-鿿][A-Za-z一-鿿 &/-]{1,60})\s*$"
 )
 
 
@@ -25,6 +39,7 @@ def detect_science_anchor(line: str) -> str | None:
     if not m:
         return None
     title = m.group("title").strip()
+    # exact-match against bilingual anchor set
     if title.lower() in SECTION_ANCHORS:
         return title
     if m.group(2) and 4 <= len(title) <= 60:

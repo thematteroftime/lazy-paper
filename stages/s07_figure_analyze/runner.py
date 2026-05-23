@@ -11,6 +11,7 @@ from llm.client import LLM, max_tokens
 from stages._common import dump_yaml, mark_done, safe_parse_yaml
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "figure_analyze.md"
+# Canonical fig_id is "Fig. N" / "Fig. Na" (set by s04 _normalize_fig_id).
 FIG_NUM_RE = re.compile(r"Fig\.\s*(\d+)([a-z]?)")
 
 
@@ -19,7 +20,10 @@ def _excerpts(chapters_dir: Path, mentions: dict[str, list[str]], fig_id: str) -
     if not m:
         return ""
     fig_num = m.group(1)
-    pattern = re.compile(rf"\bFig(?:ure)?\.?\s*{fig_num}(?![0-9])", re.IGNORECASE)
+    # v1.11: bilingual mention search — "Fig. N" / "Figure N" / "图N".
+    pattern = re.compile(
+        rf"(?:\bFig(?:ure)?\.?|图)\s*{fig_num}(?![0-9])", re.IGNORECASE,
+    )
     pieces: list[str] = []
     for ch_name, ids in mentions.items():
         if fig_id not in ids:

@@ -26,6 +26,22 @@ if TYPE_CHECKING:
     from llm.retriever import Chunk
 
 
+# ─── Localized constants (add a new key per language) ──────────────────────
+# v1.11: bilingual constants centralized. To support a new language (e.g.
+# "ja"), add an entry to each dict below. Code paths read the dict by the
+# active `lang` param (cli --lang) rather than hardcoding any literal.
+
+LOCALES = ("zh", "en")
+
+# User-facing fallback when a figure_id reference can't be bound to a real
+# fig_notes entry (e.g. s04 OCR-numbering vs paper-actual mismatch). Substituted
+# into claim.text so the rendered prose doesn't show a dead link.
+UNKNOWN_FIGURE_LABEL = {
+    "zh": "源论文相关图示",
+    "en": "a figure referenced in the source",
+}
+
+
 # Section-title keywords that justify treating comparator/claim entities as
 # "required to be cited" for this section. Mirrors coverage.py's gate.
 _SURVEY_SECTION_KEYWORDS = (
@@ -208,9 +224,14 @@ _SCHEMA_PREFIX_RE = re.compile(
 # Meta caught: hif_2 ch04/ch05 emitted 11-13 OOS claims when the prompt
 # said "2-3" — LLM didn't honor the limit, so the verifier enforces it.
 _OOS_CLAIM_RE = re.compile(
-    r"(?:源论文|该论文|本文|the\s+source\s+paper|this\s+paper)"
-    r".{0,30}?(?:未?(?:涉及|讨论|covers?|address)|"
-    r"(?:does\s+not|did\s+not)\s+(?:cover|address|discuss))",
+    # Subjects: include 本论文/本研究/该研究 variants (Cycle 10 caught
+    # "本论文并非研究…" form missed by the 本文-only original).
+    r"(?:源论文|该论文|该研究|本论文|本研究|本文|the\s+source\s+paper|this\s+paper)"
+    r".{0,30}?"
+    # Predicates: add 并非 / 并不 (negation-then-verb) on top of existing
+    # 未涉及 / does not cover.
+    r"(?:并(?:非|不)|未?(?:涉及|讨论|涵盖|covers?|address)"
+    r"|(?:does\s+not|did\s+not)\s+(?:cover|address|discuss))",
     re.IGNORECASE,
 )
 _MAX_OOS_CLAIMS = 3
@@ -243,24 +264,6 @@ def _claim_anchors(text: str) -> list[str]:
     return out
 
 
-def _extract_author_value_pairs(text: str, *, window: int = 80) -> list[tuple[str, str]]:
-    """Find (author, value+unit) pairs where the value appears within
-    `window` chars after the author surname. Used by the cross-citation
-    cross-attribution check (Cycle 7 specialist Bug #1).
-
-    The value-side string is the full match including the space the OCR
-    saw (e.g. "133 J/cm³"), so it normalize-compares cleanly against the
-    cited_quote.
-    """
-    pairs: list[tuple[str, str]] = []
-    for am in _ANCHOR_AUTHOR_RE.finditer(text):
-        author = am.group(1)
-        tail = text[am.end():am.end() + window]
-        for vm in _ANCHOR_VALUE_RE.finditer(tail):
-            pairs.append((author, vm.group(0)))
-    return pairs
-
-
 def _claim_dedup_anchors(text: str) -> list[str]:
     """Like _claim_anchors but uses value+unit composite for the value
     side, so "5 GPa" and "5 J/cm³" are distinct dedup keys. Cycle 5 A3
@@ -287,6 +290,7 @@ def verify_section_draft(
     *,
     available_fig_ids: set[str] | None = None,
     section_title: str | None = None,
+    lang: str = "zh",
 ) -> tuple[list[GroundedClaim], list[dict]]:
     """Drop claims whose `cited_quote` doesn't fuzzy-match any chunk.
 
@@ -361,40 +365,11 @@ def verify_section_draft(
             anchor_advisory = [a for a in anchors
                                if _normalize_for_match(a) not in q_norm]
         if matched_cid is not None:
-            # Cross-citation cross-attribution check (Cycle 7 specialist
-            # Bug #1): if the claim says "Kim ... 133 J/cm³" but the
-            # cited_quote actually pairs that value with a different
-            # author (or pairs different value with Kim), the LLM has
-            # mis-attributed numbers. Reject — this is the recurring
-            # ali2025 ch08 "133/75% to wrong author" hallucination class.
-            claim_pairs = _extract_author_value_pairs(c.text)
-            if claim_pairs:
-                quote_norm = _normalize_for_match(c.cited_quote)
-                quote_pairs_norm = {
-                    (_normalize_for_match(a), _normalize_for_match(v))
-                    for a, v in _extract_author_value_pairs(c.cited_quote)
-                }
-                mismatched = []
-                for a, v in claim_pairs:
-                    a_n, v_n = _normalize_for_match(a), _normalize_for_match(v)
-                    # If the value appears in the quote but NOT paired
-                    # with this author → cross-attribution. (Whitelist
-                    # cases where the quote contains both anchors loosely,
-                    # i.e. the value is present and the author is also
-                    # present anywhere in quote — that's just paraphrase.)
-                    value_in_quote = v_n in quote_norm
-                    author_in_quote = a_n in quote_norm
-                    paired = (a_n, v_n) in quote_pairs_norm
-                    if value_in_quote and not (author_in_quote or paired):
-                        mismatched.append((a, v))
-                if mismatched:
-                    rejected.append({
-                        "text": c.text[:120],
-                        "quote": c.cited_quote[:120],
-                        "reason": "cross_citation_misattribution",
-                        "mismatched_pairs": [list(p) for p in mismatched],
-                    })
-                    continue
+            # v1.11 architecture-review CUT: cross-citation reject was
+            # 40 LOC for a 1-paper case (ali2025 ch08) whose true root
+            # cause is empty cited_quote bypassing the verifier upstream.
+            # Defer to v1.12 with a proper reference-list orthogonal
+            # check (claim author MUST appear in paper.references).
             if matched_cid not in c.cited_chunk_ids:
                 c = c.model_copy(update={
                     "cited_chunk_ids": [matched_cid, *c.cited_chunk_ids],
@@ -443,17 +418,19 @@ def verify_section_draft(
                         kept = [f for f in c.figure_ids
                                  if f in (available_fig_ids or set())]
                         new_text = c.text
+                        sub_label = UNKNOWN_FIGURE_LABEL.get(
+                            lang, UNKNOWN_FIGURE_LABEL["zh"]
+                        )
                         for fid in unknown_figs:
                             m = _re.match(r"Fig\.\s*(\d+)", fid)
                             if m:
                                 num = m.group(1)
                                 new_text = _re.sub(
                                     rf"Fig\.\s*{num}\b|图\s*{num}\b",
-                                    "源论文相关图示", new_text,
+                                    sub_label, new_text,
                                 )
                             else:
-                                new_text = new_text.replace(
-                                    fid, "源论文相关图示")
+                                new_text = new_text.replace(fid, sub_label)
                         c = c.model_copy(update={
                             "figure_ids": kept, "text": new_text,
                         })
@@ -819,23 +796,6 @@ When the USER message lists 'Figures topically relevant to this section':
     primary source for (b) and (c). Bare placeholder citations are
     rejected.
 
-## Headline metric inclusion (Cycle 7 specialist Bug #4/#5)
-
-For sections whose title contains "Application(s)", "Performance",
-"Results", "Discussion", "Quantitative", or the Chinese equivalents
-(应用 / 性能 / 结果 / 讨论 / 定量): you MUST include the paper's
-HEADLINE performance metrics — typically the values stated in the
-paper's abstract. For energy-storage materials papers these are
-usually:
-  - W_rec / U_e (recoverable energy density, J/cm³)
-  - η (efficiency, %)
-  - E_b / breakdown field (kV/cm or MV/cm)
-  - P_max / polarization (μC/cm²)
-Look for them in the Paper context block + the retrieved chunks
-covering the abstract. Including these is non-negotiable for these
-section types — a section claiming "high energy storage" without the
-specific number is incomplete.
-
 ## DOMAIN MISMATCH OVERRIDE
 
 If the section title and guidance describe a topic (e.g. "Synthesis of
@@ -1038,6 +998,7 @@ def compose_structured(
     paper_context: str = "",
     section_figures: list[dict] | None = None,
     max_retries: int = 3,
+    lang: str = "zh",
 ) -> tuple["SectionDraft", list[dict]]:
     """instructor call → SectionDraft → verifier gate.
 
@@ -1122,6 +1083,7 @@ def compose_structured(
         draft, chunks_by_id, ratio_threshold=verifier_threshold,
         available_fig_ids=avail_fig_ids,
         section_title=section_title,
+        lang=lang,
     )
     verified = SectionDraft(claims=accepted) if len(accepted) >= 2 else draft
 
@@ -1305,92 +1267,10 @@ def compose_structured(
             print(f"[s08] retry-when-short failed: {exc!r}; keeping "
                   f"original draft", flush=True)
 
-    # variant-c: figure-retry — if section_figures non-empty and verified
-    # mentions < 50% of available figures, one strengthened retry.
-    if section_figures:
-        available_ids = {n.get("fig_id") for n in section_figures if n.get("fig_id")}
-        mentioned_ids: set[str] = set()
-        import re as _re
-        full_text = " ".join(c.text for c in verified.claims)
-        for fid in available_ids:
-            m = _re.match(r"Fig\.\s*(\d+)", fid)
-            if m:
-                num = m.group(1)
-                if (_re.search(rf"Fig\.\s*{num}", full_text)
-                        or _re.search(rf"图\s*{num}", full_text)):
-                    mentioned_ids.add(fid)
-            elif fid in full_text:
-                mentioned_ids.add(fid)
-        missing_figs = available_ids - mentioned_ids
-        if available_ids and (len(missing_figs) / len(available_ids)) >= 0.5:
-            print(
-                f"[s08] figure-retry: mentioned {len(mentioned_ids)}/"
-                f"{len(available_ids)} relevant figures — triggering retry",
-                flush=True,
-            )
-            fig_lines = "\n".join(
-                f"  - {fid}: write a claim with figure_ids=[\"{fid}\"] "
-                f"and \"{fid}\" literally in text"
-                for fid in sorted(missing_figs)
-            )
-            retry_system = _STRUCTURED_SYSTEM + (
-                "\n\n## CRITICAL — MISSING FIGURE CITATIONS\n"
-                f"Your draft did not cite {len(missing_figs)} relevant "
-                f"figures. ADD claims that cite each:\n\n{fig_lines}\n\n"
-                "PRESERVE existing well-grounded claims. Add new ones."
-            )
-            try:
-                fig_retry = _single_compose(
-                    llm, retry_system, user_msg, chunks,
-                    max_retries=max_retries, temperature=0.3,
-                )
-                fig_accepted, fig_rejected = verify_section_draft(
-                    fig_retry, chunks_by_id, ratio_threshold=verifier_threshold,
-                    available_fig_ids=avail_fig_ids,
-                )
-                fig_verified = (SectionDraft(claims=fig_accepted)
-                                if len(fig_accepted) >= 2 else fig_retry)
-                new_full = " ".join(c.text for c in fig_verified.claims)
-                new_mentioned: set[str] = set()
-                for fid in available_ids:
-                    m = _re.match(r"Fig\.\s*(\d+)", fid)
-                    if m and (_re.search(rf"Fig\.\s*{m.group(1)}", new_full)
-                              or _re.search(rf"图\s*{m.group(1)}", new_full)):
-                        new_mentioned.add(fid)
-                    elif fid in new_full:
-                        new_mentioned.add(fid)
-                # Swap guards (parity with retry-when-short β#3 patch):
-                #   - figure mentions strictly increased (intent)
-                #   - C-2: at least 1 verifier-accepted claim in retry
-                #     (else we'd swap a fully-ungrounded retry just
-                #     because it textually mentions a figure)
-                #   - C-1: required-mention coverage did not regress
-                #     (else figure-retry could silently drop comparators)
-                current_missing = len(missing_required(required, verified))
-                new_missing = len(missing_required(required, fig_verified))
-                if (len(new_mentioned) > len(mentioned_ids)
-                        and len(fig_accepted) >= 1
-                        and new_missing <= current_missing):
-                    print(
-                        f"[s08] figure-retry: lifted "
-                        f"{len(mentioned_ids)}→{len(new_mentioned)} figure "
-                        f"mentions (accepted={len(fig_accepted)}, "
-                        f"required missing {current_missing}→{new_missing})",
-                        flush=True,
-                    )
-                    verified, rejected = fig_verified, fig_rejected
-                elif len(new_mentioned) > len(mentioned_ids):
-                    print(
-                        f"[s08] figure-retry: REJECTED — "
-                        f"accepted={len(fig_accepted)}, "
-                        f"coverage {current_missing}→{new_missing} missing. "
-                        f"Keeping original draft.",
-                        flush=True,
-                    )
-            except Exception as exc:
-                print(f"[s08] figure-retry failed: {exc!r}; keeping draft",
-                      flush=True)
-
+    # v1.11 architecture-review CUT: figure-retry was 85 LOC that
+    # duplicated work the DEEP figure-claim prompt rule already does at
+    # source. Its swap guards (C-1, C-2) were themselves bug-prone (3
+    # patch cycles). Trust prompt + figure_hint_unmet advisory.
     return verified, rejected
 
 

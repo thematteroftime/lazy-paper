@@ -307,3 +307,23 @@ def test_single_bbox_figure_still_produces_merged_jpg(tmp_path: Path):
     fig1 = [f for f in figs if f.get("fig_id") == "Fig. 1"][0]
     assert "Fig_1_merged" in fig1["image_rel_path"], f"expected Fig_1_merged, got {fig1['image_rel_path']}"
     assert fig1.get("merged_from"), "merged_from should list source bbox"
+
+
+def test_chinese_fig_caption_matched():
+    """v1.11 cross-domain: 图N caption + 图N mention must be detected
+    by s04 regexes, previously English-only."""
+    from stages.s04_figures.runner import FIG_CAP_RE, FIG_MENTION_RE, _normalize_fig_id
+    # Chinese caption
+    assert FIG_CAP_RE.search("图3 弛豫铁电相图")
+    # English still works
+    assert FIG_CAP_RE.search("Fig. 3 P-E loop")
+    assert FIG_CAP_RE.search("Figure 5 schematic")
+    # Mention regex bilingual
+    m = FIG_MENTION_RE.search("如图3所示")
+    assert m and m.group(1) == "3"
+    m = FIG_MENTION_RE.search("see Fig. 7a")
+    assert m and m.group(1) == "7"
+    # Normalize unifies all forms to canonical "Fig. N"
+    assert _normalize_fig_id("图3") == "Fig. 3"
+    assert _normalize_fig_id("Figure 5") == "Fig. 5"
+    assert _normalize_fig_id("Fig. 7a") == "Fig. 7a"

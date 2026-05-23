@@ -780,79 +780,52 @@ def test_verify_non_results_section_skips_numerics_advisory():
     assert thin_advisories == []
 
 
-def test_cross_citation_misattribution_rejected():
-    """Cycle 7 specialist Bug #1: claim says Author X reports value Y,
-    but cited_quote pairs that Y with Author Z instead. Verifier rejects."""
-    from stages.s08_section_compose.structured import (
-        verify_section_draft, GroundedClaim, SectionDraft,
-    )
-    from llm.retriever import Chunk
-    # Claim attributes 133 J/cm³ to "Li et al." (BKT-BMN system) —
-    # but the actual cited quote pairs 133 with "Kim et al." (PMN-PT).
-    # This is the exact ali2025 ch08 hallucination pattern.
-    draft = SectionDraft(claims=[
-        GroundedClaim(
-            text="Li et al. in BKT-BMN achieved W_rec=133 J/cm³, η=75%.",
-            cited_chunk_ids=[0],
-            cited_quote="Kim et al. reported W_rec=133 J/cm³ and η=75% in PMN-PT system",
-        ),
-        GroundedClaim(
-            text="A second claim to keep accepted >= 2 path differs.",
-            cited_chunk_ids=[0],
-            cited_quote="Kim et al. reported W_rec=133 J/cm³ and η=75% in PMN-PT system",
-        ),
-    ])
-    chunks_by_id = {0: Chunk(
-        id="c0",
-        text="Kim et al. reported W_rec=133 J/cm³ and η=75% in PMN-PT system",
-        doc_name="d", char_start=0, char_end=70,
-    )}
-    accepted, rejected = verify_section_draft(draft, chunks_by_id)
-    # First claim (Li attribution) must be rejected as cross-citation.
-    cross_rejects = [r for r in rejected
-                     if r.get("reason") == "cross_citation_misattribution"]
-    assert len(cross_rejects) == 1
-    mismatched_set = {tuple(p) for p in cross_rejects[0]["mismatched_pairs"]}
-    # value side includes the space exactly as the OCR rendered it.
-    assert any(p[0] == "Li" and "133" in p[1] for p in mismatched_set)
+# v1.11 architecture-review CUT: cross-citation reject + helper deleted
+# (40 LOC defensive code for 1 paper's case; defer to v1.12 with proper
+# reference-list orthogonal check). Tests removed accordingly.
 
 
-def test_cross_citation_legitimate_paraphrase_not_rejected():
-    """When the claim and quote agree on the (author, value) pair, the
-    verifier should NOT reject — paraphrase is fine."""
+def test_oos_regex_matches_chinese_本论文_variant():
+    """Bug B (Cycle 10): _OOS_CLAIM_RE was missing 本论文/本研究 + 并非
+    variants. hif_2 ch04 opener '本论文并非研究弛豫反铁电体' was missed
+    → 48 chapters had unbounded OOS overflow."""
+    from stages.s08_section_compose.structured import _OOS_CLAIM_RE
+    assert _OOS_CLAIM_RE.search("本论文并非研究弛豫反铁电体")
+    assert _OOS_CLAIM_RE.search("本研究并不涉及材料学")
+    assert _OOS_CLAIM_RE.search("该研究并未涵盖该课题")
+    # existing variants still work
+    assert _OOS_CLAIM_RE.search("源论文未涉及该主题")
+    assert _OOS_CLAIM_RE.search("the source paper does not cover")
+    # normal claim not matched
+    assert not _OOS_CLAIM_RE.search("Tang et al. demonstrated 8.3 J/cm³.")
+
+
+def test_unknown_figure_label_lang_aware(monkeypatch):
+    """Hardcode #4 (Cycle 10): 'verifier replacement text is now
+    lang-aware via LOCALES, no Chinese leak in --lang en runs."""
     from stages.s08_section_compose.structured import (
         verify_section_draft, GroundedClaim, SectionDraft,
+        UNKNOWN_FIGURE_LABEL,
     )
     from llm.retriever import Chunk
+    monkeypatch.delenv("LAZY_PAPER_FIGURE_ID_WHITELIST", raising=False)
     draft = SectionDraft(claims=[
         GroundedClaim(
-            text="Kim et al. achieved 133 J/cm³ in PMN-PT.",
-            cited_chunk_ids=[0],
-            cited_quote="Kim et al. reported W_rec=133 J/cm³ in PMN-PT",
+            text="As shown in Fig. 9 the result holds.",
+            cited_chunk_ids=[0], cited_quote="content",
+            figure_ids=["Fig. 9"],
         ),
         GroundedClaim(
             text="Another supporting claim.",
-            cited_chunk_ids=[0],
-            cited_quote="Kim et al. reported W_rec=133 J/cm³ in PMN-PT",
+            cited_chunk_ids=[0], cited_quote="content here",
         ),
     ])
-    chunks_by_id = {0: Chunk(
-        id="c0",
-        text="Kim et al. reported W_rec=133 J/cm³ in PMN-PT",
-        doc_name="d", char_start=0, char_end=50,
-    )}
-    accepted, rejected = verify_section_draft(draft, chunks_by_id)
-    cross_rejects = [r for r in rejected
-                     if r.get("reason") == "cross_citation_misattribution"]
-    assert cross_rejects == []  # paraphrase OK
-
-
-def test_extract_author_value_pairs():
-    """_extract_author_value_pairs collects (author, value+unit) within window."""
-    from stages.s08_section_compose.structured import _extract_author_value_pairs
-    pairs = _extract_author_value_pairs(
-        "Kim et al. reported W_rec=133 J/cm³ and η=75% in PMN-PT system."
+    chunks_by_id = {0: Chunk(id="c0", text="content here",
+                              doc_name="d", char_start=0, char_end=12)}
+    # English run: substitution text must be the EN locale string
+    accepted, _ = verify_section_draft(
+        draft, chunks_by_id, ratio_threshold=0.85,
+        available_fig_ids={"Fig. 1"}, lang="en",
     )
-    pair_set = set(pairs)
-    assert any(p[0] == "Kim" and "133" in p[1] for p in pair_set)
-    assert any(p[0] == "Kim" and "75" in p[1] for p in pair_set)
+    assert UNKNOWN_FIGURE_LABEL["en"] in accepted[0].text
+    assert "源论文相关图示" not in accepted[0].text

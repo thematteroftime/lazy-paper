@@ -11,19 +11,24 @@ from PIL import Image
 from stages._common import BBOX_FROM_NAME, DOC_PAGE, bbox_from_filename, dump_yaml, mark_done, slugify
 
 IMG_RE = re.compile(r'<img[^>]*src="([^"]+)"', re.IGNORECASE)
+# v1.11: bilingual figure / table caption detection. Original English-only
+# regex collapsed Chinese papers to zero figure matches. Add `图` / `表`
+# alternation. To extend with another language, add the localized prefix
+# to the alternation.
 FIG_CAP_RE = re.compile(
-    r"(?:^|<div[^>]*>)\s*(Fig(?:ure)?\.?\s*\d+[A-Za-z]?)\.?\s*(.*?)(?:</div>|$)",
+    r"(?:^|<div[^>]*>)\s*((?:Fig(?:ure)?\.?|图)\s*\d+[A-Za-z]?)\.?\s*(.*?)(?:</div>|$)",
     re.MULTILINE | re.IGNORECASE,
 )
 TAB_CAP_RE = re.compile(
-    r"(?:^|<div[^>]*>)\s*(Table\s*\d+)\.?\s*(.*?)(?:</div>|$)",
+    r"(?:^|<div[^>]*>)\s*((?:Table|表)\s*\d+)\.?\s*(.*?)(?:</div>|$)",
     re.MULTILINE | re.IGNORECASE,
 )
-FIG_MENTION_RE = re.compile(r"Fig(?:ure)?\.?\s*(\d+)([a-z])?", re.IGNORECASE)
+FIG_MENTION_RE = re.compile(r"(?:Fig(?:ure)?\.?|图)\s*(\d+)([a-z])?", re.IGNORECASE)
 
 
 def _normalize_fig_id(raw: str) -> str:
-    m = re.match(r"Fig(?:ure)?\.?\s*(\d+)([A-Za-z]?)", raw, re.IGNORECASE)
+    """Normalize any 'Fig N' / 'Figure N' / '图 N' form to canonical 'Fig. N'."""
+    m = re.match(r"(?:Fig(?:ure)?\.?|图)\s*(\d+)([A-Za-z]?)", raw, re.IGNORECASE)
     if not m:
         return raw.strip()
     return f"Fig. {m.group(1)}{m.group(2).lower() if m.group(2) else ''}"

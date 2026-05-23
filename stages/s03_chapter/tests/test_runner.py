@@ -36,3 +36,20 @@ def test_run_splits_imrad(tmp_path: Path):
     assert any("Conclusion" in t for t in titles)
     assert any("References" in t for t in titles)
     assert summary["count"] == len(titles)
+
+
+def test_chinese_section_anchors_detected():
+    """v1.11 cross-domain: Chinese papers must split into chapters too,
+    not collapse to single chapter. Bilingual SECTION_ANCHORS now."""
+    from stages.s03_chapter.runner import detect_science_anchor, SECTION_ANCHORS
+    # English still works
+    assert detect_science_anchor("Introduction") == "Introduction"
+    assert detect_science_anchor("Methods") == "Methods"
+    # Chinese new
+    assert detect_science_anchor("引言") == "引言"
+    assert detect_science_anchor("方法") == "方法"
+    assert detect_science_anchor("结果与讨论") == "结果与讨论"
+    assert detect_science_anchor("结论") == "结论"
+    assert detect_science_anchor("参考文献") == "参考文献"
+    # set membership lower-case
+    assert "引言" in SECTION_ANCHORS
