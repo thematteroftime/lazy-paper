@@ -182,6 +182,40 @@ For those axes, periodic human review of 1-2 papers per release is
 still required. The harness is a regression-prevention floor, not a
 quality ceiling.
 
+## Audit pitfall: OCR-spaced numerics + LaTeX wrappers
+
+Cycle 12 (v1.11.1 → v1.11.2) caught a class of false-positive bug reports
+that come from running `grep` directly on `runs/<paper>/s02_clean/doc_*.md`.
+MinerU OCR often emits numerical values as LaTeX-tokenised char streams
+— `$\sim 1 7 . 3 ~ \mathrm{J/cm}^3$` rather than `~17.3 J/cm³`. A plain
+`grep "17.3"` misses every such case.
+
+The cycle-12 audit on `ali2025_flash` ch13 used plain `grep` to "verify"
+that `17.3 / 20.1 / 27.9` were fabricated. They were not — the OCR just
+encoded them with intermediate spaces. Two specialist + two meta audits
+all reproduced the methodology error before catching it. The v1.11.2
+fix candidate that the false bug triggered ended up deleting correct
+content and introducing new hallucinations, and was reverted.
+
+**Always run `scripts/audit_grep.py` instead of plain `grep` for any
+audit that compares model output to OCR'd source.** It passes both the
+pattern and every source line through
+`stages._common.normalize.normalize_ocr_latex` (the same normalizer the
+s08 verifier uses) before matching, so LaTeX-spaced and unit-superscript
+variants collapse correctly.
+
+```bash
+# correct — finds OCR-spaced numerics
+uv run python scripts/audit_grep.py 17.3 runs/<paper>/s02_clean/
+
+# wrong — silently misses LaTeX-tokenised values
+grep "17.3" runs/<paper>/s02_clean/doc_*.md
+```
+
+Audit subagent prompts must also enforce: "use audit_grep.py, never plain
+grep, when verifying numeric claims against OCR source." Otherwise the
+same false-positive pattern will fire again.
+
 ## Recommended workflow for shipping a new strategy
 
 1. Implement the strategy env-gated (don't change default behavior)

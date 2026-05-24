@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.1-blue"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.2-blue"></a>
   <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-300%20passing-22c55e"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>

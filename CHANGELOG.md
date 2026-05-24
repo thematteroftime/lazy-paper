@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.2] — 2026-05-24
+
+### Erratum & audit-methodology fix
+
+This is a tooling/erratum release. **No s04–s09 pipeline code changed.**
+v1.11.1 main behaviour is preserved.
+
+Cycle 12 audit #1 of v1.11.1 reported that `ali2025_flash` ch13
+fabricated three baseline values (`17.3 / 20.1 / 27.9 J/cm³`) against
+the flagship `63.5 J/cm³`. A hotfix candidate (`v1.11.2-rc`) added a
+section_compose.md prompt rule and a numeric-in-chunk verifier
+advisory. Two specialist + two meta audits then **independently
+falsified the original bug report**: all three values exist verbatim
+in `runs/ali2025_flash/s02_clean/doc_6.md` as OCR-tokenised LaTeX
+chars (`$\sim 1 7 . 3 ~ \mathrm{J/cm}^3$`), which a plain `grep`
+silently misses. The hotfix candidate had additionally caused real
+regressions (ali2025 ch13 truncated 1524→768 chars, ali2025 ch15
+fabricated a "c/a > 1" contradiction, ch02/03/04/06/07/13 width
+shrank 40-83 %), so it was reverted before any commit.
+
+What ships in v1.11.2:
+
+- **`scripts/audit_grep.py`** — an OCR-tolerant grep replacement.
+  Runs both the pattern and every source line through
+  `stages._common.normalize.normalize_ocr_latex` (the same normaliser
+  the s08 verifier uses), so LaTeX char-spacing (`1 7 . 3`) and
+  unit-superscript variants (`J/cm³` ↔ `J/cm3`) collapse correctly.
+  Smoke-tested: `audit_grep.py 17.3 runs/ali2025_flash/s02_clean/`
+  hits doc_6.md:1; plain `grep "17.3"` misses.
+- **`docs/TEST_FRAMEWORK.md` + `docs_zh/TEST_FRAMEWORK.md`** — new
+  "Audit pitfall: OCR-spaced numerics + LaTeX wrappers" section
+  walking through this cycle-12 erratum and the fix. Audit subagent
+  prompts MUST require `audit_grep.py`, never plain `grep`, when
+  verifying numeric claims against OCR source.
+
+### Known issue (carried forward to v1.11.3)
+
+The two-meta cross-check did surface one real bug in v1.11.1 (not the
+cycle-12 false-positive): `meng2024_v111_demo/.../06-Polarization_
+Behaviour.md` binds `W_rec=5.00 J/cm³ / η=90.09 %` to "180 kV/cm" (the
+source paper records 5.00/90.09 at **340 kV/cm**), and writes
+`E_b=214 kV/cm` (no such value in the source). Defer to v1.11.3 — it
+deserves its own independent audit cycle rather than being rushed
+into this erratum release.
+
+### Tests
+
+300 collected (unchanged from v1.11.1). No pipeline code or test
+changes.
+
 ## [1.11.1] — 2026-05-24
 
 ### Fixed — 4 HIGH bugs caught by cycle 11 sentence-level audit
