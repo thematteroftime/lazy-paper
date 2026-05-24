@@ -1,6 +1,25 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 300/300 pass (2 deselected `-m live`) · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit** · **Last release:** v1.11.1 (2026-05-24)
+> **Status:** shipped · **Tests:** 300/300 pass (2 deselected `-m live`) · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit** · **Last release:** v1.11.2 (2026-05-24, erratum: `scripts/audit_grep.py` + "Audit pitfall" TEST_FRAMEWORK note)
+>
+> **v1.11.2** is a tooling/erratum release — zero pipeline behaviour
+> changed vs v1.11.1. Cycle 12 audit #1 flagged ali2025_flash ch13 as
+> fabricating three baseline values; two independent meta auditors then
+> falsified the report (OCR-tokenised LaTeX char streams `1 7 . 3` —
+> plain `grep` misses). A hotfix candidate added a prompt rule + numeric
+> verifier advisory and was reverted before commit after specs confirmed
+> real regressions on real chapters. Ship: `scripts/audit_grep.py` (the
+> OCR-tolerant replacement) + "Audit pitfall" section in TEST_FRAMEWORK
+> so subagent audits don't repeat the methodology error.
+>
+> **Known v1.11.3 candidate** (deferred for its own diagnostic cycle):
+> meng2024 ch06 binds `W_rec=5.00 J/cm³ / η=90.09%` to "180 kV/cm"
+> (source: 340 kV/cm) + fabricates `E_b=214 kV/cm` (no such value);
+> meng2024 ch07 dropped its `5.00 J/cm³` reference between v1.10 and
+> v1.11.1. A single-line cap fix attempt (retriever cap 12→24) was
+> tried and reverted (no fix on ch06, -60% chapter collapse). The real
+> root cause is structural to the v1.10→v1.11.1 STRUCTURED-path
+> migration and needs a dedicated audit cycle, not a one-line patch.
 >
 > **v1.11.1** lands 4 HIGH bug fixes caught by a cycle-11 sentence-level
 > audit (3 subagents cross-checking output vs source paper). v1.11.0

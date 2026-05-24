@@ -1,6 +1,10 @@
 # lazy-paper — 生产环境交接文档
 
-> **状态：** 已发布 · **测试：** 300/300 通过（2 个 deselected `-m live`） · **端到端验证：** 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit · **最近发布：** v1.11.1 (2026-05-24)
+> **状态：** 已发布 · **测试：** 300/300 通过（2 个 deselected `-m live`） · **端到端验证：** 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit · **最近发布：** v1.11.2 (2026-05-24，erratum: `scripts/audit_grep.py` + TEST_FRAMEWORK "审计陷阱" 节)
+>
+> **v1.11.2** 是 tooling/erratum 发布——pipeline 行为零变化 vs v1.11.1。cycle 12 audit #1 报告 ali2025_flash ch13 捏造三个 baseline 数值；2 个独立 meta auditor 然后推翻该报告（OCR LaTeX 间隔 `1 7 . 3` 形式 — plain `grep` 漏抓）。hotfix candidate 加了 prompt rule + numeric verifier advisory，在 commit 前被 revert，因为 spec 确认它在真章节引入真 regression。ship 的是：`scripts/audit_grep.py`（OCR-tolerant 替代品）+ TEST_FRAMEWORK 中"审计陷阱"节，避免 subagent audit 重蹈方法论错误。
+>
+> **已知 v1.11.3 候选**（defer 到独立 diagnostic cycle）：meng2024 ch06 把 `W_rec=5.00 J/cm³ / η=90.09%` 错绑 "180 kV/cm"（源论文：340 kV/cm）+ 捏造 `E_b=214 kV/cm`（源论文无此值）；meng2024 ch07 在 v1.10 → v1.11.1 之间丢掉了 `5.00 J/cm³` 引用。单行 cap fix attempt（retriever cap 12→24）试了被 revert（ch06 没修 + 章节字数塌缩 -60%）。真因是 v1.10→v1.11.1 STRUCTURED 路径迁移的结构性问题，需要独立 audit cycle 而不是一行 patch。
 >
 > **v1.11.1** 落地 4 个 HIGH bug 修复，来自 cycle-11 sentence-level audit（3 个 subagent 交叉验证 output vs 源论文）。v1.11.0 通过了 architecture-review ship gate 但未 push；v1.11.1 是 v1.11 线第一个 stable。
 >
