@@ -1,6 +1,6 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 300/300 pass (2 deselected `-m live`) · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit + cycle-14 4-spec+2-meta cross-check + cycle-15 3-spec+2-meta planning audit** · **Last release:** v1.11.4 (2026-05-24, 2 drive-by literals + `docs/INTERNAL/audit_subagent_template.md`)
+> **Status:** shipped · **Tests:** 301/301 pass (2 deselected `-m live`) · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit + cycle-14 4-spec+2-meta cross-check + cycle-15 3-spec+2-meta planning audit + cycle-16 final doc scrub** · **Last release:** v1.11.5 (2026-05-24, `--ocr-lang` flag + bilingual mirror restored + 656-line doc slimdown)
 >
 > **v1.11.3** is a targeted pipeline hotfix for the meng2024 ch06
 > "wrong-condition + filler E_b" hallucination and ch07 thin-numerics

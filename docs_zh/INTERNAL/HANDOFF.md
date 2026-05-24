@@ -1,6 +1,6 @@
 # lazy-paper — 生产环境交接文档
 
-> **状态：** 已发布 · **测试：** 300/300 通过（2 个 deselected `-m live`） · **端到端验证：** 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit + cycle-14 4-spec+2-meta cross-check + cycle-15 3-spec+2-meta planning audit · **最近发布：** v1.11.4 (2026-05-24，2 个 drive-by literal 修复 + `docs/INTERNAL/audit_subagent_template.md`)
+> **状态：** 已发布 · **测试：** 301/301 通过（2 个 deselected `-m live`） · **端到端验证：** 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit + cycle-14 4-spec+2-meta cross-check + cycle-15 3-spec+2-meta planning audit + cycle-16 doc scrub · **最近发布：** v1.11.5 (2026-05-24，`--ocr-lang` flag + 双语镜像恢复 + 656 行文档瘦身)
 >
 > **v1.11.3** 是针对 meng2024 ch06 "错绑电场 + 凭空 E_b" 幻觉与 ch07 thin-numerics 退化的定向 hotfix。两个改动 (~15 LOC)：(a) `section_compose.md` 加 "NO MAKING UP NUMBERS" 弃权规则；(b) `structured.py` 的 retry-when-short swap guard 现在接受 "numeric anchor 数严格增加" 这一类 retry，不只是 "verifier-accepted claim 数 >=" 这一条。已知 v1.12 待办：F2 在 ch06 触发过严 —— LLM 完全放弃写 `5.00 J/cm³`（字符数 4261→1234），尽管 chunks 实际有正确共现（c0023）。按项目原则 "不编 > 编错"，本 hotfix 接受这个取舍；v1.12 会加 same-chunk-pairing 规则，让 composer 写对的而不是 abstain。
 >
