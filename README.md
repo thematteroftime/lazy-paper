@@ -7,8 +7,8 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.4-blue"></a>
-  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-300%20passing-22c55e"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.5-blue"></a>
+  <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-301%20passing-22c55e"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
@@ -62,14 +62,14 @@ Each stage writes `done.yaml` and is independently re-runnable; every LLM call p
 
 ## Real-Data Pipeline Walkthrough
 
-The diagram above shows the shape. The walkthrough below shows the substance — every snippet is a verbatim slice from `runs/meng2024_v110_demo/` (an ACS Appl. Mater. Interfaces 2024 NBT-based RFE paper). Read it once and you'll know exactly what happens to your PDF.
+The diagram above shows the shape. The walkthrough below shows the substance — every snippet is a verbatim slice from `runs/meng2024_v111_demo/` (an ACS Appl. Mater. Interfaces 2024 NBT-based RFE paper). Read it once and you'll know exactly what happens to your PDF.
 
 ### s01 → s02 — OCR, then normalize
 
 **Input** `papers/meng2024.pdf` (16-page PDF, figures embedded). MinerU returns markdown per page; lazy-paper concatenates into `s01_ocr/doc_*.md`.
 
 ```text
-runs/meng2024_v110_demo/s01_ocr/doc_5.md
+runs/meng2024_v111_demo/s01_ocr/doc_5.md
 ... $$$$
 where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
 ```
@@ -77,7 +77,7 @@ where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
 **What this stage does.** s02 strips OCR artifacts (empty `$$$$` formulas, mis-flowed columns) into a comment, leaves text intact.
 
 ```text
-runs/meng2024_v110_demo/s02_clean/doc_5.md
+runs/meng2024_v111_demo/s02_clean/doc_5.md
 ... <!-- corrupted-column-flow -->
 where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
 ```
@@ -91,7 +91,7 @@ where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
 **Output**
 
 ```yaml
-# runs/meng2024_v110_demo/s03_chapter/chapter_index.yaml
+# runs/meng2024_v111_demo/s03_chapter/chapter_index.yaml
 - chapter_no: 1
   title: INTRODUCTION
   file: chapter_001_INTRODUCTION.md
@@ -128,6 +128,12 @@ chapter_005_RESULTS_AND_DISCUSSION.md:
 
 **Decision point — caption-stub filter (v1.11.1).** Some OCR splits assign meaningless captions like `(a)` or `A high quality photo of a dog playing in a green field` to figure entries. From v1.11.1, captions failing the stub-detector are dropped before s07 vision LLM ever sees them. On the cross-domain unCLIP paper (`runs/hif_2_v111_demo/`) this filter removed 2 of 46 figure entries — `Fig. 43`'s two prompt-stub captions — that v1.10 would have wasted vision-LLM calls on.
 
+<p align="center">
+  <img src="docs/assets/pipeline-fig-extracted.jpg" alt="Fig. 1 schematic extracted from meng2024 — synergistic optimization strategy: Pmax/Wrec loops on left and right, mechanism panels in the middle" width="720">
+  <br>
+  <em>Real artefact from <code>s04_figures/</code>: Fig. 1 of the meng2024 NBT paper, cropped by MinerU and inventoried in <code>figures.yaml</code>. This exact image flows into s07 (vision LLM) and s09 (renderers).</em>
+</p>
+
 ### s05 — Outline template
 
 **Input** the `Table of Contents-Relaxor AFE-ZGY-HW.docx` outline (your domain guidance). lazy-paper parses it into a tree of section titles with `{paper.system}`, `{paper.figures}`, `{paper.key_terms}` Jinja-style slots.
@@ -153,7 +159,7 @@ chapter_005_RESULTS_AND_DISCUSSION.md:
 **Input** the title, abstract, and intro chapter from s03. **Output** a structured paper facts-sheet and a small typed knowledge graph.
 
 ```yaml
-# s06_context/context.yaml (v1.11.1)
+# s06_context/context.yaml (v1.11.1+)
 title: Superior Energy-Storage Performances ... AFE-like Na0.5Bi0.5TiO3-Based RFE ...
 system: (1-x)(Na0.3Bi0.38Sr0.28TiO3)-xBi(Mg0.5Zr0.5)O3 (x = 0.00 ... 0.20) ceramics
 abbreviations:
@@ -227,7 +233,7 @@ unit      u_Jcm3          J/cm³
 The structured claims flow into a Jinja HTML template; WeasyPrint converts to PDF; python-docx/pptx walk the same intermediate tree for the office formats.
 
 ```html
-<!-- runs/meng2024_v110_demo/s09_render/preview.html — one rendered paragraph -->
+<!-- runs/meng2024_v111_demo/s09_render/preview.html — one rendered paragraph -->
 <p class="body-paragraph">
   仍需解决的开放问题包括：缺陷偶极子的原子尺度构型 ... 0.85NBST-0.15BMZ
   虽在340 kV/cm下实现了优异的储能性能，包括高可恢复储能密度和高效率
@@ -237,12 +243,19 @@ The structured claims flow into a Jinja HTML template; WeasyPrint converts to PD
 
 **Decision point — citation markers by mode.** `[span:...]` markers are stripped by default for clean prose; pass `--debug-citations` to surface them for attribution audit.
 
+<p align="center">
+  <img src="docs/assets/pipeline-preview-pdf-p01.png" alt="preview.pdf page 1 — title, abstract, and the start of the Introduction chapter for the meng2024 NBT paper" width="360">
+  <img src="docs/assets/pipeline-preview-pdf-p03.png" alt="preview.pdf page 3 — Fig. 1 schematic embedded inline with its Chinese caption and the deep-observation critique paragraph" width="360">
+  <br>
+  <em>Real pages from <code>runs/meng2024_v111_demo/s09_render/preview.pdf</code> — left: title + composed introduction; right: extracted Fig. 1 inline with its caption and the s07 deep-observation critique that survived the figure_ids hard constraint.</em>
+</p>
+
 ### Cross-domain defence — when the template doesn't fit
 
-Sometimes a user runs the AFE-template against a totally unrelated paper. `runs/hif_2_v110_demo/` is exactly that: the unCLIP image-generation paper forced through the relaxor-AFE outline. The composer detects the mismatch and opens each off-topic chapter with an explicit out-of-scope disclaimer rather than hallucinating ferroelectric content:
+Sometimes a user runs the AFE-template against a totally unrelated paper. `runs/hif_2_v111_demo/` is exactly that: the unCLIP image-generation paper forced through the relaxor-AFE outline. The composer detects the mismatch and opens each off-topic chapter with an explicit out-of-scope disclaimer rather than hallucinating ferroelectric content:
 
 ```text
-runs/hif_2_v110_demo/s08_section_compose/chapters/05-Dielectric_Properties_of_Relax.md
+runs/hif_2_v111_demo/s08_section_compose/chapters/05-Dielectric_Properties_of_Relax.md
 
 本论文《Hierarchical Text-Conditional Image Generation with CLIP Latents》的主题
 是文本条件图像生成，完全不涉及反铁电体或弛豫反铁电体的介电性能 ...
@@ -407,7 +420,9 @@ uv run pytest -m live     # live LLM smoke tests (real keys)
 | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | End user — setup, quickstart, iteration, troubleshooting |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Maintainer — per-stage contracts |
 | [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) | AI coding agent — workflow + anti-patterns |
+| [`docs/TEST_FRAMEWORK.md`](docs/TEST_FRAMEWORK.md) | Quality test harness + audit pitfalls |
 | [`docs/INTERNAL/HANDOFF.md`](docs/INTERNAL/HANDOFF.md) | Next maintainer — verified state + change-locations |
+| [`docs_zh/`](docs_zh/) | Simplified-Chinese mirror of USER_GUIDE / ARCHITECTURE / AGENT_GUIDE / INTERNAL/HANDOFF |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-by-release diff |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | External contributor norms |
 

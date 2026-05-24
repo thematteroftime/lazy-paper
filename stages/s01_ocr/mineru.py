@@ -29,13 +29,14 @@ class MinerUError(RuntimeError):
     pass
 
 
-def _post_batch(token: str, pdf_name: str, data_id: str) -> tuple[str, str]:
+def _post_batch(token: str, pdf_name: str, data_id: str,
+                language: str = "en") -> tuple[str, str]:
     r = requests.post(
         BATCH_URL,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         json={
             "enable_formula": True,
-            "language": "en",
+            "language": language,
             "files": [{"name": pdf_name, "is_ocr": False, "data_id": data_id}],
         },
         timeout=30,
@@ -220,13 +221,17 @@ def _content_list_to_docs(content_list: list[dict], staged_imgs: Path,
     return pages_written
 
 
-def run(*, pdf: Path, out_dir: Path, token: str) -> dict:
+def run(*, pdf: Path, out_dir: Path, token: str, ocr_lang: str = "en") -> dict:
     """Submit `pdf` to MinerU, download the result, and produce lazy-paper-compatible
-    artifacts under `out_dir`."""
+    artifacts under `out_dir`.
+
+    `ocr_lang` is forwarded to MinerU's `language` field. Default "en"
+    matches pre-v1.11.5 behaviour; pass "zh" for CJK-heavy manuscripts.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     data_id = pdf.stem[:50] or "paper"
-    print(f"[mineru] submitting {pdf.name}", file=sys.stderr)
-    batch_id, upload_url = _post_batch(token, pdf.name, data_id)
+    print(f"[mineru] submitting {pdf.name} (lang={ocr_lang})", file=sys.stderr)
+    batch_id, upload_url = _post_batch(token, pdf.name, data_id, language=ocr_lang)
     print(f"[mineru] batch_id={batch_id}", file=sys.stderr)
     _upload(upload_url, pdf)
     print(f"[mineru] uploaded; polling...", file=sys.stderr)

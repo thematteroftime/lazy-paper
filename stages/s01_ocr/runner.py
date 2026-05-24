@@ -253,16 +253,20 @@ def _run_paddleocr(*, pdf: Path, out_dir: Path, token: str) -> dict:
     return {"docs": n, "upscale": upscale_stats}
 
 
-def run(*, pdf: Path, out_dir: Path, token: str, backend: str | None = None) -> dict:
+def run(*, pdf: Path, out_dir: Path, token: str, backend: str | None = None,
+        ocr_lang: str = "en") -> dict:
     """Stage 01 entry. Selects backend:
     - OCR_BACKEND=mineru (or backend="mineru"): MinerU cloud
     - default: PaddleOCR-VL (existing behavior)
     `token` is the chosen backend's API token. For backward compat, when backend is
     paddleocr we treat `token` as PADDLEOCR_TOKEN; for mineru as MINERU_TOKEN.
+    `ocr_lang` selects the source-language hint sent to the OCR backend
+    (MinerU's `language` field; "en" / "zh"). Default "en" preserves
+    pre-v1.11.5 behaviour for English-only papers.
     """
     chosen = backend or os.environ.get("OCR_BACKEND") or "mineru"
     chosen = chosen.lower()
     if chosen == "mineru":
-        return _mineru.run(pdf=pdf, out_dir=out_dir, token=token)
+        return _mineru.run(pdf=pdf, out_dir=out_dir, token=token, ocr_lang=ocr_lang)
     # paddleocr fallback (existing logic)
     return _run_paddleocr(pdf=pdf, out_dir=out_dir, token=token)

@@ -1,17 +1,16 @@
 # Quality Test Framework (v1.7+, last refreshed for v1.11.1)
 
 A reproducible evaluation harness for lazy-paper's section-composer
-strategies. Replaces the ad-hoc grep-based comparisons used during v1.5
-and v1.6 experimentation with explicit, scriptable metrics covering
-**generation quality**, **citation correctness**, and **defect resistance**.
+strategies. Replaces the ad-hoc grep-based comparisons from v1.5/v1.6
+with explicit, scriptable metrics across three axes: **generation
+quality**, **citation correctness**, and **defect resistance**.
 
 ## Why this exists
 
-Each strategy iteration (E / G / H / I / J / K / L / KL) needed to be
-compared against the others on the same yardstick. Eyeballing chapters
-across multiple variants is noisy; the only way to make confident
-"ship/don't ship" decisions is a fixed suite of tests with explicit
-scoring rules. This is that suite.
+Each strategy iteration (E / G / H / I / J / K / L / KL) had to be
+compared on the same yardstick. Eyeballing chapters across variants is
+noisy — confident "ship / don't ship" calls need a fixed test suite
+with explicit scoring rules. This is that suite.
 
 ## Quick start
 
@@ -123,7 +122,7 @@ Strategy KL has shipped as the recommended default since v1.8.1; informed-retry 
 | v1.10 Variant C (figure_ids hard constraint) | 9 / 9 / 9 (stdev 0) | T1 preserved; T4 broken on ali2025_flash (4 → 5) |
 | **v1.11.1 (4 HIGH bug fixes)** | **9 / 9 / 9 (stdev 0)** | No regression; flagship metric / author / OCR-prompt / lang fixed |
 
-Note: from v1.9 onward T1 = 9 (not 17). The earlier 12–17 range was an artifact of v1.8.x KL's stochastic recovery; informed-retry replaced that with deterministic recovery of the 9 high-confidence patterns and ceased over-counting fuzzy matches. The score floor lifted from 1 (v1.7 KL) to 9 (v1.9+) at the cost of giving up the lucky 13–17 peaks.
+Note: from v1.9 onward T1 = 9 (not 17). The earlier 12–17 range came from v1.8.x KL's stochastic recovery. Informed-retry replaced that with deterministic recovery of the 9 high-confidence patterns and stopped over-counting fuzzy matches. The score floor rose from 1 (v1.7 KL) to 9 (v1.9+); the trade-off is giving up the lucky 13–17 peaks.
 
 ### Other test cases (v1.11.x current)
 
@@ -185,17 +184,17 @@ quality ceiling.
 ## Audit pitfall: OCR-spaced numerics + LaTeX wrappers
 
 Cycle 12 (v1.11.1 → v1.11.2) caught a class of false-positive bug reports
-that come from running `grep` directly on `runs/<paper>/s02_clean/doc_*.md`.
-MinerU OCR often emits numerical values as LaTeX-tokenised char streams
-— `$\sim 1 7 . 3 ~ \mathrm{J/cm}^3$` rather than `~17.3 J/cm³`. A plain
+caused by running `grep` directly on `runs/<paper>/s02_clean/doc_*.md`.
+MinerU OCR often emits numerics as LaTeX-tokenised char streams —
+`$\sim 1 7 . 3 ~ \mathrm{J/cm}^3$` instead of `~17.3 J/cm³`. Plain
 `grep "17.3"` misses every such case.
 
 The cycle-12 audit on `ali2025_flash` ch13 used plain `grep` to "verify"
 that `17.3 / 20.1 / 27.9` were fabricated. They were not — the OCR just
-encoded them with intermediate spaces. Two specialist + two meta audits
-all reproduced the methodology error before catching it. The v1.11.2
-fix candidate that the false bug triggered ended up deleting correct
-content and introducing new hallucinations, and was reverted.
+inserted spaces between the digits. Two specialist plus two meta audits
+all reproduced the same methodology error before someone caught it. The
+v1.11.2 fix candidate triggered by the false bug ended up deleting
+correct content and introducing new hallucinations; it was reverted.
 
 **Always run `scripts/audit_grep.py` instead of plain `grep` for any
 audit that compares model output to OCR'd source.** It passes both the

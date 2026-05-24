@@ -71,13 +71,13 @@
 > = 9/9/9 zero-variance, and breaks baseline on ali2025_flash T4 (4→5).
 > Also ships `normalize_ocr_latex` BS3+BS4 (LaTeX escape collapsing +
 > Unicode NFKD) to lift verifier accuracy across all variants. Full
-> validation in `docs/v1_10_variant_comparison.md`.
+> validation in `docs/archive/v1_10_variant_comparison.md`.
 >
 > **v1.9.2** lands 8 high-impact bug fixes (2-auditor + 3-reviewer +
 > 2-confirmation cycle) on top of v1.9.0's informed-retry. The fixes
 > preserve meng2024 T1 = 9/9/9 zero variance across 18-paper validation
 > (13 corpus + 5 newly OCR'd). HTML clickable citations are now the
-> default for end users. Full report: `docs/v1_9_2_20_paper_validation.md`.
+> default for end users. Full report: `docs/archive/v1_9_2_20_paper_validation.md`.
 >
 > **v1.9.0 ships informed-retry that eliminates meng2024 T1 variance.**
 > The previous retry-when-empty used a generic "you missed required
@@ -87,7 +87,7 @@
 > checklist instead of a vague reminder. Three independent meng2024 runs
 > all score exactly **9/17** on T1 benchmark recovery — variance reduced
 > from stdev 2.6 (v1.8.1) to **stdev 0** (v1.9). Full corpus validation
-> + analysis in `docs/v1_9_validation_results.md`.
+> + analysis in `docs/archive/v1_9_validation_results.md`.
 >
 > **v1.8.x foundations remain unchanged.** Strategy KL is still the
 > recommended high-quality default. The verifier normalizes LaTeX/OCR
@@ -98,20 +98,20 @@
 > recover them. On meng2024 ch01 (the headline benchmark-recovery test):
 > v1.8.1 KL = floor 12/17, mean 15.0, range 12–17 (was floor 1, mean 5.0
 > in v1.7 KL). No regressions on yang2025/fu2020/chai2026. See
-> `docs/v1_8_validation_results.md` for full analysis.
+> `docs/archive/v1_8_validation_results.md` for full analysis.
 >
 > v1.4.x foundations (PaperDB / two-tier critic / Onyx citation
 > processor) remain unchanged. The pydantic-ai section agent
 > (`LAZY_PAPER_AGENT=1`) is still opt-in. See CHANGELOG.md for the full
 > v1.4.0 → v1.8.1 release trail.
 
-This is the doc to read first if you are picking the project up cold — whether you are a human maintainer or an AI agent. It tells you what exists, what works, what's been verified, and where to make changes.
+Read this first if you are picking the project up cold — human or AI. It tells you what exists, what works, what's verified, and where to make changes.
 
 ---
 
 ## 1. What this project does
 
-`lazy-paper` is a 9-stage pipeline that turns a scientific paper PDF + a Markdown outline template (`.docx`) into a multi-format deep-analysis document set: DOCX, PDF, HTML, and PPTX. Each stage writes to `runs/<paper_id>/<stage>/` and is independently re-runnable.
+`lazy-paper` is a 9-stage pipeline. Input: a scientific PDF plus a `.docx` outline template. Output: a multi-format analysis document set (DOCX, PDF, HTML, PPTX). Each stage writes to `runs/<paper_id>/<stage>/` and can be re-run independently.
 
 - **OCR**: MinerU (default, figure-aware) or PaddleOCR-VL
 - **Text LLM**: any OpenAI-compatible endpoint (DeepSeek-Reasoner by default)
@@ -201,7 +201,7 @@ Docker users: `docker compose build && docker compose run --rm lazy-paper run --
 
 ## 4. Architecture, one paragraph
 
-PDF → 9 stages → 4 output formats. s01–s04 do OCR / cleaning / chaptering / figure extraction (deterministic, no LLM). s05 parses the outline template. s06–s08 are the three LLM-driven stages (paper context, per-figure analysis, per-chapter composition). s09 builds an immutable `Document` model and dispatches to 4 renderers (docx/html/pdf/pptx), each one a stateless subclass of `Renderer`. The PPTX renderer additionally invokes `PptxSummarizer` for 4–5 section grouping (`summarize_outline`), per-chapter bullets (`summarize`), and the closing slide (`summarize_paper`); these are cached on input-hash so re-runs are zero-LLM when inputs are unchanged. Every LLM call writes its prompt + response to disk for audit. Every stage writes `done.yaml` and is skipped on re-run unless `--force`. See `docs/ARCHITECTURE.md` for the full per-stage breakdown.
+PDF → 9 stages → 4 output formats. s01–s04 do OCR, cleaning, chaptering, and figure extraction (deterministic, no LLM). s05 parses the outline template. s06–s08 are the three LLM-driven stages: paper context, per-figure analysis, per-chapter composition. s09 builds an immutable `Document` model and dispatches it to 4 renderers (docx/html/pdf/pptx), each a stateless subclass of `Renderer`. The PPTX renderer also calls `PptxSummarizer` for 4–5 section grouping (`summarize_outline`), per-chapter bullets (`summarize`), and the closing slide (`summarize_paper`). These calls are cached on input-hash, so re-runs are zero-LLM when inputs are unchanged. Every LLM call writes its prompt and response to disk for audit. Every stage writes `done.yaml` and is skipped on re-run unless `--force`. See `docs/ARCHITECTURE.md` for the full per-stage breakdown.
 
 ```
 PDF ──┬─ s01_ocr → s02_clean → s03_chapter → s04_figures ──┐
@@ -221,8 +221,8 @@ template.docx ── s05_template ───────────────�
 ## 5. Verified state
 
 Most recent validation: **v1.10 — 3-variant × 9-paper × 3-audit-cycle test
-(2026-05-23)**, full report in `docs/v1_10_variant_comparison.md`. Plus
-the v1.8.x 13-paper corpus (`docs/v1_8_2_corpus_validation.md`, 2026-05-21)
+(2026-05-23)**, full report in `docs/archive/v1_10_variant_comparison.md`. Plus
+the v1.8.x 13-paper corpus (`docs/archive/v1_8_2_corpus_validation.md`, 2026-05-21)
 that established Strategy KL as production-ready.
 
 Headline numbers under **Variant C** (winner, v1.10 default with
@@ -242,13 +242,13 @@ Headline numbers under **Variant C** (winner, v1.10 default with
 | hif_2 (DALL-E 2, 17 figs, v1.10 +) | 15/15 | **17/17 (100%)** | (cross-domain) |
 
 For variant A/B M2/M4 comparison + zero-variance stdev table, see
-`docs/v1_10_variant_comparison.md` §3.
+`docs/archive/v1_10_variant_comparison.md` §3.
 
 **Important — environment unlocks M2 figure binding**: the 100% column
 above requires `LAZY_PAPER_FIGURE_BIND=1`. Without it, variant C still
 benefits (LLM volunteers figure refs from the base prompt + schema
 captures them), but rate is lower — see `.env.example` for the full
-recommended env combo and `docs/v1_10_variant_comparison.md §7` for
+recommended env combo and `docs/archive/v1_10_variant_comparison.md §7` for
 the env-on vs env-off numbers.
 
 DOCX + HTML are always produced. PDF / PPTX are produced only when the
@@ -280,8 +280,8 @@ only. Output path: `runs/<paper_id>/s09_render/preview.{docx,pdf,html,pptx}`.
 
 ## 7. Known limitations
 
-- **LLM paraphrasing in s08**: section composer can produce slightly paraphrased summaries instead of tight analytical prose. Tune `llm/prompts/section_compose.md` for your domain vocabulary.
-- **Figure–caption pairing**: s04 pairs captions to the nearest preceding image in OCR'd Markdown. Robust for standard scholarly layouts; may misalign on multi-column papers with very distant caption placement.
+- **LLM paraphrasing in s08**: the section composer can produce slightly paraphrased summaries instead of tight analytical prose. Tune `llm/prompts/section_compose.md` for your domain vocabulary.
+- **Figure–caption pairing**: s04 pairs captions to the nearest preceding image in OCR'd Markdown. Works for standard scholarly layouts. May misalign on multi-column papers with very distant caption placement.
 - **LaTeX in captions**: `_math.py::normalize_math()` covers Greek + common sub/sup. Heavy nested LaTeX may pass through raw.
 - **PPT density**: papers with dense equation-per-line prose (theory-heavy) may produce slides with long single bullets that benefit from manual editing.
 - **WeasyPrint on Windows**: needs the GTK runtime (Pango/Cairo). Use Docker, or stick to docx/html/pptx without GTK.

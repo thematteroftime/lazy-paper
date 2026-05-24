@@ -3,7 +3,7 @@
 > **Date:** 2026-05-22 → 2026-05-23
 > **Spec:** `docs/superpowers/specs/2026-05-22-v1_10-variant-test-design.md`
 > **Plan:** `docs/superpowers/plans/2026-05-22-v1_10-variant-test.md`
-> **External reference:** `docs/v1_10_external_reference.md`
+> **External reference:** `docs/archive/v1_10_external_reference.md`
 
 ---
 

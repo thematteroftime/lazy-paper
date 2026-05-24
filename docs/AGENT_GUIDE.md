@@ -1,6 +1,6 @@
 # lazy-paper — AI Agent Guide
 
-This document is written for an AI coding agent (Claude Code, Cursor, Copilot, etc.) that has been asked to maintain, extend, or debug this repository. It assumes you have already read `docs/INTERNAL/HANDOFF.md` and `docs/ARCHITECTURE.md`.
+This guide is for AI coding agents (Claude Code, Cursor, Copilot, etc.) maintaining, extending, or debugging this repo. Read `docs/INTERNAL/HANDOFF.md` and `docs/ARCHITECTURE.md` first.
 
 ## TL;DR for agents
 
@@ -35,10 +35,10 @@ Not useful:
 
 Four layers:
 1. **Stage `done.yaml`**: bypassed with `--force`.
-2. **`s05_template` content hash**: since v1.2.1, `done.yaml` records `template_sha256_16` and the CLI auto-invalidates s05 when the source docx changes — no `--force` needed. **However**, downstream stages (s08, s09) don't auto-invalidate when s05 refreshes; they still need `--force` (or directory removal) to pick up the new chapter titles.
+2. **`s05_template` content hash**: since v1.2.1, `done.yaml` records `template_sha256_16`. The CLI auto-invalidates s05 when the source docx changes — no `--force` needed. **But** downstream stages (s08, s09) don't auto-invalidate when s05 refreshes. They still need `--force` (or directory removal) to pick up the new chapter titles.
 3. **PPTX summarizer LLM cache** (`s09_render/llm_cache/`): keyed on SHA-256 of `_PROMPT_VERSION` + lang + input content. Bump the version constant when prompt semantics change.
 4. **`s06`/`s07`/`s08` audit files**: written every run but the stage's `done.yaml` causes the whole stage to skip. Use `--force` or delete the stage dir.
-5. **`runs/<paper_id>/meta.yaml`** (v1.11.1): persists `lang` for the run so external auditors / demo scripts can grep one source-of-truth instead of re-parsing `fig_notes.yaml`. Not part of the cache key; informational only.
+5. **`runs/<paper_id>/meta.yaml`** (v1.11.1): saves the run's `lang` so auditors and demo scripts can grep one file instead of re-parsing `fig_notes.yaml`. Not part of the cache key; informational only.
 
 If a paper produces wrong output and you suspect cache staleness, the bluntest fix is `rm -rf runs/<paper_id>/{s05_template,s08_section_compose,s09_render}` then re-run.
 
@@ -54,7 +54,7 @@ uv run python -m cli run --pdf <pdf> --template <docx> --paper-id <pid> \
 
 | Symptom | Root cause | Fix |
 |---|---|---|
-| Empty PPT outline (flat 15-row list, no group descriptions) | DeepSeek-Reasoner reasoning tokens can eat the `max_tokens` budget before content is emitted | Outline calls use `max_tokens(16000)` + an explicit empty-response check; don't lower the budget for outline. |
+| Empty PPT outline (flat 15-row list, no group descriptions) | DeepSeek-Reasoner reasoning tokens can use up the `max_tokens` budget before any content is emitted | Outline calls use `max_tokens(16000)` plus an explicit empty-response check; don't lower the budget for outline. |
 | Front-half/back-half numbering inconsistency in chapter headings | Template `number` field is sparse (`''` for some, `'12'..'17'` for others); concatenating it into the heading produces mixed forms | s08 must not embed the template `number`; the PPT renderer adds a positional 01–N prefix. |
 | `--only s08,s09` silently runs nothing | A regex/split bug in the `--only` parser | The CLI splits on comma and raises `SystemExit` for unknown stages — verify both behaviors stay intact if you touch `cli.py`. |
 | Subagent dispatched but never completed | Likely context limit hit, session timeout, or agent ran into permission denial silently | Verify with `TaskOutput` or by checking the log file written by the script the subagent ran. Don't assume "subagent finished == work done". |
@@ -190,7 +190,7 @@ The v1.11.1 author-not-in-chunk check (`stages/s08_section_compose/structured.py
 LAZY_PAPER_AUTHOR_HARDREJECT=1 uv run python -m cli run ...
 ```
 
-Use only after auditing your corpus for false positives. The default is advisory because v1.11.1's first 18-paper corpus turned up a handful of legitimate paraphrases (e.g. "Ma 等人" appearing in the quote but not the verbatim surrounded `chunk_text` slice). On stricter corpora where every author claim must be grounded in the literal cited chunk, flip it on.
+Only turn this on after auditing your corpus for false positives. The default is advisory because the v1.11.1 18-paper corpus turned up a few legitimate paraphrases (e.g. "Ma 等人" in the quote but not in the surrounding `chunk_text` slice). Flip it on for stricter corpora where every author claim must be grounded in the literal cited chunk.
 
 ### Citation render modes and --debug-citations
 

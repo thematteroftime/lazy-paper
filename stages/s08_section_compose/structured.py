@@ -1,6 +1,6 @@
 """Strategy J (v1.6) — structured composition with citation pre-injection.
 
-Architecture (see docs/v1_6_strategy_j_design.md):
+Architecture (see docs/archive/v1_6_strategy_j_design.md):
 - Perplexity-style pre-injection: chunks pre-labeled with IDs, LLM constrained
   to cite only that set via Pydantic validator.
 - `llm.citation.process_text` renders the `[span:doc:start-end]` markers

@@ -133,7 +133,8 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             token = os.environ.get("PADDLEOCR_TOKEN")
             if not token:
                 raise SystemExit("OCR_BACKEND=paddleocr but PADDLEOCR_TOKEN not set")
-        _s01.run(pdf=Path(args.pdf), out_dir=out, token=token, backend=backend)
+        _s01.run(pdf=Path(args.pdf), out_dir=out, token=token, backend=backend,
+                 ocr_lang=args.ocr_lang)
     elif name == "s02_clean":
         _s02.run(in_dir=stage_dir(run_root, paper_id, "s01_ocr"), out_dir=out)
     elif name == "s03_chapter":
@@ -213,6 +214,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="Run only this single stage (e.g. s09_render) instead of all 9")
     r.add_argument("--lang", choices=("en", "zh"), default="zh",
                    help="Output language for LLM stages and render")
+    r.add_argument("--ocr-lang", choices=("en", "zh"), default="en",
+                   help="Source-document language sent to the OCR backend "
+                        "(MinerU's `language` field). Default 'en' since "
+                        "MinerU's English mode handles mixed-language papers "
+                        "well; set 'zh' for CJK-heavy manuscripts where the "
+                        "English pipeline drops characters. Independent of "
+                        "--lang (which controls OUTPUT language).")
     r.add_argument("--formats", default=None,
                    help="Comma-separated subset of docx,pdf,html,pptx "
                         "(default: all four). PPTX uses extra LLM calls; "

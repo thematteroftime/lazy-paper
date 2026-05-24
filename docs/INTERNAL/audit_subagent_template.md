@@ -1,9 +1,9 @@
 # Audit Subagent Prompt Template
 
-Hard-won discipline from the v1.10 → v1.11.4 session (5 audit-methodology
-reversals on shipped or near-shipped fixes). Use this template as the
-opening of every audit-subagent prompt that judges whether a bug is
-real, a fix landed correctly, or a refactor is safe.
+Hard-won discipline from the v1.10 → v1.11.4 session — 5 audit-methodology
+reversals on shipped or near-shipped fixes. Use this template at the top
+of every audit-subagent prompt that judges whether a bug is real, a fix
+landed correctly, or a refactor is safe.
 
 ## The 5 reversals (what this template prevents)
 
@@ -24,10 +24,10 @@ real, a fix landed correctly, or a refactor is safe.
 
 ### 1. Do not cite the spec. Cite the file.
 
-If the spec says "ali2025 chunks contain 17.3", you must independently
-verify: `uv run python scripts/audit_grep.py 17.3 runs/ali2025_flash/s02_clean/`
-and quote the verbatim hit line back in your report. Saying "spec X said
-Y" is not evidence; it is a citation of someone else's claim.
+If the spec says "ali2025 chunks contain 17.3", verify it yourself:
+`uv run python scripts/audit_grep.py 17.3 runs/ali2025_flash/s02_clean/`,
+then quote the verbatim hit line back in your report. "Spec X said Y"
+is not evidence — it's a citation of someone else's claim.
 
 ### 2. Never use `grep` on OCR'd source. Use `audit_grep.py`.
 
@@ -39,11 +39,11 @@ s08 verifier uses).
 
 ### 3. Test the design empirically before recommending a fix.
 
-If your fix is "regex extract numerics + substring-check chunks", you
-must run that exact logic on at least one real chapter and report the
-hit/miss count. Designs that look correct in the abstract reliably
-break on OCR-fragmented chunks — every reversal in this project's
-history had this exact shape.
+If your fix is "regex extract numerics + substring-check chunks", run
+that exact logic on at least one real chapter and report the hit/miss
+count. Designs that look correct in the abstract reliably break on
+OCR-fragmented chunks — every reversal in this project's history fits
+that shape.
 
 ### 4. Worktree-gate any fix that touches a prompt or a verifier.
 
@@ -57,10 +57,10 @@ pass. Otherwise `git worktree remove --force` — no partial fixes on
 
 ### 5. Two independent meta-auditors when stakes are high.
 
-Cycle 12 / 13 / 14 / 15 each saw Meta #2 reverse Meta #1's recommendation
-after running the proposed fix on real data. Two meta auditors with no
-shared context is cheap insurance; both should grep / run code
-independently, not cite each other. The disagreement IS the audit
+In cycles 12 / 13 / 14 / 15, Meta #2 reversed Meta #1's recommendation
+each time after running the proposed fix on real data. Two meta auditors
+with no shared context is cheap insurance. Both should grep and run
+code independently, not cite each other. The disagreement IS the audit
 signal.
 
 ### 6. Don't synthesise away the dissent.
@@ -101,6 +101,6 @@ yourself. For numeric verification against OCR source, use
 
 When the patch is 2 LOC of doc/literal alignment (e.g. v1.11.4 `#3 +
 #5`), running 3 spec + 2 meta is overkill. Skip the audit committee for
-zero-blast-radius drive-by changes — but bring the full committee back
-the moment a fix touches a verifier, a prompt, a retrieval threshold,
-or an LLM-call wiring change.
+zero-blast-radius drive-by changes. Bring it back the moment a fix
+touches a verifier, a prompt, a retrieval threshold, or an LLM-call
+wiring change.

@@ -7,8 +7,8 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.4-blue"></a>
-  <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-300%20passing-22c55e"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.5-blue"></a>
+  <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-301%20passing-22c55e"></a>
   <a href="docs_zh/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
@@ -62,14 +62,14 @@ flowchart LR
 
 ## 真实数据流动示例
 
-上面的架构图说明了形状，下面的示例说明了内容 —— 每一段都是 `runs/meng2024_v110_demo/` 的原样切片（ACS Appl. Mater. Interfaces 2024 的 NBT 基 RFE 论文）。读完一遍就知道自己的 PDF 会被如何处理。
+上面的架构图说明了形状，下面的示例说明了内容 —— 每一段都是 `runs/meng2024_v111_demo/` 的原样切片（ACS Appl. Mater. Interfaces 2024 的 NBT 基 RFE 论文）。读完一遍就知道自己的 PDF 会被如何处理。
 
 ### s01 → s02 —— OCR、然后规范化
 
 **输入** `papers/meng2024.pdf`（16 页、含图）。MinerU 逐页返回 markdown，lazy-paper 拼成 `s01_ocr/doc_*.md`。
 
 ```text
-runs/meng2024_v110_demo/s01_ocr/doc_5.md
+runs/meng2024_v111_demo/s01_ocr/doc_5.md
 ... $$$$
 where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
 ```
@@ -77,7 +77,7 @@ where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
 **这一步做什么。** s02 把 OCR 失败留下的空 `$$$$` 公式块、错位的多栏文本剔除成注释，正文不动。
 
 ```text
-runs/meng2024_v110_demo/s02_clean/doc_5.md
+runs/meng2024_v111_demo/s02_clean/doc_5.md
 ... <!-- corrupted-column-flow -->
 where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
 ```
@@ -91,7 +91,7 @@ where $\varepsilon_{r(T)}$ is the $\varepsilon_r$ at various temperatures ...
 **输出**
 
 ```yaml
-# runs/meng2024_v110_demo/s03_chapter/chapter_index.yaml
+# runs/meng2024_v111_demo/s03_chapter/chapter_index.yaml
 - chapter_no: 1
   title: INTRODUCTION
   file: chapter_001_INTRODUCTION.md
@@ -128,6 +128,12 @@ chapter_005_RESULTS_AND_DISCUSSION.md:
 
 **判断点 —— caption-stub 过滤（v1.11.1）。** 某些 OCR 切分会把无意义片段（`(a)`、`A high quality photo of a dog playing in a green field`）当成图 caption。v1.11.1 起，未通过 stub-detector 的 caption 在 s07 视觉 LLM 调用前就被剔除。在跨域 unCLIP 论文（`runs/hif_2_v111_demo/`）上，该过滤丢掉了 46 条图条目中的 2 条 —— `Fig. 43` 的两条 prompt-stub caption；v1.10 会白白浪费两次视觉 LLM 调用。
 
+<p align="center">
+  <img src="docs/assets/pipeline-fig-extracted.jpg" alt="meng2024 论文 Fig. 1 真实切片 —— 协同优化策略：左右为 Pmax/Wrec 回线，中间为机制示意" width="720">
+  <br>
+  <em>来自 <code>s04_figures/</code> 的真实产物：meng2024 NBT 论文 Fig. 1，由 MinerU 切出并登记进 <code>figures.yaml</code>。这张原图直接流入 s07（视觉 LLM）与 s09（渲染器）。</em>
+</p>
+
 ### s05 —— 大纲模板
 
 **输入** 用户给的 `Table of Contents-Relaxor AFE-ZGY-HW.docx`（领域引导）。lazy-paper 把它解析成节点树，guidance 中的 `{paper.system}`、`{paper.figures}`、`{paper.key_terms}` 用 Jinja 风格占位。
@@ -153,7 +159,7 @@ chapter_005_RESULTS_AND_DISCUSSION.md:
 **输入** s03 的标题、摘要、引言章节。**输出** 结构化论文资料卡 + 强类型小型知识图谱。
 
 ```yaml
-# s06_context/context.yaml （v1.11.1）
+# s06_context/context.yaml （v1.11.1+）
 title: Superior Energy-Storage Performances ... AFE-like Na0.5Bi0.5TiO3-Based RFE ...
 system: (1-x)(Na0.3Bi0.38Sr0.28TiO3)-xBi(Mg0.5Zr0.5)O3 (x = 0.00 ... 0.20) ceramics
 abbreviations:
@@ -227,7 +233,7 @@ unit      u_Jcm3          J/cm³
 结构化 claims 流入 Jinja HTML 模板；WeasyPrint 转 PDF；python-docx / python-pptx 走相同中间树写 Office 格式。
 
 ```html
-<!-- runs/meng2024_v110_demo/s09_render/preview.html —— 一段实际渲染段落 -->
+<!-- runs/meng2024_v111_demo/s09_render/preview.html —— 一段实际渲染段落 -->
 <p class="body-paragraph">
   仍需解决的开放问题包括：缺陷偶极子的原子尺度构型 ... 0.85NBST-0.15BMZ
   虽在340 kV/cm下实现了优异的储能性能，包括高可恢复储能密度和高效率
@@ -237,12 +243,19 @@ unit      u_Jcm3          J/cm³
 
 **判断点 —— 引用标记按模式渲染或剥除。** `[span:...]` 标记默认剥除以保证散文干净；传 `--debug-citations` 暴露标记供来源审计。
 
+<p align="center">
+  <img src="docs/assets/pipeline-preview-pdf-p01.png" alt="preview.pdf 第 1 页 —— meng2024 NBT 论文的标题、摘要与引言起首" width="360">
+  <img src="docs/assets/pipeline-preview-pdf-p03.png" alt="preview.pdf 第 3 页 —— Fig. 1 示意图与中文图注、深度观察评注内嵌于正文" width="360">
+  <br>
+  <em>来自 <code>runs/meng2024_v111_demo/s09_render/preview.pdf</code> 的真实页面 —— 左：标题 + 合成的引言段落；右：Fig. 1 抽取图与图注，配 s07 通过 figure_ids 硬约束保留下来的深度观察评注。</em>
+</p>
+
 ### 跨域防御 —— 模板对不上时
 
-有时用户拿 AFE 模板去跑完全不相关的论文。`runs/hif_2_v110_demo/` 就是这种场景：unCLIP 图像生成论文被硬套到 relaxor-AFE 大纲上。composer 检测到不匹配后，会在每个跑题章节开头插入显式的越界声明，而不是硬编铁电内容：
+有时用户拿 AFE 模板去跑完全不相关的论文。`runs/hif_2_v111_demo/` 就是这种场景：unCLIP 图像生成论文被硬套到 relaxor-AFE 大纲上。composer 检测到不匹配后，会在每个跑题章节开头插入显式的越界声明，而不是硬编铁电内容：
 
 ```text
-runs/hif_2_v110_demo/s08_section_compose/chapters/05-Dielectric_Properties_of_Relax.md
+runs/hif_2_v111_demo/s08_section_compose/chapters/05-Dielectric_Properties_of_Relax.md
 
 本论文《Hierarchical Text-Conditional Image Generation with CLIP Latents》的主题
 是文本条件图像生成，完全不涉及反铁电体或弛豫反铁电体的介电性能 ...
@@ -405,14 +418,13 @@ uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 |---|---|
 | [`README.md`](README.md) · [`README.zh.md`](README.zh.md) | 一手用户（英 / 中） |
 | [`docs_zh/USER_GUIDE.md`](docs_zh/USER_GUIDE.md) | 终端用户 —— 安装、快速开始、迭代、排障 |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 + Strategy KL 详解 + 数据流图（中文写就，单一来源） |
+| [`docs_zh/ARCHITECTURE.md`](docs_zh/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 + Strategy KL 详解 + 数据流图 |
 | [`docs_zh/AGENT_GUIDE.md`](docs_zh/AGENT_GUIDE.md) | AI 编程 agent —— 工作流与反模式 |
-| [`docs_zh/TEST_FRAMEWORK.md`](docs_zh/TEST_FRAMEWORK.md) | 评测 harness 与 TestCase 编写 |
 | [`docs_zh/INTERNAL/HANDOFF.md`](docs_zh/INTERNAL/HANDOFF.md) | 下一任维护者 —— 验证态 + 改动入口 |
-| [`docs_zh/README.md`](docs_zh/README.md) | 中文文档全索引 |
-| [`docs/`](docs/) | 英文原版文档（含历史设计文档） |
+| [`docs/TEST_FRAMEWORK.md`](docs/TEST_FRAMEWORK.md) | 评测 harness 与 TestCase 编写（英文） |
+| [`docs/`](docs/) | 英文版同结构文档（含历史设计文档归档） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本差异 |
-| [`CONTRIBUTING.md`](docs_zh/CONTRIBUTING.md) · [英文](CONTRIBUTING.md) | 外部贡献者约定 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 外部贡献者约定（英文） |
 
 ## 许可证
 

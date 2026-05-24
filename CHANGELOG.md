@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.5] — 2026-05-24
+
+### Added — `--ocr-lang` CLI flag
+
+Independent of `--lang` (which is documented in `cli.py:215` as Output
+language for LLM stages and render). `--ocr-lang` controls the
+`language` field MinerU receives at the s01 OCR stage. Default `en`
+preserves pre-v1.11.5 behaviour byte-for-byte for English papers;
+`--ocr-lang zh` is for CJK-heavy manuscripts where the English OCR
+pipeline drops characters. The two flags don't couple: you can ask
+for `--ocr-lang zh --lang en` (Chinese source, English output) or
+vice versa. Audit subagent verdict: 13/13 tests green, backward
+compat confirmed (cli.py + stages/s01_ocr/{runner,mineru}.py +
+test_dispatch.py +1 new test).
+
+### Documentation — bilingual mirror + 656-line slimdown
+
+Cycle 15 + cycle 16 ran 6 parallel doc-reorg subagents (1 wide +
+5 narrow + 1 audit) and 1 final scrub subagent. Net `+224 / -879`
+across 40 files.
+
+- **`docs/ARCHITECTURE.md`** rewritten in native English (940 lines,
+  not a literal translation) and `docs_zh/ARCHITECTURE.md` restored
+  as the simplified-Chinese mirror (939 lines). The single-source
+  policy from cycle 13 is rescinded: `README.md` references `docs/`
+  only, `README.zh.md` references `docs_zh/` only, no cross-language
+  pointers in either index.
+- **`docs/INTERNAL/audit_subagent_template.md`** (added in v1.11.4)
+  is now the opening template for every audit-subagent prompt. Codifies
+  the seven hard rules drawn from the v1.10 → v1.11.4 session's five
+  audit-methodology reversals. English-only; per the same scope
+  decision, dev/test/process docs are not duplicated in `docs_zh/`.
+- **`docs_zh/CONTRIBUTING.md` + `docs_zh/TEST_FRAMEWORK.md` deleted.**
+  The user-facing rule: bilingual mirrors are for technical
+  explanation docs (USER_GUIDE / AGENT_GUIDE / ARCHITECTURE /
+  HANDOFF); dev/test/contributor docs ship English-only. The root
+  `CONTRIBUTING.md` and `docs/TEST_FRAMEWORK.md` are the canonical
+  sources.
+- **Real-data pipeline walkthrough** in both READMEs now embeds
+  three real-data images extracted from `runs/meng2024_v111_demo/`
+  (added to `docs/assets/pipeline-{fig-extracted.jpg, preview-pdf-
+  p01.png, preview-pdf-p03.png}`). The narrative path references are
+  also unified to `runs/meng2024_v111_demo/` and
+  `runs/hif_2_v111_demo/` (was a mix of v110 + v111).
+- **Archive promotions**: `docs/v1_10_external_reference.md` and
+  `docs/v1_10_variant_comparison.md` moved into `docs/archive/`
+  alongside the v1.4–v1.9 history. 9 live references updated. All
+  v1.4–v1.9 archive files retained because HANDOFF / USER_GUIDE /
+  ARCHITECTURE still cite specific validation reports for
+  production-decision rationale.
+- **Cleanup**: `tests/fixtures/hu2025/` (1.2 MB dead v1.4-era
+  fixture) deleted; `runs/` baselines (`_v190` / `_v190b` / `_v191`
+  / bare; 47 directories) cleaned off-tree (gitignored), freeing
+  ~200 MB. Side effect documented in project memory:
+  `/tmp/run_demo.sh` will skip-and-exit since its `_v190` cache is
+  gone; future demo reruns should use `runs/<paper>_v111_demo/` as
+  the s01–s07 cache source instead.
+
+### Tests
+
+301 collected (+1 vs v1.11.4: `test_dispatch_ocr_lang_zh_threads_through`).
+
 ## [1.11.4] — 2026-05-24
 
 ### Fixed — 2 drive-by literal-alignment bugs + audit-process documentation
