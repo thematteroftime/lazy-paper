@@ -568,7 +568,7 @@ class PptxRenderer(Renderer):
             # v13: pure-language closing label
             sec_label = _S.pick(_S.CLOSING_TITLE, doc.lang)
         else:
-            kw = "要点" if doc.lang == "zh" else "Key Insights"
+            kw = _S.pick(_S.COMBINED_KW, doc.lang)
             # v12: use hierarchical §group.chapter label when available
             if slide.group_idx > 0 and slide.chapter_in_group > 0:
                 num_label = f"§{slide.group_idx}.{slide.chapter_in_group}"

@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.3-blue"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.4-blue"></a>
   <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-300%20passing-22c55e"></a>
   <a href="docs_zh/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
@@ -405,7 +405,7 @@ uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 |---|---|
 | [`README.md`](README.md) · [`README.zh.md`](README.zh.md) | 一手用户（英 / 中） |
 | [`docs_zh/USER_GUIDE.md`](docs_zh/USER_GUIDE.md) | 终端用户 —— 安装、快速开始、迭代、排障 |
-| [`docs_zh/ARCHITECTURE.md`](docs_zh/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 + Strategy KL 详解 + 数据流图 |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 + Strategy KL 详解 + 数据流图（中文写就，单一来源） |
 | [`docs_zh/AGENT_GUIDE.md`](docs_zh/AGENT_GUIDE.md) | AI 编程 agent —— 工作流与反模式 |
 | [`docs_zh/TEST_FRAMEWORK.md`](docs_zh/TEST_FRAMEWORK.md) | 评测 harness 与 TestCase 编写 |
 | [`docs_zh/INTERNAL/HANDOFF.md`](docs_zh/INTERNAL/HANDOFF.md) | 下一任维护者 —— 验证态 + 改动入口 |

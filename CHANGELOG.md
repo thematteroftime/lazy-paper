@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.4] — 2026-05-24
+
+### Fixed — 2 drive-by literal-alignment bugs + audit-process documentation
+
+Cycle 15 — three specialist subagents (ROI / technical / risk) + two
+independent meta auditors. Meta #2 caught a latent scope bug in the
+proposed v1.12.0 ch06 same-chunk-pairing rule (the rule depended on
+the LLM knowing `---` is a chunk separator, which the prompt never
+states); we kept that fix in the v1.12.1 queue and shipped only the
+two zero-risk drive-bys this cycle.
+
+- **`README.zh.md:408`** — broken link to deleted
+  `docs_zh/ARCHITECTURE.md` (file was removed in cycle 13 as a
+  superset-duplicate of the simplified-Chinese `docs/ARCHITECTURE.md`);
+  redirected to the canonical doc with an explicit "单一来源" note,
+  matching the policy already on `docs_zh/README.md:19`.
+- **`stages/s09_render/renderers/pptx.py:571`** — the literal
+  `"Key Insights"` was a centralisation-drift outlier: the project
+  convention is `_S.COMBINED_KW = ("要点", "Key Points")` (line 72)
+  and every other call site uses `_S.pick(...)`. Replaced the literal
+  with `_S.pick(_S.COMBINED_KW, doc.lang)` so a future translation
+  pass only edits one place.
+
+### Added — `docs/INTERNAL/audit_subagent_template.md`
+
+Hard-won discipline from the v1.10 → v1.11.4 session, which produced
+five audit-methodology reversals on shipped or near-shipped fixes.
+The template lists the seven mandatory rules for an audit subagent
+(don't cite the spec, use `audit_grep.py` not plain `grep`, test the
+design empirically, worktree-gate prompt or verifier changes, two
+independent meta auditors when stakes are high, don't synthesise away
+dissent, state confidence and what would flip it) and a recommended
+prompt skeleton. Future cycles should open every audit prompt with
+this reference.
+
+### Deferred (still in queue)
+
+- **v1.12.1 — meng2024 ch06 "same-chunk-pairing" rule.** The v1.11.3
+  F2 anti-fabrication rule is too defensive on this one chapter
+  (drops the flagship `5.00 J/cm³` rather than risk a wrong-field
+  binding, even though the correct `5.00 @ 340 kV/cm` co-occurrence
+  IS in the cited chunks). Spec B designed a `same chunk` positive
+  rule; Meta #2 found that "same chunk" is under-specified — the
+  prompt never tells the LLM that `\n\n---\n\n` is the boundary, and
+  the no-retriever code path joins whole chapters with the same
+  separator, making the rule trivially permissive. Fix needs an
+  explicit "chunks in your context are separated by `\n\n---\n\n`;
+  a 'same chunk' pairing is one bounded by those separators" prompt
+  preamble before the rule itself, plus an empirical meng2024 ch06
+  validation run. Queued for v1.12.1.
+- **v1.12.1 — `s01/mineru.py:38` `language=en` hardcoded.** The
+  naive fix (couple to `--lang`) is wrong: `args.lang` is
+  documented in `cli.py:215` as "Output language for LLM stages and
+  render" and currently only flows to s07/s08/s09. Adding a separate
+  `--ocr-lang` flag is the right shape; no English-paper baseline
+  triggers the current bug so this is non-urgent.
+- **v1.13 — domain-agnostic prompts.** All four `llm/prompts/*.md`
+  system prompts declare themselves "materials-science journal"
+  (`paper_context.md:2`, `paper_kg.md:2`, `paper_kg_v3.md:2`,
+  `section_compose.md:2`). Spec δ flagged this as a hidden domain
+  lock; Spec C and both metas agreed the change risks regressing the
+  meng2024 T1 = 9/9/9 zero-variance baseline and needs a 18-paper
+  re-validation. Minor release scope, not a hotfix.
+- **v1.13 — `reasoning_content` persistence** in `llm/client.py`.
+  Spec γ found this blocks retro-audit of DeepSeek-Reasoner CoT;
+  purely additive change, but pays off only when packaged with the
+  domain-agnostic prompt work that consumes it.
+
+### Tests
+
+300/300 pass (no test behaviour changed).
+
 ## [1.11.3] — 2026-05-24
 
 ### Fixed — meng2024 ch06 hallucination + ch07 thin-numerics retry
