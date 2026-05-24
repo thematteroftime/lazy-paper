@@ -1,6 +1,19 @@
 # lazy-paper — Production Hand-off
 
-> **Status:** shipped · **Tests:** 300/300 pass (2 deselected `-m live`) · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit** · **Last release:** v1.11.2 (2026-05-24, erratum: `scripts/audit_grep.py` + "Audit pitfall" TEST_FRAMEWORK note)
+> **Status:** shipped · **Tests:** 300/300 pass (2 deselected `-m live`) · **End-to-end verified on 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit + cycle-14 4-spec+2-meta cross-check** · **Last release:** v1.11.3 (2026-05-24, F2 abstention + F4 swap-guard relax)
+>
+> **v1.11.3** is a targeted pipeline hotfix for the meng2024 ch06
+> "wrong-condition + filler E_b" hallucination and ch07 thin-numerics
+> regression. Two changes (~15 LOC total): (a) `section_compose.md`
+> "NO MAKING UP NUMBERS" abstention rule, (b) `structured.py`
+> retry-when-short swap guard now accepts retries that increase numeric
+> anchor count (not just claim count). Known v1.12 issue: F2 is too
+> defensive on ch06 — LLM drops `5.00 J/cm³` entirely rather than risk
+> wrong-field binding, even when chunks contain the correct
+> co-occurrence (chars 4261→1234 on ch06). Per project principle "don't
+> invent > do invent", trade is acceptable for hotfix; v1.12 will add
+> a same-chunk-pairing rule so the composer emits the correct binding
+> instead of abstaining.
 >
 > **v1.11.2** is a tooling/erratum release — zero pipeline behaviour
 > changed vs v1.11.1. Cycle 12 audit #1 flagged ali2025_flash ch13 as

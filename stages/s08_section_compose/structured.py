@@ -1267,21 +1267,29 @@ def compose_structured(
                                   if len(len_retry_accepted) >= 2
                                   else len_retry_draft)
             len_retry_text = " ".join(c.text for c in len_retry_verified.claims)
-            # Only swap if the retry is genuinely better. Three guards:
+            # Only swap if the retry is genuinely better. Guards:
             #  - longer prose (otherwise length retry was pointless),
-            #  - at least as many *verifier-accepted* claims (compare
-            #    accepted counts, not post-fallback claim counts — the
-            #    fallback returns the raw draft when accepted < 2, so
-            #    a retry with 1 grounded + 5 ungrounded claims would
-            #    appear "bigger" but be worse),
+            #  - at least one verifier-accepted claim (β#3 — prevents
+            #    silent 0 → 0 swap),
             #  - required-mention coverage not regressed.
+            # v1.11.3: relaxed the "at least as many accepted claims" guard.
+            # Cycle 14 spec α + meta #2 caught meng2024 ch07 thin_numerics
+            # case where the retry produced a strictly better draft on
+            # numeric density (4 anchors vs 1) but with one fewer total
+            # accepted claim — the old guard rejected the swap. We now
+            # allow swap when the retry has STRICTLY MORE numeric anchors
+            # OR at least as many accepted claims, gated by the existing
+            # >=1 accepted and required-coverage checks.
             current_missing = len(missing_required(required, verified))
             new_missing = len(missing_required(required, len_retry_verified))
-            # Audit β#3: require at least ONE verifier-accepted claim before
-            # swapping. Otherwise `0 >= 0` would silently swap one fully-
-            # ungrounded draft for another and log a misleading "lifted N→M".
+            old_numeric = sum(1 for c in verified.claims
+                               for _ in _ANCHOR_VALUE_RE.finditer(c.text))
+            new_numeric = sum(1 for c in len_retry_verified.claims
+                               for _ in _ANCHOR_VALUE_RE.finditer(c.text))
+            accepted_ok = (len(len_retry_accepted) >= len(accepted)
+                           or new_numeric > old_numeric)
             if (len(len_retry_text) > len(verified_text)
-                    and len(len_retry_accepted) >= len(accepted)
+                    and accepted_ok
                     and len(len_retry_accepted) >= 1
                     and new_missing <= current_missing):
                 print(

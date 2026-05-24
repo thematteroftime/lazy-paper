@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.3] — 2026-05-24
+
+### Fixed — meng2024 ch06 hallucination + ch07 thin-numerics retry
+
+Cycle 14 — four specialist subagents (database, prompt, LLM, doc) +
+two independent meta auditors, methodology hardened after cycle 12's
+three reversals. Root cause for meng2024 ch06 located at L3
+(prompt/composition layer): the chunks contained the correct flagship
+co-occurrence (`W_rec=5.00 J/cm³ … at 340 kV/cm`), but s08 cross-stitched
+the value with a "180 kV/cm" condition from a different chunk and
+fabricated a filler `E_b=214 kV/cm` (whose sole grep hit is the grant
+number `52302147` substring). Independent of that, meng2024 ch07 lost
+its `5.00 J/cm³` reference between v1.10 → v1.11.1 because the
+`retry-when-short` swap guard rejected a thicker-numeric retry on
+"strict-≥-claim-count" grounds.
+
+- **F2 (`llm/prompts/section_compose.md`):** new "**NO MAKING UP NUMBERS**"
+  rule — if the cited chunks do not contain the specific value,
+  condition, field, or formula, the composer MUST either describe the
+  trend qualitatively or explicitly note "未在源中找到该数值". May NOT
+  invent a plausible-looking number to fill a syntactic slot.
+- **F4 (`stages/s08_section_compose/structured.py`):** swap guard for
+  retry-when-short now also accepts retries that have strictly more
+  numeric anchors (`_ANCHOR_VALUE_RE` hits) than the prior draft, not
+  only those with at-least-as-many verified claims. The β#3 ≥1
+  accepted-claim safety guard is retained so a 0→0 swap still can't
+  happen.
+
+Test impact: 81/81 s08 unit tests pass; full suite unaffected (no test
+behaviour changed). Sanity batch (meng2024 + ali2025_flash, fresh
+s08+s09 reruns):
+
+- ch06: `180 kV/cm` / `214 kV/cm` / `340 kV/cm` mention counts all → 0
+  (fabricated bindings removed). LLM now writes "实现了优异的储能性能" /
+  "superior energy-storage performances" qualitatively rather than
+  stitching the wrong field.
+- ch07: `5.00 J/cm³` reference recovered (1 hit, matching v1.10
+  baseline behaviour).
+- ali2025_flash ch13/ch14/ch15 chapter chars 3021 / 1671 / 3023 ≈
+  v1.11.1 baseline → 0 regression.
+
+### Known issue (deferred to v1.12)
+
+The F2 abstention rule is **too defensive on meng2024 ch06**: even
+though chunks DO contain the correct `5.00 J/cm³ @ 340 kV/cm`
+co-occurrence (chapter_002 c0023), the LLM chose to drop the flagship
+metric entirely rather than risk a wrong-condition binding. ch06
+chapter chars dropped 4261 → 1234 (−71 %). Net behaviour change vs
+v1.11.1: no fabrication, but missing the flagship metric on this one
+chapter. Per the project principle "don't invent > do invent", the
+trade-off is acceptable for this hotfix. The right v1.12 fix is to
+teach the composer that when `headline_metrics` AND a same-chunk
+co-occurrence both exist, the composer SHOULD emit the pairing — not a
+new abstention escape hatch.
+
+### Other v1.12 candidates surfaced by cycle 14
+
+- **Domain-agnostic prompts** — all 8 `llm/prompts/*.md` files declare
+  themselves "materials-science journal" (spec δ). lazy-paper currently
+  wears a generic skin over a ferroelectric core. Replace
+  "materials-science" → "scientific peer-reviewed", convert concrete
+  examples (`W_rec=8.6 J/cm³, η=85%`) to `<measurement>=<value> <unit>`
+  placeholders.
+- **`s01/mineru.py:38` hardcoded `language=en`** — ignores `--lang zh`
+  at the OCR stage; CJK manuscripts go through the English code path.
+- **`docs_zh/ARCHITECTURE.md` broken link** in README.zh.md:408 (file
+  was deleted in cycle 13, link was not updated).
+- **`pptx.py:571` "Key Insights" vs `_S.COMBINED_KW[1]` "Key Points"**
+  centralisation drift bug.
+- **DeepSeek `reasoning_content` not persisted** by `llm/client.py` →
+  cycle 14 spec γ found this hard-blocks any retro-audit of CoT.
+
 ## [1.11.2] — 2026-05-24
 
 ### Erratum & audit-methodology fix

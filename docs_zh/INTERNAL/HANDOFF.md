@@ -1,6 +1,8 @@
 # lazy-paper — 生产环境交接文档
 
-> **状态：** 已发布 · **测试：** 300/300 通过（2 个 deselected `-m live`） · **端到端验证：** 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit · **最近发布：** v1.11.2 (2026-05-24，erratum: `scripts/audit_grep.py` + TEST_FRAMEWORK "审计陷阱" 节)
+> **状态：** 已发布 · **测试：** 300/300 通过（2 个 deselected `-m live`） · **端到端验证：** 9-paper variant test + 18-paper v1.9.2 corpus + v1.11.1 sentence-level audit + cycle-14 4-spec+2-meta cross-check · **最近发布：** v1.11.3 (2026-05-24，F2 abstention + F4 swap-guard 放宽)
+>
+> **v1.11.3** 是针对 meng2024 ch06 "错绑电场 + 凭空 E_b" 幻觉与 ch07 thin-numerics 退化的 targeted pipeline hotfix。两个改动 (~15 LOC)：(a) `section_compose.md` 加 "NO MAKING UP NUMBERS" abstention 规则；(b) `structured.py` retry-when-short swap guard 现在接受 "numeric anchor 数严格增加" 的 retry，不只是 "verifier-accepted claim 数 >=" 这一条。已知 v1.12 issue：F2 在 ch06 触发过严 — LLM 完全放弃写 `5.00 J/cm³`（chars 4261→1234），尽管 chunks 实际有正确共现（c0023）。按项目原则 "不编 > 编错"，本 hotfix 接受 trade-off；v1.12 会加 same-chunk-pairing 规则让 composer 写对的而不是 abstain。
 >
 > **v1.11.2** 是 tooling/erratum 发布——pipeline 行为零变化 vs v1.11.1。cycle 12 audit #1 报告 ali2025_flash ch13 捏造三个 baseline 数值；2 个独立 meta auditor 然后推翻该报告（OCR LaTeX 间隔 `1 7 . 3` 形式 — plain `grep` 漏抓）。hotfix candidate 加了 prompt rule + numeric verifier advisory，在 commit 前被 revert，因为 spec 确认它在真章节引入真 regression。ship 的是：`scripts/audit_grep.py`（OCR-tolerant 替代品）+ TEST_FRAMEWORK 中"审计陷阱"节，避免 subagent audit 重蹈方法论错误。
 >
