@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.12-phase2] — 2026-05-26 (default ON)
+
+#### Fixed — anchored-quote bypass closed
+
+The s08 verifier's empty-`cited_quote` branch (documented in
+`docs/ARCHITECTURE.md` §11.1) used to blanket-accept any claim that left
+the quote field empty, letting the LLM bypass verification by simply
+omitting a quote. Now: claims whose text contains a specific author
+(`Jiang et al.`) or numeric value+unit (`2.94 J/cm³`) anchor MUST carry
+a non-empty `cited_quote` — empty quote on such a claim is rejected with
+`reason: anchored_claim_no_quote`.
+
+Synthesis claims (cross-chunk inferences with no specific anchor) still
+pass without quote verification — backward compatible.
+
+#### Added — `LAZY_PAPER_ANCHORED_QUOTE` env (default 1)
+
+Set to `0` to restore pre-v1.12 'blanket accept' behaviour. Provided for
+projects with frozen baselines that can't absorb a verifier behaviour
+change.
+
+#### Measured impact (per `docs/archive/v1_12_phase2_summary.md`)
+
+| Paper | Faithfulness (before → after) | per-section `cited_quote` empty rate |
+|---|---|---|
+| meng2024 | 0.667 → 0.545 | 32% → **0%** |
+| ali2025_flash | 0.437 → 0.491 | (similar reduction) |
+
+**Read the apparent meng2024 regression honestly**: the −12pp is a
+metric artifact, not a quality regression. Before Phase 2, 32% of
+meng2024's claims left `cited_quote` empty and bypassed the verifier
+entirely — RAGAS's LLM judge then opportunistically scored them as
+"faithful" if prose roughly matched context. Phase 2 forces those
+claims out (or makes them carry quotes) → the unreliable-but-judged-
+faithful surface shrinks → averaged faithfulness drops while
+**actual** store-and-retrieve correctness goes up. The 0% empty-rate
+is the real win. ali2025_flash's +5.4pp is the cleaner signal because
+its baseline had the same bypass at high density and benefited
+straightforwardly.
+
+#### Known side effect (Phase 2.5 candidate)
+
+The new HARD RULE prompt makes the LLM more cautious on already-clean
+sections: meng2024 §06 Polarization Behaviour (which had 0/11 empty-
+quote claims in v111) wrote only 5 quoted claims in v112 vs. v111's 11,
+losing 6 legitimate claims to over-self-censorship. Phase 2.5 will
+soften the prompt wording to scope it to NEW anchored claims rather
+than as a general "be careful" signal.
+
 ### [v1.12-phase1] — 2026-05-25 (opt-in, default OFF)
 
 Phase 1 of the v1.12 data-correctness sprint. **Two opt-in features** + one

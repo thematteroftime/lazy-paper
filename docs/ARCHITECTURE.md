@@ -502,6 +502,7 @@ For each claim, the checks below decide **reject / accept / accept-with-advisory
 
 | Check | Action | Implementation |
 |---|---|---|
+| **Anchored claim w/o quote** (v1.12 phase 2) — claim text names author or value+unit anchor; `cited_quote` empty | Reject (`anchored_claim_no_quote`); `LAZY_PAPER_ANCHORED_QUOTE=0` opts out | line 329-345 |
 | **Schema prefix leak** — `text` starts with `GroundedClaim:` / `Claim:` | Reject | line 323 |
 | **Quote vs chunk match** — `cited_quote` matches a cited chunk with fuzzy score ≥ 0.85 | Reject if no match | line 332-354 |
 | **Chunk-id slop fallback** — quote matches a different chunk | Patch `cited_chunk_ids`, accept | line 343-354 |
@@ -882,6 +883,8 @@ v1.11.0 was a **first-principles refactor** (commit `a4d90ab`) that **cut** thre
 **Why cut**: the real cause was that claims with `cited_quote == ""` were silently accepted, letting author hallucinations sneak past the quote-grounding gate. The fix belongs in the **prompt** (force author claims to carry a quote), not in another verifier-side rejection layer. Spending 40 LOC for one paper's edge case (ali2025 ch08) was not worth it. **Deferred to v1.12 with an orthogonal reference-list check** (the cited author must appear in `paper.references`).
 
 **Code marker**: `structured.py:368-372` has `# v1.11 architecture-review CUT: cross-citation reject was 40 LOC...`
+
+**v1.12 phase 2 closure**: the underlying defect — empty `cited_quote` bypassing the verifier — was finally fixed in v1.12 phase 2 with the anchor-aware empty-quote branch at `structured.py:329-345` (see §5.5 verifier table top row). Pair with the HARD RULE addition to `_STRUCTURED_SYSTEM` (the s08 compose system prompt). The orthogonal reference-list check originally proposed here was NOT implemented; the anchor-based approach proved sufficient. Measured impact: meng2024's empty-`cited_quote` rate dropped from 32% to 0%; ali2025_flash RAGAS faithfulness +5.4pp. The apparent meng2024 faithfulness drop is a metric artifact — see `docs/archive/v1_12_phase2_summary.md` for full diagnostic.
 
 ### 11.2 figure-retry pass (cut)
 
