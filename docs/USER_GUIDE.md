@@ -224,7 +224,7 @@ uv run python -m cli run ... --paper-id mypaper
 
 ---
 
-## Optional features (v1.12 phase 1)
+## v1.12 — optional features + default-on behaviour changes
 
 ### PDFFigures 2 sidecar — caption-anchored figure numbering
 
