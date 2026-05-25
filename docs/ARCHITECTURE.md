@@ -229,6 +229,8 @@ To add a language, extend the `Fig(?:ure)?\.?|图` alternation with the new pref
 
 **`is_generation_prompt_caption` (v1.11.1, `runner.py:28-56`)** is a caption-stub filter. It drops captions matching `(letter) A/An <curated descriptor> <medium> of …` (typical example: the DALL-E paper's OCR returned the literal generation prompt `(a) A high quality photo of a dog playing in a green field next to a lake.` — `hif_2` Fig 43 was being fed to vision-LLM as physics). This is the first of two defence layers; s07 skips again (see §4.7). The descriptor list is strict so real captions like `"(a) SEM image of NBST"` survive.
 
+**PDFFigures 2 reconciliation (v1.12 phase 1, opt-in, `runner.py:374+`)** — when `--pdffigures2` is set and `PDFFIGURES2_JAR=docker` is in env, s04 invokes AI2's PDFFigures 2 sidecar (`scripts/pdffigures2_sidecar.py` → docker → JSON) after the MinerU pass. `reconcile_with_pdffigures2()` matches each MinerU figure against pdffigures2's caption-anchored figure list via bag-of-words Jaccard ≥0.5 and overwrites `fig_id` to the canonical "Figure N" the paper itself prints. Audit trail at `_pdffigures2.yaml`. **Docker-only by design**: project policy bans host JVM installs; the Dockerfile (`Dockerfile.pdffigures2`) is a 2-stage build (sbtscala → eclipse-temurin-jre) producing `lazy-paper/pdffigures2:0.1.0`. Closes the v1.12 known limit "caption-aware numbering" from §12. Default OFF until measured impact lands.
+
 ### 4.5 s05_template — parse the outline docx
 
 | Field | Value |
@@ -275,6 +277,8 @@ headline_metrics:
 The "FLAGSHIP GROUND TRUTH" block in `llm/prompts/section_compose.md` reads these numbers and pins the composer to them rather than letting it scavenge a comparator's neighbouring value (the v1.10 meng2024 ch07/09/13/15 cross-chapter `W_rec` drift bug). Implementation: `stages/s06_context/runner.py:73-86` + `kg_extract.py:61`.
 
 **Prompt switching**: `LAZY_PAPER_KG_PROMPT=paper_kg_v3.md` uses the 11-type prompt (with author); default `paper_kg.md` is the 10-type. Strategy KL requires v3 because the compose prompt depends on `<Author> et al.` citation form.
+
+**Step 4 — entity dedup (v1.12 phase 1, opt-in)**: when `LAZY_PAPER_ENTITY_DEDUP=1`, the runner adds a LightRAG-inspired disambiguation pass after KG build. A single LLM call (T=0.1, ≤4K tokens) clusters variant mentions of the same real-world entity within one type ("Meng et al." + "Meng 2024" + "本工作" → one canonical author). The canonical id is the first member of each cluster; relations are remapped and triples deduped; `paper_kg.parquet` is re-written so downstream stages see the canonical KG. Defends against the v1.11.1 Bug #3 (author misattribution) class at the extraction layer rather than another verifier rule. Soft-degrades to inputs on LLM failure or malformed JSON; defensive `_ensure_coverage` adds singleton clusters for any id the LLM forgot so dedup never silently drops entities. Implementation: `stages/s06_context/entity_dedup.py` (140 LOC) + `llm/prompts/entity_dedup.md`. Audit in `done.yaml.extra.entity_dedup` (before/after counts).
 
 ### 4.7 s07_figure_analyze — vision LLM per figure
 
@@ -917,7 +921,7 @@ v1.11.0 passed the architecture-review ship gate (hardcode scan + lang threading
 From CHANGELOG v1.10 "Deferred to v1.11" still open:
 
 - **BS1+BS2 normalize**: letter-spaced subscripts (OCR outputs "L i 3 +" while the LLM writes "Li³⁺") are asymmetric between OCR and LLM, so the BS3+BS4 symmetric-folding strategy does not apply. Needs case-by-case handling; no schedule.
-- **s04 caption-aware numbering**: s04 currently numbers figures by OCR order (`Fig. 1, Fig. 2, ...`); an OCR miss shifts every later figure away from the paper's original numbering, so the LLM reading the source writes "Fig. 5" but s04 has no Fig. 5. We need to read the original figure number out of the caption text.
+- ~~**s04 caption-aware numbering**~~: **shipped** in v1.12 phase 1 as `--pdffigures2`, opt-in. See §4.4 "PDFFigures 2 reconciliation". Pending: enable by default once measured impact from `docs/archive/v1_12_phase1_summary.md` justifies it.
 - **comparator gap**: `build_required_mentions` only searches KG entities for comparators, but some papers cite work in the references list without naming it as an entity. We need to scan the body text for "Et al. ... reported" patterns.
 - **template-paper mismatch graceful degrade**: when an AFE template runs against a deep-learning paper, s08 produces OOS overflow ("源论文未涉及...") in every section instead of falling back to a generic paper structure.
 - **DOCX HYPERLINK dead code**: the DOCX renderer still does not consume `citation_mode=HYPERLINK` — only KEEP/REMOVE. The sources list needs wiring into the docx renderer.

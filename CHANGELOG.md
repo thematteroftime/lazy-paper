@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.12-phase1] — 2026-05-25 (opt-in, default OFF)
+
+Phase 1 of the v1.12 data-correctness sprint. **Two opt-in features** + one
+**eval harness**. Both features are flag-gated; default behaviour unchanged.
+See `docs/archive/v1_12_phase1_summary.md` for measured impact.
+
+#### Added — RAGAS pytest harness (`-m ragas`)
+
+Faithfulness / context_recall / context_precision against
+`tests/eval/golden_qa/{meng2024,ali2025_flash}.yaml` (20 verified questions
+each). Used for regression on the two opt-in features. Wired to the
+project's existing DeepSeek + DashScope endpoints (overrides ragas's
+OpenAI defaults). Run with: `uv run pytest -m ragas tests/eval/ -v`.
+Output lands in `tests/eval/_ragas_out/<paper_id>.json`.
+
+Ragas is pinned to **0.1.21** because 0.2+/0.4+ have an unconditional
+`from langchain_community.chat_models.vertexai import ChatVertexAI` at
+module load, removed in langchain-community 0.3+. 0.1.21 is the last
+self-consistent release.
+
+#### Added — `--pdffigures2` flag (caption-anchored figure renumbering)
+
+Runs AI2's PDFFigures 2 sidecar after MinerU and renames `fig_id`s whose
+caption Jaccard ≥0.5 with a pdffigures2-detected figure. Fixes the v1.12
+known limit from `docs/ARCHITECTURE.md` §12 — OCR-order numbering shifts
+when MinerU skips one figure.
+
+**Docker-only by design** (project policy: no host JVM install).
+One-time build: `docker build -f Dockerfile.pdffigures2 -t lazy-paper/pdffigures2:0.1.0 .`,
+then `PDFFIGURES2_JAR=docker` in `.env`, then `--pdffigures2` on the CLI.
+
+Audit trail at `runs/<id>/s04_figures/_pdffigures2.yaml` lists every
+rename and keep with scores. SidecarUnavailable is non-fatal — pipeline
+continues with original MinerU numbering and a stderr warning.
+
+#### Added — `LAZY_PAPER_ENTITY_DEDUP=1` (LightRAG-inspired KG dedup)
+
+One LLM call in s06_context after KG extraction; merges variant author /
+material mentions of the same real-world entity within one type
+("Meng et al." + "Meng 2024" + "本工作" → one canonical author). Defends
+against the v1.11.1 Bug #3 (author misattribution) class at the
+extraction layer rather than adding another verifier rule downstream.
+
+Defensive coverage check: any entity the LLM forgets is added back as a
+singleton cluster (never silently drops). Malformed LLM JSON → soft-degrade
+to inputs. Re-writes `paper_kg.parquet` so downstream stages see the
+canonical KG. Audit in `done.yaml.extra.entity_dedup`.
+
+#### Internal — Eval infrastructure
+
+- `tests/eval/golden_qa/{meng2024,ali2025_flash}.yaml`: 40 verified Q&A
+  pairs covering headline_metric, author_attribution, comparator,
+  figure_id, mechanism, cross_chapter tags.
+- `tests/eval/conftest.py`: golden_papers + ragas_llm + ragas_embeddings
+  fixtures with `.env` auto-loading and Python 3.14 event-loop shim.
+- `pytest.markers`: new `ragas` marker, deselected by default alongside
+  `live`.
+
 ## [1.11.5] — 2026-05-24
 
 ### Added — `--ocr-lang` CLI flag
