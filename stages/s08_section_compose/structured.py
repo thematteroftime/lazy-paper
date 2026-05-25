@@ -15,6 +15,7 @@ the instructor flow.
 """
 from __future__ import annotations
 
+import os
 import re
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Literal
@@ -299,8 +300,11 @@ def verify_section_draft(
     quote's length. Exact-substring case returns 1.0; verbatim-with-typo
     LLM output stays well above 0.85.
 
-    Empty quotes skip verification (cited_chunk_ids alone is the grounding
-    signal — the LLM may still write good prose without verbatim quoting).
+    Empty quotes are only accepted for synthesis claims (those without
+    specific author / value+unit anchors detected by _claim_anchors). An
+    anchored claim with empty cited_quote is rejected with reason
+    `anchored_claim_no_quote` — set LAZY_PAPER_ANCHORED_QUOTE=0 to restore
+    pre-v1.12 behaviour. (v1.12 phase 2 closure of arch doc §11.1.)
 
     Tries the claim's `cited_chunk_ids` first. If none match, falls back to
     scanning ALL retrieved chunks — LLMs sometimes quote from chunk A but
@@ -327,7 +331,22 @@ def verify_section_draft(
             })
             continue
         if not c.cited_quote.strip():
-            accepted.append(c)
+            # v1.12 phase 2: anchor-aware empty-quote check.
+            # Pre-v1.12: blanket accept. The LLM exploited this by omitting
+            # cited_quote for hard-to-source claims, bypassing the verifier.
+            # Now: if the claim text names an author or specific value+unit
+            # (anchor present), the empty quote is REJECTED. Synthesis claims
+            # with no anchors still pass. LAZY_PAPER_ANCHORED_QUOTE=0 restores
+            # pre-v1.12 behaviour for backward compat.
+            anchors = _claim_anchors(c.text)
+            if anchors and os.environ.get("LAZY_PAPER_ANCHORED_QUOTE", "1") != "0":
+                rejected.append({
+                    "text": c.text[:120],
+                    "reason": "anchored_claim_no_quote",
+                    "anchors": anchors,
+                })
+                continue
+            accepted.append(c)  # true synthesis claim (no anchors)
             continue
         best_score = 0.0
         matched_cid: int | None = None
