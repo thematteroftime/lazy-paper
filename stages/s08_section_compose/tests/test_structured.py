@@ -91,8 +91,14 @@ def test_verifier_rejects_paraphrased_quote():
     assert "breakdown field" in rejected[0]["quote"]
 
 
-def test_verifier_passes_empty_quote_through():
-    """Claims with no cited_quote skip verification (no grounding to check)."""
+def test_verifier_passes_empty_quote_through(monkeypatch):
+    """Claims with no cited_quote skip verification (no grounding to check).
+
+    Predates v1.12 phase 2. Opt out of the anchor-aware empty-quote check
+    explicitly so this test only exercises 'empty quote is accepted',
+    independent of whether the fixture text happens to contain anchors.
+    """
+    monkeypatch.setenv("LAZY_PAPER_ANCHORED_QUOTE", "0")
     chunks = {0: _make_chunk("c0", "x")}
     draft = SectionDraft(claims=[
         GroundedClaim(text="A1", cited_chunk_ids=[0], cited_quote=""),
