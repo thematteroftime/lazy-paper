@@ -272,6 +272,27 @@ LAZY_PAPER_ENTITY_DEDUP=1
 Adds one LLM call (~4K tokens, T=0.1) to s06. Soft-degrades to the original
 entities on any LLM failure or malformed JSON.
 
+### Anchored-quote enforcement (v1.12 phase 2) — default ON
+
+Pre-v1.12, claims with an empty `cited_quote` skipped verification
+entirely. The LLM exploited this to leave hard-to-source claims
+unverified. Phase 2 closes the bypass:
+
+- Claims whose text names a specific author (`Jiang et al.`) or numeric
+  value with unit (`2.94 J/cm³`, `91.04%`) MUST carry a non-empty
+  `cited_quote`. Empty quote on such a claim is rejected.
+- Synthesis claims (no specific anchor in text) still pass without
+  quote verification — backward compatible for cross-chunk summaries.
+
+Opt-out for backward compat:
+
+```bash
+LAZY_PAPER_ANCHORED_QUOTE=0   # in .env
+```
+
+The opt-out exists for projects with existing baselines / regressed
+prompts; new runs should leave it on.
+
 ---
 
 ## Troubleshooting
