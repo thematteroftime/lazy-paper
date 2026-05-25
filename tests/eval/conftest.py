@@ -6,6 +6,7 @@ so the harness doesn't silently fall back to OpenAI keys we don't have.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -20,6 +21,51 @@ try:
     load_dotenv(Path(__file__).parent.parent.parent / ".env", override=False)
 except ImportError:
     pass
+
+
+# ---------------------------------------------------------------------------
+# py3.14 ragas-executor monkey-patch
+# ---------------------------------------------------------------------------
+# ragas 0.1.21's Executor calls asyncio.as_completed(coros) OUTSIDE a running
+# loop (line 38 of ragas/executor.py); the result is iterated inside an
+# asyncio.run() block downstream. This pattern relied on py3.11's implicit
+# default event loop. Python 3.14 made get_event_loop() strict — the
+# pre-scheduled coros never actually attach to the loop that asyncio.run
+# creates, so they're destroyed unawaited and the evaluate() call hangs
+# at 0/N progress forever.
+#
+# Patch: replace ragas.executor.Executor.results with a py3.14-safe variant
+# that creates tasks INSIDE the running loop (via asyncio.gather). Order of
+# results is preserved via the (i, result) tuples ragas already attaches.
+def _patch_ragas_executor_for_py314() -> None:
+    try:
+        import ragas.executor as _re
+    except ImportError:
+        return
+
+    def safe_results(self):
+        async def _aresults():
+            from tqdm.auto import tqdm
+            coros = [afunc(*args, **kwargs)
+                     for afunc, args, kwargs, _ in self.jobs]
+            tasks = [asyncio.create_task(c) for c in coros]
+            results = []
+            for fut in tqdm(asyncio.as_completed(tasks),
+                            desc=self.desc,
+                            total=len(self.jobs),
+                            leave=self.keep_progress_bar):
+                r = await fut
+                results.append(r)
+            return results
+
+        results = asyncio.run(_aresults())
+        sorted_results = sorted(results, key=lambda x: x[0])
+        return [r[1] for r in sorted_results]
+
+    _re.Executor.results = safe_results
+
+
+_patch_ragas_executor_for_py314()
 
 
 GOLDEN_DIR = Path(__file__).parent / "golden_qa"
