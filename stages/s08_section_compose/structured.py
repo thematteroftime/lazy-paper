@@ -777,13 +777,13 @@ For other claims (not required, just supporting the section's argument):
   - cite ≥1 chunk that supports the claim
   - keep prose in the requested language (Chinese unless the user says English)
 
-## HARD RULE on cited_quote (v1.12 phase 2)
+## HARD RULE: cited_quote must be non-empty for anchored claims
 
 A claim's `cited_quote` field is the verifier's primary grounding signal.
 Fill it as follows:
 
   - **REQUIRED non-empty** when the claim text NAMES one of:
-      - a specific author ("Jiang et al.", "Ma 2022", "et al.")
+      - a specific author ("Jiang et al.", "Ma 2022", "Smith and coworkers")
       - a specific numeric value ("2.94 J/cm³", "91.04%", "340 kV/cm")
     The cited_quote MUST contain the verbatim source span carrying that
     anchor. Empty cited_quote on an anchored claim is REJECTED by the
