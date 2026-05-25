@@ -146,6 +146,22 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
             out_dir=out,
             pdf=Path(args.pdf),
         )
+        # v1.12 phase 1: PDFFigures 2 reconciliation (opt-in)
+        if getattr(args, "pdffigures2", False):
+            from scripts.pdffigures2_sidecar import run_sidecar, SidecarUnavailable
+            from stages.s04_figures.runner import reconcile_with_pdffigures2
+            try:
+                pf2_payload = run_sidecar(Path(args.pdf))
+                figures_path = out / "figures.yaml"
+                if figures_path.exists():
+                    figs = load_yaml(figures_path) or []
+                    new_figs, report = reconcile_with_pdffigures2(figs, pf2_payload)
+                    dump_yaml(figures_path, new_figs)
+                    dump_yaml(out / "_pdffigures2.yaml", {"raw": pf2_payload, "report": report})
+                    print(f"        [pdffigures2] renames={len(report['renames'])} "
+                          f"keeps={len(report['keeps'])}", flush=True)
+            except SidecarUnavailable as e:
+                print(f"        [pdffigures2] skipped: {e}", file=sys.stderr, flush=True)
     elif name == "s05_template":
         _s05.run(template_docx=Path(args.template), out_dir=out)
     elif name == "s06_context":
@@ -239,6 +255,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="In --only mode, re-run only the formats marked partial in done.yaml")
     r.add_argument("--debug-citations", action="store_true",
                    help="Keep [span:doc:start-end] citation markers in rendered output (default: strip)")
+    r.add_argument("--pdffigures2", action="store_true",
+                   help="v1.12: enable PDFFigures 2 sidecar for caption-anchored figure "
+                        "renumbering (requires PDFFIGURES2_JAR=docker + a built "
+                        "lazy-paper/pdffigures2:0.1.0 image). Off by default — opt-in until v1.13.")
     args = ap.parse_args(argv)
 
     if args.cmd != "run":
