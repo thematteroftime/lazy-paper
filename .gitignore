@@ -16,6 +16,7 @@ __pycache__/
 .claude/settings.local.json
 
 # Runtime outputs (per-paper artifacts, uploads, build)
+/runs
 runs/
 runs/_baseline_recheck.yaml
 upload/
@@ -33,3 +34,6 @@ mypaper/
 
 .claude/
 .coverage
+
+# v1.12 phase1 eval harness outputs
+tests/eval/_ragas_out/
