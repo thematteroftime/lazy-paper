@@ -1,0 +1,187 @@
+paper_id: meng2024_v111_demo
+source_pdf: input/papers/meng2024.pdf
+# Ground truth verified against runs/meng2024_v111_demo/s03_chapter/chapters/ on 2026-05-25.
+items:
+  # === headline_metric (5 questions) ===
+  - id: q01
+    question: |
+      0.85NBST-0.15BMZ 体系在多大电场下达到了多少 W_rec 和 η？
+    ground_truth: |
+      在 340 kV/cm 的中等电场下，0.85NBST-0.15BMZ 实现了 W_rec = 5.00 J/cm³ 与 η = 90.09%。
+    expected_chunks: [chapter_001_INTRODUCTION.md, chapter_005_RESULTS_AND_DISCUSSION.md]
+    tags: [headline_metric, results, cross_chapter]
+
+  - id: q02
+    question: |
+      该 paper 体系的旗舰组分化学式是什么？x 的取值范围有哪些？
+    ground_truth: |
+      旗舰体系 (1-x)(Na0.3Bi0.38Sr0.28TiO3)-xBi(Mg0.5Zr0.5)O3 简写 NBST-BMZ，旗舰组分为 x = 0.15，
+      即 0.85NBST-0.15BMZ。x 取值为 {0.00, 0.05, 0.10, 0.15, 0.20}。
+    expected_chunks: [chapter_001_INTRODUCTION.md, chapter_005_RESULTS_AND_DISCUSSION.md]
+    tags: [system, headline_metric, abstract]
+
+  - id: q03
+    question: |
+      0.85NBST-0.15BMZ 的脉冲充放电（underdamped）最大电流密度 C_Dmax 和功率密度 P_Dmax 随电场如何变化？
+    ground_truth: |
+      随电场增大，C_Dmax 从 374.2 增至 665.0 A/cm²；P_Dmax 从 18.7 增至 66.5 MW/cm³。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [headline_metric, results]
+
+  - id: q04
+    question: |
+      0.85NBST-0.15BMZ 的温度依赖脉冲充放电（underdamped）C_Dmax 和 P_Dmax 在 20 → 140 °C 区间变化趋势？
+    ground_truth: |
+      升温至 140 °C 时，C_Dmax 从 665.0 增至 813.7 A/cm²；P_Dmax 从 66.5 增至 81.4 MW/cm³，即温度升高反而增强。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [headline_metric, results]
+
+  - id: q05
+    question: |
+      0.85NBST-0.15BMZ 在 200 kV/cm 下的快速放电时间 t0.9 是多少？
+    ground_truth: |
+      在 200 kV/cm 下 t0.9 < 150 ns（即放电达到 90% 最大 W_dis 用时小于 150 ns）。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [headline_metric, results]
+
+  # === comparator + author_attribution (5 questions) ===
+  - id: q06
+    question: |
+      Jiang 等人在 Ca²⁺/Nb⁵⁺ 共掺杂的 NBT 体系中报告的 W_rec 和 η 是多少？
+    ground_truth: |
+      Jiang et al. 报道在 Ca²⁺ 和 Nb⁵⁺ 共掺杂的 Bi0.5Na0.5TiO3 基 RFE 陶瓷中实现了 W_rec ≈ 2.94 J/cm³、η = 91.04%。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, author_attribution]
+
+  - id: q07
+    question: |
+      Ma 等人通过引入什么组分实现了多大的 W_rec 和 η？
+    ground_truth: |
+      Ma et al. 引入 La(Mg1/2Zr1/2)O3 做组分修饰与结构调控，实现了 W_rec = 7.5 J/cm³、η = 90.5%。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, author_attribution]
+
+  - id: q08
+    question: |
+      Zhang 等人在 AFE-like 体系中实现了多大的 W_rec 和 η？通过什么机制？
+    ground_truth: |
+      Zhang et al. 通过缺陷工程和极性 R3c 相 + 弱极性 P4bm 相共存，
+      在 AFE-like 0.6[(Bi0.5Na0.4K0.1)1-1.5xLaxTiO3]-0.4[2/3SrTiO3-1/3Bi(Mg2/3Ni1/3)O3] 中
+      实现了超高 W_rec = 8.58 J/cm³、η = 94.5%。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, author_attribution]
+
+  - id: q09
+    question: |
+      Tang 等人在 0.8Bi0.395Na0.325Sr0.245TiO3-0.2Ca0.7La0.2TiO3 体系中达到的 W_rec 和 η？
+    ground_truth: |
+      Tang et al. 通过缺陷偶极子设计与中间调制相，
+      在 0.8Bi0.395Na0.325Sr0.245TiO3-0.2Ca0.7La0.2TiO3 RFE 中实现了超高 W_rec = 8.3 J/cm³、η = 80%（适中效率）。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, author_attribution]
+
+  - id: q10
+    question: |
+      关于"弱化界面极化效应（IPE）能改善 Eb"，本论文引用了谁的工作？
+    ground_truth: |
+      该结论与 Cao et al. 的报道一致 — 弱化 IPE 可以有效改善 Eb。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, author_attribution]
+
+  # === figure_id (4 questions) ===
+  - id: q11
+    question: |
+      Fig. 1 展示了什么？
+    ground_truth: |
+      Fig. 1 是本工作协同优化策略（synergistic optimization strategy）的示意图，
+      用以构建具有优异储能性能的 AFE-like NBST-BMZ RFE 陶瓷。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [figure_id, abstract]
+
+  - id: q12
+    question: |
+      Fig. 11 的核心内容是什么？哪个组分被着重展示？
+    ground_truth: |
+      Fig. 11 展示 (1-x)NBST-xBMZ 在 Eb 下的细长且 pinched/double-like 的 P-E 滞回线（11a），
+      并突出 0.85NBST-0.15BMZ 同时具备最高 Eb 与 Pmax（11b-c），以及其优于其他组分的 W_rec ≈ 5 J/cm³ 与 η = 90.09%（11d-e）。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [figure_id, headline_metric, cross_chapter]
+
+  - id: q13
+    question: |
+      Fig. 12 验证了 0.85NBST-0.15BMZ 在哪三方面的可靠性？
+    ground_truth: |
+      Fig. 12 验证频率（frequency, 1-500 Hz）、温度（20-140 °C）和疲劳循环（cumulative cycles）三方面的能量储存可靠性。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [figure_id, results]
+
+  - id: q14
+    question: |
+      Fig. 13 和 Fig. 14 分别展示什么？两者在脉冲放电状态上有何区别？
+    ground_truth: |
+      Fig. 13 展示 0.85NBST-0.15BMZ 在 overdamped 状态下的电场依赖与温度依赖 C-T 曲线和对应 W_dis；
+      Fig. 14 展示同一陶瓷在 underdamped 状态下的 C-T 曲线和对应 C_Dmax / P_Dmax。
+      区别：overdamped 为单峰衰减（用于储能 W_dis 评估），underdamped 为正弦衰减振荡波（用于功率密度评估）。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [figure_id, results]
+
+  # === method / system / mechanism (3 questions) ===
+  - id: q15
+    question: |
+      为什么 B 位用 Mg²⁺ 和 Zr⁴⁺ 取代 Ti⁴⁺ 可以增强 Eb？
+    ground_truth: |
+      Mg²⁺ 的能隙约 7.7 eV、Zr⁴⁺ 约 5 eV，均显著大于 Ti⁴⁺ 的 ~3.2 eV；
+      B 位用大能隙离子取代后整体能隙提升，从而增强电击穿强度 Eb。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [method, mechanism]
+
+  - id: q16
+    question: |
+      BMZ 引入 NBST 基体后，对 random field 和 anisotropy field 各有什么影响？后续产生什么效应？
+    ground_truth: |
+      BMZ 含不同价态和半径的复合离子，引入后导致局部无序与随机化 — random field 增大、anisotropy field 减小。
+      random field 增强可以破坏长程有序态形成短程纳米畴/PNR；anisotropy field 减弱降低不同相之间自由能垒，
+      稳定 R3c + P4bm 共存的中间调制相。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [mechanism]
+
+  - id: q17
+    question: |
+      论文中 W_dis（放电能量密度）和 W_rec（可恢复能量密度）的关系如何？为什么？
+    ground_truth: |
+      W_dis 通常远小于 W_rec。原因：W_rec 来自准静态 Sawyer-Tower 回路（百毫秒），
+      去极化速率低 + 粘滞力小，极化响应更完整、能量损耗少；
+      W_dis 来自微秒尺度的脉冲放电（dynamic），去极化与粘滞导致损耗更大。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [mechanism, results]
+
+  # === cross-chapter / abstract consistency (3 questions) ===
+  - id: q18
+    question: |
+      论文实现 5.00 J/cm³ W_rec 的电场水平相对其他高 W_rec 论文是低还是高？为什么这一点重要？
+    ground_truth: |
+      该体系的电场水平 340 kV/cm 属于"中等"电场（moderate electric field），相比 Zhang/Tang 等达到 8+ J/cm³ 的体系
+      通常需要更高场强，本工作在中等场下取得 5.00 J/cm³ 是其核心卖点。中等场强降低对绝缘和加工的要求，
+      有利于电介质储能电容器在小型化、集成化、环境友好的电力电子设备中应用。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [abstract, comparator, cross_chapter]
+
+  - id: q19
+    question: |
+      为什么 NBT 基弛豫铁电体（NBT-based RFE）适合做高 W_rec 介电储能材料？
+    ground_truth: |
+      NBT 基 RFE 具有大的自发极化、强烈的介电弛豫特性以及宽介电可调性和稳定性；
+      通过离子掺杂或复合端元引入可破坏长程有序、形成短程有序纳米畴/PNR，
+      从而增强弛豫行为并减少滞后损耗，同时取得高 W_rec 和高 η。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [system, abstract]
+
+  - id: q20
+    question: |
+      0.85NBST-0.15BMZ 同时满足 Eb 最优和 Δφ 最小，这意味着什么？
+    ground_truth: |
+      Δφ 定义为晶粒激活能 E_a(g) 与晶界激活能 E_a(gb) 之差。Δφ 越小说明 IPE 越弱，
+      而 IPE 弱有助于增强 Eb。0.85NBST-0.15BMZ 同时实现最小 Δφ 与最佳 Eb，
+      表明其 Eb 改善确实由 IPE 弱化驱动（与 Cao et al. 的报道一致）。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [mechanism, comparator]
