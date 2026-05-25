@@ -23,25 +23,22 @@ except ImportError:
     pass
 
 
-# ---------------------------------------------------------------------------
-# py3.14 ragas-executor monkey-patch
-# ---------------------------------------------------------------------------
-# ragas 0.1.21's Executor calls asyncio.as_completed(coros) OUTSIDE a running
-# loop (line 38 of ragas/executor.py); the result is iterated inside an
-# asyncio.run() block downstream. This pattern relied on py3.11's implicit
-# default event loop. Python 3.14 made get_event_loop() strict — the
-# pre-scheduled coros never actually attach to the loop that asyncio.run
-# creates, so they're destroyed unawaited and the evaluate() call hangs
-# at 0/N progress forever.
-#
-# Patch: replace ragas.executor.Executor.results with a py3.14-safe variant
-# that creates tasks INSIDE the running loop (via asyncio.gather). Order of
-# results is preserved via the (i, result) tuples ragas already attaches.
-def _patch_ragas_executor_for_py314() -> None:
-    try:
-        import ragas.executor as _re
-    except ImportError:
-        return
+def patch_ragas_executor_for_py314() -> None:
+    """py3.14 ragas-executor monkey-patch — called lazily from the harness.
+
+    ragas 0.1.21's Executor calls asyncio.as_completed(coros) OUTSIDE a running
+    loop (line 38 of ragas/executor.py); the result is iterated inside an
+    asyncio.run() block downstream. This pattern relied on py3.11's implicit
+    default event loop. Python 3.14 made get_event_loop() strict — the
+    pre-scheduled coros never attach to the loop asyncio.run creates, so
+    they're destroyed unawaited and evaluate() hangs at 0/N forever.
+
+    Patch: replace ragas.executor.Executor.results with a py3.14-safe variant
+    that creates Tasks INSIDE the running loop. Caller invokes this AFTER it
+    has decided ragas is going to run (don't import ragas during pytest
+    collection — it pulls in langchain etc. and slows the whole suite).
+    """
+    import ragas.executor as _re
 
     def safe_results(self):
         async def _aresults():
@@ -63,9 +60,6 @@ def _patch_ragas_executor_for_py314() -> None:
         return [r[1] for r in sorted_results]
 
     _re.Executor.results = safe_results
-
-
-_patch_ragas_executor_for_py314()
 
 
 GOLDEN_DIR = Path(__file__).parent / "golden_qa"

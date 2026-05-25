@@ -44,9 +44,12 @@ def test_ragas_scores(golden_papers, ragas_llm, ragas_embeddings):
     from ragas import evaluate
     from ragas.metrics import faithfulness, context_recall, context_precision
 
-    # ragas 0.1.21 uses asyncio.as_completed which calls asyncio.get_event_loop()
-    # internally. Python 3.14 removed the implicit loop creation in non-main contexts,
-    # so we set one explicitly. Safe to call even if a loop already exists.
+    # py3.14 + ragas-0.1.21 compatibility (see conftest docstring for the why).
+    # We patch lazily from the test body — not at conftest load time — so the
+    # rest of the suite doesn't pay the langchain import cost during
+    # collection. ragas/langchain imports up there take ~4 minutes.
+    from tests.eval.conftest import patch_ragas_executor_for_py314
+    patch_ragas_executor_for_py314()
     try:
         asyncio.get_event_loop()
     except RuntimeError:
