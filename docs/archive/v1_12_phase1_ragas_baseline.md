@@ -14,12 +14,30 @@
 
 ## Scores
 
-> Filled by Task 5 after RAGAS run completes.
+Captured 2026-05-25 via `pytest -m ragas` (3:13 wall-clock for 60 evaluations
+across 2 papers); JSON in `tests/eval/_ragas_out/`.
 
 | Paper | faithfulness | context_recall | context_precision |
 |---|---|---|---|
-| meng2024 | <TBD-fill-from-tests/eval/_ragas_out/meng2024_v111_demo.json> | <TBD> | <TBD> |
-| ali2025_flash | <TBD-fill-from-tests/eval/_ragas_out/ali2025_flash_v111_demo.json> | <TBD> | <TBD> |
+| meng2024 | **0.657** | 1.000 | ~1.000 |
+| ali2025_flash | **0.440** | 1.000 | ~1.000 |
+
+### Reading the numbers
+
+- **context_recall = 1.0 and context_precision ≈ 1.0** on both papers: our
+  hand-picked `expected_chunks` are perfect — the golden-QA test set isn't
+  exercising retrieval at all. This is by design (we want a baseline that
+  isolates faithfulness drift; retrieval is tested elsewhere).
+- **faithfulness 0.657 (meng2024) vs 0.440 (ali2025_flash)**: this is the
+  signal we'll watch. ali2025_flash has more unverifiable claims in s08
+  output — probably because the PZO thin-film paper has more multi-step
+  reasoning chains and quantitative cross-references that don't trace
+  back to a single source span verbatim. meng2024's NBT ceramics flow has
+  cleaner one-fact-per-claim structure.
+- Faithfulness on a 0-1 scale is a *claim-by-claim verifiability* score,
+  not a quality score. The Phase 1 features (`--pdffigures2`, entity
+  dedup) target different layers — we don't expect faithfulness to jump
+  dramatically from either; the bar is +5pp.
 
 ## Notes & gotchas
 

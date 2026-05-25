@@ -20,12 +20,15 @@ Baseline RAGAS scores against `tests/eval/golden_qa/{meng2024,ali2025_flash}.yam
 
 | Paper × Metric | Baseline (v1.11.5) | + pdffigures2 | + entity_dedup | Δ vs baseline |
 |---|---|---|---|---|
-| meng2024 · faithfulness | TBD-FROM-T5 | TBD-FROM-T9 | TBD-FROM-T12 | — |
-| meng2024 · context_recall | TBD-FROM-T5 | TBD-FROM-T9 | TBD-FROM-T12 | — |
-| meng2024 · context_precision | TBD-FROM-T5 | TBD-FROM-T9 | TBD-FROM-T12 | — |
-| ali2025_flash · faithfulness | TBD-FROM-T5 | n/a | TBD-FROM-T12 | — |
-| ali2025_flash · context_recall | TBD-FROM-T5 | n/a | TBD-FROM-T12 | — |
-| ali2025_flash · context_precision | TBD-FROM-T5 | n/a | TBD-FROM-T12 | — |
+| meng2024 · faithfulness | **0.657** | deferred (PDF) | deferred (PDF) | — |
+| meng2024 · context_recall | **1.000** | deferred (PDF) | deferred (PDF) | — |
+| meng2024 · context_precision | **~1.000** | deferred (PDF) | deferred (PDF) | — |
+| ali2025_flash · faithfulness | **0.440** | n/a | deferred (PDF) | — |
+| ali2025_flash · context_recall | **1.000** | n/a | deferred (PDF) | — |
+| ali2025_flash · context_precision | **~1.000** | n/a | deferred (PDF) | — |
+
+Wall-clock for baseline: **3:13** (60 evaluations × 2 papers across faithfulness +
+context_recall + context_precision metrics, deepseek-chat judge).
 
 ### Decision rule
 
