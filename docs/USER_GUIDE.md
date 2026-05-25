@@ -224,6 +224,56 @@ uv run python -m cli run ... --paper-id mypaper
 
 ---
 
+## Optional features (v1.12 phase 1)
+
+### PDFFigures 2 sidecar — caption-anchored figure numbering
+
+When MinerU OCR skips or mis-numbers a figure, the canonical `Figure N` printed in
+the paper's caption text is lost. PDFFigures 2 (AI2) re-extracts that canonical
+numbering directly from the caption regions, then reconciles against MinerU's
+output. Off by default; enable with `--pdffigures2`.
+
+Setup (docker-only — no host JVM install):
+
+```bash
+# One-time, ~5 min on first build
+docker build -f Dockerfile.pdffigures2 -t lazy-paper/pdffigures2:0.1.0 .
+```
+
+Then in `.env`: `PDFFIGURES2_JAR=docker`
+
+Use:
+
+```bash
+uv run python -m cli run --pdf paper.pdf --template t.docx --pdffigures2 ...
+```
+
+The reconciliation report lands in `runs/<id>/s04_figures/_pdffigures2.yaml`:
+
+```yaml
+report:
+  renames: [{from: "Fig. 2", to: "Fig. 3", score: 0.83}]   # MinerU mis-numbered Fig. 3 as Fig. 2
+  keeps:   [{fig_id: "Fig. 1", reason: "no_caption_match", best_score: 0.12}]
+```
+
+Only renames when caption Jaccard ≥0.5; otherwise MinerU's numbering is kept.
+
+### Entity dedup — author misattribution defence
+
+Merges variant author / material mentions during s06 KG extraction
+("Meng et al." + "Meng 2024" + "本工作" → one canonical entity). Defends against
+the v1.11.1 author-misattribution bug class at the extraction layer (rather than
+adding another verifier rule downstream). Off by default; enable with:
+
+```bash
+LAZY_PAPER_ENTITY_DEDUP=1
+```
+
+Adds one LLM call (~4K tokens, T=0.1) to s06. Soft-degrades to the original
+entities on any LLM failure or malformed JSON.
+
+---
+
 ## Troubleshooting
 
 ### OCR missed a figure

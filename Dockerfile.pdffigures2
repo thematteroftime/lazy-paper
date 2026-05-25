@@ -1,0 +1,26 @@
+# PDFFigures 2 (AI2) packaged as a docker image — host needs only `docker`.
+#
+# Build (one-time, ~5 min):
+#   docker build -f Dockerfile.pdffigures2 -t lazy-paper/pdffigures2:0.1.0 .
+#
+# Run via the wrapper:
+#   vendor/pdffigures2.sh path/to/paper.pdf > figures.json
+#
+# Direct invocation (less common):
+#   docker run --rm -v "$PWD:/work" lazy-paper/pdffigures2:0.1.0 /work/paper.pdf -m /tmp/m_ -e
+#
+# Output: JSON array of {name, page, caption, regionBoundary, figType, ...}
+
+FROM sbtscala/scala-sbt:eclipse-temurin-jammy-11.0.20_8_1.9.6_2.12.18 AS build
+WORKDIR /src
+RUN git clone --depth 1 https://github.com/allenai/pdffigures2 .
+RUN sbt assembly
+
+FROM eclipse-temurin:11-jre-jammy
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/target/scala-2.12/pdffigures2-assembly-0.1.0.jar /opt/pdffigures2.jar
+WORKDIR /work
+ENTRYPOINT ["java", "-jar", "/opt/pdffigures2.jar"]
+CMD ["--help"]
