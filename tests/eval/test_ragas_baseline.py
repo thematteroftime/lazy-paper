@@ -38,9 +38,19 @@ def _load_answer(run_dir: Path) -> str:
 
 def test_ragas_scores(golden_papers, ragas_llm, ragas_embeddings):
     """For each golden paper compute faithfulness/context_recall/context_precision + dump JSON."""
+    import asyncio
+
     from datasets import Dataset
     from ragas import evaluate
     from ragas.metrics import faithfulness, context_recall, context_precision
+
+    # ragas 0.1.21 uses asyncio.as_completed which calls asyncio.get_event_loop()
+    # internally. Python 3.14 removed the implicit loop creation in non-main contexts,
+    # so we set one explicitly. Safe to call even if a loop already exists.
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
     out_dir = Path(__file__).parent / "_ragas_out"
     out_dir.mkdir(exist_ok=True)

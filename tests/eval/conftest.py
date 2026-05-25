@@ -12,6 +12,15 @@ from pathlib import Path
 import pytest
 import yaml
 
+# Load .env at conftest import time so LLM_TEXT_* / LLM_VISION_* fixtures
+# see the project's keys without needing to be `source`d into the shell.
+# Top-level cli.py does the same trick at runtime.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent.parent / ".env", override=False)
+except ImportError:
+    pass
+
 
 GOLDEN_DIR = Path(__file__).parent / "golden_qa"
 RUNS_ROOT = Path(__file__).parent.parent.parent / "runs"
