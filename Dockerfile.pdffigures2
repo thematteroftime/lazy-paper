@@ -11,12 +11,12 @@
 #
 # Output: JSON array of {name, page, caption, regionBoundary, figType, ...}
 
-FROM sbtscala/scala-sbt:eclipse-temurin-jammy-11.0.20_8_1.9.6_2.12.18 AS build
+FROM sbtscala/scala-sbt:eclipse-temurin-21.0.8_9_1.12.11_2.12.21 AS build
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/allenai/pdffigures2 .
 RUN sbt assembly
 
-FROM eclipse-temurin:11-jre-jammy
+FROM eclipse-temurin:21-jre-jammy
 RUN apt-get update && apt-get install -y --no-install-recommends \
         fontconfig \
     && rm -rf /var/lib/apt/lists/*
