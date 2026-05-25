@@ -775,8 +775,26 @@ section MUST cover. For each, write a GroundedClaim that:
 
 For other claims (not required, just supporting the section's argument):
   - cite ≥1 chunk that supports the claim
-  - cited_quote may be verbatim or empty (empty skips verification)
   - keep prose in the requested language (Chinese unless the user says English)
+
+## HARD RULE on cited_quote (v1.12 phase 2)
+
+A claim's `cited_quote` field is the verifier's primary grounding signal.
+Fill it as follows:
+
+  - **REQUIRED non-empty** when the claim text NAMES one of:
+      - a specific author ("Jiang et al.", "Ma 2022", "et al.")
+      - a specific numeric value ("2.94 J/cm³", "91.04%", "340 kV/cm")
+    The cited_quote MUST contain the verbatim source span carrying that
+    anchor. Empty cited_quote on an anchored claim is REJECTED by the
+    verifier and the claim is lost from the rendered output.
+
+  - **MAY be empty** ONLY for synthesis claims that integrate multiple
+    chunks without a single source span — e.g. high-level summaries,
+    cross-chunk inferences. These pass without quote verification.
+
+When in doubt, copy a verbatim slice. Empty quote is the exception, not
+the default.
 
 Quote-then-claim discipline (for the verifier):
   - When you set cited_quote, copy it verbatim from the cited chunk — the
