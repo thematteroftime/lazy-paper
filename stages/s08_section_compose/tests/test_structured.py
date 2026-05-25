@@ -104,6 +104,52 @@ def test_verifier_passes_empty_quote_through():
     assert rejected == []
 
 
+def test_verifier_rejects_empty_quote_with_author_anchor(monkeypatch):
+    """v1.12 phase 2: claim names 'Jiang et al.' but cited_quote empty → REJECT."""
+    monkeypatch.setenv("LAZY_PAPER_ANCHORED_QUOTE", "1")  # default; explicit for clarity
+    chunks = {0: _make_chunk("c0", "Jiang et al. reported W_rec = 2.94 J/cm³.")}
+    draft = SectionDraft(claims=[
+        GroundedClaim(text="Jiang et al. reported a moderate W_rec.",
+                      cited_chunk_ids=[0], cited_quote=""),  # anchored but empty quote
+        GroundedClaim(text="The system maintains stability.",
+                      cited_chunk_ids=[0], cited_quote=""),  # no anchors — should pass
+    ])
+    accepted, rejected = verify_section_draft(draft, chunks)
+    assert len(accepted) == 1
+    assert accepted[0].text == "The system maintains stability."
+    assert any(r["reason"] == "anchored_claim_no_quote" for r in rejected)
+
+
+def test_verifier_rejects_empty_quote_with_value_anchor(monkeypatch):
+    """v1.12 phase 2: claim names 'W_rec = 5.00 J/cm³' but cited_quote empty → REJECT."""
+    monkeypatch.setenv("LAZY_PAPER_ANCHORED_QUOTE", "1")
+    chunks = {0: _make_chunk("c0", "A large W_rec of 5.00 J/cm³ was achieved.")}
+    draft = SectionDraft(claims=[
+        GroundedClaim(text="The flagship achieves W_rec = 5.00 J/cm³ at 340 kV/cm.",
+                      cited_chunk_ids=[0], cited_quote=""),  # value anchor, no quote → REJECT
+        GroundedClaim(text="The material was synthesized conventionally.",
+                      cited_chunk_ids=[0], cited_quote=""),  # no anchors → ACCEPT
+    ])
+    accepted, rejected = verify_section_draft(draft, chunks)
+    assert len(accepted) == 1
+    assert accepted[0].text == "The material was synthesized conventionally."
+    assert any(r["reason"] == "anchored_claim_no_quote" for r in rejected)
+
+
+def test_verifier_opt_out_via_env_restores_old_behavior(monkeypatch):
+    """LAZY_PAPER_ANCHORED_QUOTE=0 restores pre-v1.12 'blanket accept empty quote'."""
+    monkeypatch.setenv("LAZY_PAPER_ANCHORED_QUOTE", "0")
+    chunks = {0: _make_chunk("c0", "Jiang et al. reported W_rec.")}
+    draft = SectionDraft(claims=[
+        GroundedClaim(text="Jiang et al. reported a moderate W_rec.",
+                      cited_chunk_ids=[0], cited_quote=""),
+        GroundedClaim(text="The ceramic was sintered at 1100 °C.",
+                      cited_chunk_ids=[0], cited_quote=""),
+    ])
+    accepted, rejected = verify_section_draft(draft, chunks)
+    assert len(accepted) == 2, "opt-out env should accept anchored empty-quote claims"
+
+
 # ─── required-mentions construction ───────────────────────────────────────────
 
 def _kg_with_comparator() -> PaperKG:
@@ -710,12 +756,18 @@ def test_dedup_anchors_unicode_unit_normalized():
     assert _claim_dedup_key(a) == _claim_dedup_key(b)
 
 
-def test_verify_truncates_oos_claims_chapter_level():
+def test_verify_truncates_oos_claims_chapter_level(monkeypatch):
     """Parallel B v1.11: chapter-level OOS cap. ANY claim firing OOS
     opener triggers truncation of WHOLE chapter to first 3 claims,
     even if subsequent claims don't match opener regex (real hif_2
     ch04 had 1 opener + 11 off-topic descriptive claims). Claim-
     level cap would only catch the 1 opener; chapter-level catches all."""
+    # v1.12 phase 2: this test predates anchored-quote enforcement. Its OOS
+    # claim fixtures happen to contain value anchors (e.g. "48.9%") which
+    # would now be rejected by the empty-quote anchor check, masking the
+    # OOS-overflow behaviour this test actually exercises. Opt out of the
+    # phase-2 reject so the original OOS-overflow assertion remains valid.
+    monkeypatch.setenv("LAZY_PAPER_ANCHORED_QUOTE", "0")
     from stages.s08_section_compose.structured import (
         verify_section_draft, GroundedClaim, SectionDraft,
     )
