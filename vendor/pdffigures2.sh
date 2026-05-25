@@ -8,7 +8,13 @@
 set -euo pipefail
 
 PDF="${1:?usage: pdffigures2.sh <pdf>}"
-PDF_ABS="$(cd "$(dirname "$PDF")" && pwd)/$(basename "$PDF")"
+# Resolve symlinks so we mount the real PDF directory into the container.
+# macOS lacks GNU `readlink -f`, so use a portable substitute.
+if command -v realpath >/dev/null 2>&1; then
+    PDF_ABS="$(realpath "$PDF")"
+else
+    PDF_ABS="$(cd "$(dirname "$(readlink "$PDF" || echo "$PDF")")" && pwd)/$(basename "$(readlink "$PDF" || echo "$PDF")")"
+fi
 PDF_DIR="$(dirname "$PDF_ABS")"
 PDF_NAME="$(basename "$PDF_ABS")"
 

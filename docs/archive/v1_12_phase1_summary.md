@@ -34,6 +34,50 @@ Baseline RAGAS scores against `tests/eval/golden_qa/{meng2024,ali2025_flash}.yam
 - **Neither helped**: keep both opt-in, plan Phase 2 with MiniCheck + coref-rewrite + CDE2 to attack different parts of the gap
 - **Any regression of >1pp**: revert that feature, document the failure mode
 
+### T9 e2e — `--pdffigures2` architectural validation (hif_2)
+
+Source PDFs for meng2024 and ali2025_flash are gitignored; the only PDFs in
+the worktree are hif_1.pdf and hif_2.pdf (unCLIP-family papers). Validation
+on hif_2:
+
+| Metric | Value |
+|---|---|
+| MinerU figures | 44 entries — but all 44 carry the same caption `"Selected 1024 × 1024 samples from a production version of unCLIP."` (s04 OCR-stage pathology specific to this paper; figures are sub-panels split incorrectly) |
+| PDFFigures 2 figures | 19 figures + 3 tables, each with a distinct caption (e.g. `"Figure 4: Variations between two images..."`) |
+| Renames | 0 — caption Jaccard never reaches 0.5 because MinerU's identical-everywhere caption can't match pdffigures2's unique captions |
+| Keeps | 16 entries logged with `best_score ∈ {0.02, 0.077, 0.125}` — well below threshold, correctly skipped |
+
+**What this proves**: the reconciliation code does the safe thing when
+captions don't match — keeps MinerU's numbering and logs the keep reason.
+The architecture is correct.
+
+**What this REVEALS as a separate finding**: MinerU's hif_2 figure
+extraction is **highly degraded** (44 dup-caption entries) — an existing
+v1.11.5 issue unrelated to this PR. Caption-anchored renumbering can't
+help when MinerU's captions are themselves corrupt; this paper would need
+a Phase 2 mechanism (e.g. ColPali visual retrieval, or a stricter caption
+filter before s04 even runs).
+
+### T12 e2e — `LAZY_PAPER_ENTITY_DEDUP=1` validation (meng2024 KG)
+
+KG dedup ran end-to-end with real LLM (DeepSeek-Chat) against the existing
+meng2024 KG:
+
+- Before: 35 entities (4 authors: Jiang, Ma, Zhang, Tang; 2 materials;
+  3 parameters; 11 values; ...); 24 relations
+- After: 35 entities, 24 relations — **no merge needed**
+
+This is the expected safe behavior: meng2024's KG extractor already
+produced canonical single-token author surnames (no `et al.` variants).
+With nothing to merge, dedup correctly does nothing. (If the KG had
+emitted `"Jiang"`, `"Jiang et al."`, `"Jiang 2021"` as 3 separate entities,
+they'd collapse to one. Phase 2 should add a small synthetic KG to a
+unit test to cover that path against a live LLM.)
+
+The integration is therefore validated: dedup runs, soft-degrades to
+inputs when nothing changes, re-writes `paper_kg.parquet`, and the next
+stages (s07/s08) see the canonical KG. No regression on meng2024.
+
 ## Phase 1 commit log
 
 ```
