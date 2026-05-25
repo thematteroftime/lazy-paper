@@ -10,17 +10,36 @@
 #   docker run --rm -v "$PWD:/work" lazy-paper/pdffigures2:0.1.0 /work/paper.pdf -m /tmp/m_ -e
 #
 # Output: JSON array of {name, page, caption, regionBoundary, figType, ...}
+#
+# Implementation note: PDFFigures 2 was last updated in 2017 and expects
+# SBT 1.3.x with JDK 11. The sbtscala/scala-sbt image's modern SBT 1.12 is
+# incompatible with PDFFigures 2's old project layout (NoClassDefFoundError
+# in SbtParser$). We install SBT 1.3.13 manually on a clean JDK 11 image.
 
-FROM sbtscala/scala-sbt:eclipse-temurin-21.0.8_9_1.12.11_2.12.21 AS build
+FROM eclipse-temurin:11-jdk-jammy AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# SBT 1.3.13: matches PDFFigures 2's project/build.properties.
+ENV SBT_VERSION=1.3.13
+RUN curl -fsSL "https://github.com/sbt/sbt/releases/download/v${SBT_VERSION}/sbt-${SBT_VERSION}.tgz" \
+        | tar -xz -C /opt && ln -s /opt/sbt/bin/sbt /usr/local/bin/sbt
+
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/allenai/pdffigures2 .
 RUN sbt assembly
+# Find the assembly jar. PDFFigures 2's build.sbt routes the output via
+# assemblyOutputPath; scan the whole /src tree for jars and pick the largest.
+RUN find /src -name '*.jar' -type f -exec ls -lh {} \; | sort -k5 -rh && \
+    jar=$(find /src -name '*.jar' -type f -exec wc -c {} + | sort -nr | head -1 | awk '{print $2}') && \
+    test -n "$jar" && cp "$jar" /opt/pdffigures2.jar
 
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:11-jre-jammy
 RUN apt-get update && apt-get install -y --no-install-recommends \
         fontconfig \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /src/target/scala-2.12/pdffigures2-assembly-0.1.0.jar /opt/pdffigures2.jar
+COPY --from=build /opt/pdffigures2.jar /opt/pdffigures2.jar
 WORKDIR /work
 ENTRYPOINT ["java", "-jar", "/opt/pdffigures2.jar"]
 CMD ["--help"]

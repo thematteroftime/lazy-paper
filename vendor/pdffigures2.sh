@@ -15,16 +15,17 @@ PDF_NAME="$(basename "$PDF_ABS")"
 OUT_DIR="$(mktemp -d -t pf2-XXXXXX)"
 trap 'rm -rf "$OUT_DIR"' EXIT
 
-# `-m /out/meta_` writes meta_<basename>.json; `-e` extracts figures (not just metadata).
+# `-d /out/meta_` writes <prefix><pdfname>.json with figure data; `-q` quiets logs.
 # We discard the stdout of `docker run` (verbose info logging) and read the JSON file.
 docker run --rm \
     -v "$PDF_DIR:/work:ro" \
     -v "$OUT_DIR:/out" \
     lazy-paper/pdffigures2:0.1.0 \
-    "/work/$PDF_NAME" -m /out/meta_ -e >/dev/null 2>&1 || {
+    "/work/$PDF_NAME" -d /out/meta_ -q >/dev/null 2>&1 || {
     echo "[pdffigures2.sh] docker run failed — check that the image exists" >&2
     echo "[pdffigures2.sh] build with: docker build -f Dockerfile.pdffigures2 -t lazy-paper/pdffigures2:0.1.0 ." >&2
     exit 1
 }
 
+# pdffigures2 names the JSON as <prefix><pdf-stem-without-suffix>.json
 cat "$OUT_DIR"/meta_*.json 2>/dev/null || echo "[]"
