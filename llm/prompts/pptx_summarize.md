@@ -28,9 +28,11 @@ Rules:
   - Include at least ONE numeric anchor (a value, threshold, percentage, ratio) when the figure presents quantitative data.
   - Be an analytical critique (limitation / alternative interpretation / missing control / comparison gap), NOT a description of what the figure shows.
   - Be distinct from the other observations on the same figure (no restating).
-- **Use Unicode math** — NEVER LaTeX (`\eta`, `\frac{}`, `$...$`, `\(...\)`).
-  Use Greek directly (η, σ, Δ, etc.), plain subscripts (W_rec, E_b), Unicode superscripts (cm³, m²).
-  Example: write `W_rec = 8.6 J/cm³` not `$W_{rec} = 8.6$ J/cm³`.
+- **Use Unicode math** — do NOT use LaTeX syntax ($...$, \eta, \frac{}{}, etc.).
+  Greek letters: α β γ δ ε ζ η θ λ μ ν π ρ σ τ φ ψ ω Γ Δ Σ Φ Ω
+  Subscripts via plain text: E_b, W_rec, P_max (underscore is fine), or use Unicode subscript digits: η₀
+  Superscripts via Unicode: J/cm³ not J/cm^3; m² not m^2
+  Operators: → ≤ ≥ ≠ ≈ ± × · ÷ ∞ ∂ ∫ Σ
 
 Example output (English):
 {

@@ -52,5 +52,8 @@ source_span (doc_name, char_start, char_end).
 Output strict JSON matching:
 {"entities": [...], "relations": [...]}
 
+Be MORE inclusive on `author`+`comparator` than you might think correct.
+Missing a cited competitor is a worse error than over-extracting one.
+
 USER:
 {paper_text}
