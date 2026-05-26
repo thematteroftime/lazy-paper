@@ -39,7 +39,7 @@ candidates:
 ```json
 {
   "clusters": [
-    {"canonical": "Meng et al. 2024", "member_ids": ["e_001", "e_002"]}
+    {"canonical": "Meng et al.", "member_ids": ["e_001", "e_002"]}
   ]
 }
 ```

@@ -79,6 +79,12 @@ def _invoke_jar(pdf: Path) -> str:
                             check=True, capture_output=True, text=True, timeout=300)
     except FileNotFoundError as e:  # docker binary not in PATH
         raise SidecarUnavailable(f"docker not available: {e}") from e
+    except subprocess.CalledProcessError as e:
+        raise SidecarUnavailable(
+            f"docker run exited {e.returncode}: {e.stderr[:200] if e.stderr else ''}"
+        ) from e
+    except subprocess.TimeoutExpired as e:
+        raise SidecarUnavailable(f"docker run timed out after {e.timeout}s") from e
     return cp.stdout
 
 

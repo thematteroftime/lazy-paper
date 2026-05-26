@@ -48,7 +48,7 @@ def test_ragas_scores(golden_papers, ragas_llm, ragas_embeddings):
     # We patch lazily from the test body — not at conftest load time — so the
     # rest of the suite doesn't pay the langchain import cost during
     # collection. ragas/langchain imports up there take ~4 minutes.
-    from tests.eval.conftest import patch_ragas_executor_for_py314
+    from tests.eval._ragas_py314_patch import patch_ragas_executor_for_py314
     patch_ragas_executor_for_py314()
     try:
         asyncio.get_event_loop()

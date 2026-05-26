@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 
 def test_generate_prompt_augment_happy_path(tmp_path):
     """Mocked LLM returns valid JSON; function returns parsed dict + adds metadata."""
@@ -49,7 +51,6 @@ def test_generate_prompt_augment_malformed_json_raises(tmp_path):
     (chapters_dir / "chapter_001_INTRODUCTION.md").write_text("intro")
 
     context = {"title": "x"}
-    import pytest
     with pytest.raises(PromptTailorError):
         generate_prompt_augment(
             context=context, chapters_dir=chapters_dir,
@@ -68,7 +69,6 @@ def test_generate_prompt_augment_missing_required_keys_raises(tmp_path):
     (chapters_dir / "chapter_001_INTRODUCTION.md").write_text("intro")
 
     incomplete = json.dumps({"domain_framing": "x", "terminology": []})
-    import pytest
     with pytest.raises(PromptTailorError):
         generate_prompt_augment(
             context={"title": "x"}, chapters_dir=chapters_dir,

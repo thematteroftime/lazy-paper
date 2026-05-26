@@ -80,26 +80,29 @@ def run(*, chapters_dir: Path, out_dir: Path) -> dict:
         # v1.12 phase 1: optional entity dedup before downstream consumers see
         # the KG. Gated by LAZY_PAPER_ENTITY_DEDUP=1; default OFF.
         if os.environ.get("LAZY_PAPER_ENTITY_DEDUP", "0") == "1":
-            from llm.paper_kg import Entity, PaperKG, Relation
-            from stages.s06_context.entity_dedup import dedup_entities
-            ents = [e.model_dump() for e in kg.entities]
-            rels = [r.model_dump() for r in kg.relations]
-            n_ents_before, n_rels_before = len(ents), len(rels)
-            new_ents, new_rels = dedup_entities(ents, rels)
-            # apply_clusters adds 'dedup_member_ids' which isn't part of Entity;
-            # strip it before rebuilding the Pydantic model.
-            kg = PaperKG(
-                entities=[Entity(**{k: v for k, v in e.items() if k != "dedup_member_ids"})
-                          for e in new_ents],
-                relations=[Relation(**r) for r in new_rels],
-            )
-            kg.to_parquet(out_dir / "paper_kg.parquet")  # rewrite with deduped KG
-            print(f"[s06_context] entity_dedup: {n_ents_before} -> {len(new_ents)} entities, "
-                  f"{n_rels_before} -> {len(new_rels)} relations", flush=True)
-            extra["entity_dedup"] = {
-                "entities_before": n_ents_before, "entities_after": len(new_ents),
-                "relations_before": n_rels_before, "relations_after": len(new_rels),
-            }
+            try:
+                from llm.paper_kg import Entity, PaperKG, Relation
+                from stages.s06_context.entity_dedup import dedup_entities
+                ents = [e.model_dump() for e in kg.entities]
+                rels = [r.model_dump() for r in kg.relations]
+                n_ents_before, n_rels_before = len(ents), len(rels)
+                new_ents, new_rels = dedup_entities(ents, rels)
+                kg = PaperKG(
+                    entities=[Entity(**{k: v for k, v in e.items() if k != "dedup_member_ids"})
+                              for e in new_ents],
+                    relations=[Relation(**r) for r in new_rels],
+                )
+                kg.to_parquet(out_dir / "paper_kg.parquet")
+                print(f"[s06_context] entity_dedup: {n_ents_before} -> {len(new_ents)} entities, "
+                      f"{n_rels_before} -> {len(new_rels)} relations", flush=True)
+                extra["entity_dedup"] = {
+                    "entities_before": n_ents_before, "entities_after": len(new_ents),
+                    "relations_before": n_rels_before, "relations_after": len(new_rels),
+                }
+            except Exception as exc:
+                (out_dir / "entity_dedup.failed").write_text(repr(exc), encoding="utf-8")
+                extra["entity_dedup"] = f"failed: {type(exc).__name__}"
+                # kg stays as the pre-dedup version; downstream uses it normally
         extra["kg_entities"] = len(kg.entities)
         extra["kg_relations"] = len(kg.relations)
         # v1.11.1 Bug #1+#2: pipe flagship headline metrics into context.yaml
