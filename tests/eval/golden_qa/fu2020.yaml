@@ -1,0 +1,112 @@
+paper_id: fu2020_v111_demo
+source_pdf: input/papers/fu2020.pdf   # placeholder — file may not exist locally, just metadata
+# Ground truth verified against runs/fu2020_v111_demo/s03_chapter/chapters/ on 2026-05-26.
+# Paper: "Unveiling the ferrielectric nature of PbZrO3-based antiferroelectric materials" (Fu et al., Nature Comm. 2020)
+items:
+  # === system (2 questions) ===
+  - id: q01
+    question: |
+      本文研究的材料体系化学式是什么？三种具体组分的缩写分别是什么？
+    ground_truth: |
+      研究体系为 Pb₀.₉₇La₀.₀₂(Zr₀.₅₀SnₓTi₀.₅₀₋ₓ)O₃，简称 PLZST。
+      三种组分分别是：PLZST₅₀/50/0（x = 0.50）、PLZST₅₀/45/5（x = 0.45）、
+      PLZST₅₀/37.5/12.5（x = 0.375）。
+    expected_chunks: [chapter_001_Results.md, chapter_002_Methods.md]
+    tags: [system, abstract, cross_chapter]
+
+  - id: q02
+    question: |
+      本文揭示 PLZST 体系的本质为何种极化构型？这与此前认定的"反铁电"性质有何区别？
+    ground_truth: |
+      PLZST 体系实为铁亚电体（ferrielectric，FiE）性质，而非传统的反铁电（AFE）构型。
+      传统 AFE（如 PbZrO₃ 原型）的偶极子排列为两列向左、两列向右交替排列（等幅反平行）；
+      FiE 构型则由两段反向但不等效的铁电有序段构成（幅度调制模式）或两段方向不同的
+      等幅铁电段构成（角度调制模式），均产生净极化。
+    expected_chunks: [chapter_000_Preface.md, chapter_001_Results.md]
+    tags: [system, mechanism, cross_chapter]
+
+  # === headline_metric (2 questions) ===
+  - id: q03
+    question: |
+      PLZST₅₀/50/0 的最高储能密度和对应储能效率分别是多少？
+    ground_truth: |
+      PLZST₅₀/50/0 具有最高能量储存密度 9.82 J/cm³，对应储能效率为 84%。
+    expected_chunks: [chapter_001_Results.md]
+    tags: [headline_metric, results]
+
+  - id: q04
+    question: |
+      三种 PLZST 组分的调制周期 N_IMS 各是多少？随 Sn/Ti 比值变化的趋势如何？
+    ground_truth: |
+      PLZST₅₀/50/0 的 N_IMS = 4.04；PLZST₅₀/45/5 的 N_IMS = 6.15；
+      PLZST₅₀/37.5/12.5 的 N_IMS = 9.37。随 Sn/Ti 比值降低（即 Ti 含量增加），
+      调制周期 N_IMS 增大。
+    expected_chunks: [chapter_001_Results.md]
+    tags: [headline_metric, results, system]
+
+  # === comparator / author_attribution (2 questions) ===
+  - id: q05
+    question: |
+      AFE 构型的概念最初由谁在理论上提出？PbZrO₃ 的 AFE 行为最早由谁通过实验观察到？
+    ground_truth: |
+      AFE 构型在理论上最初由 Kittel 在 1951 年类比反铁磁性提出；
+      PbZrO₃ 的 AFE 行为则最早由 Sawaguchi et al. 通过其特征介电响应和滞回曲线实验观察到。
+    expected_chunks: [chapter_000_Preface.md]
+    tags: [comparator, author_attribution]
+
+  - id: q06
+    question: |
+      MacLaren et al. 和 Ma et al. 各自在什么 PbZrO₃ 基体系中发现了什么关键结构信息？
+    ground_truth: |
+      MacLaren et al. 在 (Pb₀.₉₆La₀.₀₄)(Zr₀.₉Ti₀.₁)₀.₉₉O₃ 陶瓷中原子尺度研究了复杂非公度调制结构（IMS），
+      发现 A 位阳离子以正弦方式调制；
+      Ma et al. 进一步在 (Pb₀.₉₉Nb₀.₀₂[(Zr₀.₅₇Sn₀.₄₃)₁₋ᵧTiᵧ]₀.₉₈O₃ 陶瓷中指出，
+      A 位阳离子呈反平行但不等量或近似正交排列。
+    expected_chunks: [chapter_000_Preface.md]
+    tags: [comparator, author_attribution, system]
+
+  # === method (2 questions) ===
+  - id: q07
+    question: |
+      本文合成 PLZST 陶瓷的方法是什么？烧结温度和保温时间各是多少？
+    ground_truth: |
+      PLZST 陶瓷采用高温固相烧结法（high temperature solid-state sintering method）制备。
+      原料在 900 °C 煅烧 2 h 后，将粉末二次球磨 24 h，压片后在 1300 °C 烧结 2 h。
+    expected_chunks: [chapter_002_Methods.md]
+    tags: [method]
+
+  - id: q08
+    question: |
+      本文用于原子尺度结构分析的两种主要 STEM 成像方式是什么？各自主要用于观察什么？
+    ground_truth: |
+      两种方式为：(1) HAADF（高角环形暗场）成像，主要用于观察阳离子（A 位和 B 位）的
+      位移映射（偶极排列构型）；(2) ABF（环形亮场）成像，用于分析氧亚晶格（O 阴离子）
+      的局部结构特征，包括氧八面体的倾斜与畸变。
+    expected_chunks: [chapter_001_Results.md, chapter_002_Methods.md]
+    tags: [method, cross_chapter]
+
+  # === mechanism (2 questions) ===
+  - id: q09
+    question: |
+      在 PLZST 体系中，FiE 铁电有序段的宽度（N_IMS）与哪些宏观电性质线性相关？
+      N_IMS 增大时各性质如何变化？
+    ground_truth: |
+      N_IMS 与以下宏观电性质线性相关：
+      (1) 介电常数 ε_RT（N_IMS 增大则 ε_RT 增大）；
+      (2) 正向切换场 E_AF（N_IMS 增大则 E_AF 减小）；
+      (3) 剩余极化 P_r（N_IMS 增大则 P_r 增大）。
+      根本原因：Ti 有利于铁电性，Sn 有利于反铁电性；降低 Sn/Ti 比扩大了铁电有序段，
+      减弱了反向偶极子之间的最近邻相互作用。
+    expected_chunks: [chapter_001_Results.md]
+    tags: [mechanism, results]
+
+  - id: q10
+    question: |
+      为何 PLZST₅₀/50/0 的铁亚电 FiE 区域的 ΔPs 明显大于 PLZST₅₀/45/5，
+      但其整体 P_r 反而更小？
+    ground_truth: |
+      虽然 PLZST₅₀/50/0 FiE 区域内测得的 ΔPs 值明显大于 PLZST₅₀/45/5，
+      但 PLZST₅₀/50/0 中存在大面积 AFE 有序区域（整体样品中 AFE 区域占比大），
+      这些 AFE 区域的净极化为零，最终导致整体 P_r 反而较小。
+    expected_chunks: [chapter_001_Results.md]
+    tags: [mechanism, results, cross_chapter]

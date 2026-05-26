@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from llm.client import LLM, max_tokens
@@ -76,6 +77,32 @@ def run(*, chapters_dir: Path, out_dir: Path) -> dict:
     if kg is None:
         extra["kg"] = "failed"
     else:
+        # v1.12 phase 1: optional entity dedup before downstream consumers see
+        # the KG. Gated by LAZY_PAPER_ENTITY_DEDUP=1; default OFF.
+        if os.environ.get("LAZY_PAPER_ENTITY_DEDUP", "0") == "1":
+            try:
+                from llm.paper_kg import Entity, PaperKG, Relation
+                from stages.s06_context.entity_dedup import dedup_entities
+                ents = [e.model_dump() for e in kg.entities]
+                rels = [r.model_dump() for r in kg.relations]
+                n_ents_before, n_rels_before = len(ents), len(rels)
+                new_ents, new_rels = dedup_entities(ents, rels)
+                kg = PaperKG(
+                    entities=[Entity(**{k: v for k, v in e.items() if k != "dedup_member_ids"})
+                              for e in new_ents],
+                    relations=[Relation(**r) for r in new_rels],
+                )
+                kg.to_parquet(out_dir / "paper_kg.parquet")
+                print(f"[s06_context] entity_dedup: {n_ents_before} -> {len(new_ents)} entities, "
+                      f"{n_rels_before} -> {len(new_rels)} relations", flush=True)
+                extra["entity_dedup"] = {
+                    "entities_before": n_ents_before, "entities_after": len(new_ents),
+                    "relations_before": n_rels_before, "relations_after": len(new_rels),
+                }
+            except Exception as exc:
+                (out_dir / "entity_dedup.failed").write_text(repr(exc), encoding="utf-8")
+                extra["entity_dedup"] = f"failed: {type(exc).__name__}"
+                # kg stays as the pre-dedup version; downstream uses it normally
         extra["kg_entities"] = len(kg.entities)
         extra["kg_relations"] = len(kg.relations)
         # v1.11.1 Bug #1+#2: pipe flagship headline metrics into context.yaml
@@ -84,6 +111,26 @@ def run(*, chapters_dir: Path, out_dir: Path) -> dict:
         headline = extract_headline_metrics(kg)
         if headline:
             data["headline_metrics"] = headline
+
+    # v1.12 phase 4: optional prompt-tailoring pre-stage.
+    # When LAZY_PAPER_PROMPT_TAILOR=1, run a cheap LLM call to emit a
+    # per-paper prompt-augmentation block that s08 will prepend to
+    # _STRUCTURED_SYSTEM. Soft-degrade on any failure — drop a marker
+    # file and let s08 fall back to the vanilla prompt.
+    if os.environ.get("LAZY_PAPER_PROMPT_TAILOR", "0") == "1":
+        from stages.s06_context.prompt_tailor import (
+            generate_prompt_augment, PromptTailorError,
+        )
+        try:
+            augment = generate_prompt_augment(context=data, chapters_dir=chapters_dir)
+            dump_yaml(out_dir / "prompt_augment.yaml", augment)
+            extra["prompt_tailor"] = "ok"
+        except PromptTailorError as exc:
+            (out_dir / "prompt_tailor.failed").write_text(repr(exc), encoding="utf-8")
+            extra["prompt_tailor"] = "failed"
+        except Exception as exc:  # LLM transport / unexpected
+            (out_dir / "prompt_tailor.failed").write_text(repr(exc), encoding="utf-8")
+            extra["prompt_tailor"] = f"failed: {type(exc).__name__}"
 
     dump_yaml(out_dir / "context.yaml", data)
     mark_done(out_dir, extra)

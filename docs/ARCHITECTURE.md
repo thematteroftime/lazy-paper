@@ -229,6 +229,8 @@ To add a language, extend the `Fig(?:ure)?\.?|图` alternation with the new pref
 
 **`is_generation_prompt_caption` (v1.11.1, `runner.py:28-56`)** is a caption-stub filter. It drops captions matching `(letter) A/An <curated descriptor> <medium> of …` (typical example: the DALL-E paper's OCR returned the literal generation prompt `(a) A high quality photo of a dog playing in a green field next to a lake.` — `hif_2` Fig 43 was being fed to vision-LLM as physics). This is the first of two defence layers; s07 skips again (see §4.7). The descriptor list is strict so real captions like `"(a) SEM image of NBST"` survive.
 
+**PDFFigures 2 reconciliation (v1.12 phase 1, opt-in, `runner.py:374+`)** — when `--pdffigures2` is set and `PDFFIGURES2_JAR=docker` is in env, s04 invokes AI2's PDFFigures 2 sidecar (`scripts/pdffigures2_sidecar.py` → docker → JSON) after the MinerU pass. `reconcile_with_pdffigures2()` matches each MinerU figure against pdffigures2's caption-anchored figure list via bag-of-words Jaccard ≥0.5 and overwrites `fig_id` to the canonical "Figure N" the paper itself prints. Audit trail at `_pdffigures2.yaml`. **Docker-only by design**: project policy bans host JVM installs; the Dockerfile (`Dockerfile.pdffigures2`) is a 2-stage build (sbtscala → eclipse-temurin-jre) producing `lazy-paper/pdffigures2:0.1.0`. Closes the v1.12 known limit "caption-aware numbering" from §12. Default OFF until measured impact lands.
+
 ### 4.5 s05_template — parse the outline docx
 
 | Field | Value |
@@ -275,6 +277,53 @@ headline_metrics:
 The "FLAGSHIP GROUND TRUTH" block in `llm/prompts/section_compose.md` reads these numbers and pins the composer to them rather than letting it scavenge a comparator's neighbouring value (the v1.10 meng2024 ch07/09/13/15 cross-chapter `W_rec` drift bug). Implementation: `stages/s06_context/runner.py:73-86` + `kg_extract.py:61`.
 
 **Prompt switching**: `LAZY_PAPER_KG_PROMPT=paper_kg_v3.md` uses the 11-type prompt (with author); default `paper_kg.md` is the 10-type. Strategy KL requires v3 because the compose prompt depends on `<Author> et al.` citation form.
+
+**Step 4 — entity dedup (v1.12 phase 1, opt-in)**: when `LAZY_PAPER_ENTITY_DEDUP=1`, the runner adds a LightRAG-inspired disambiguation pass after KG build. A single LLM call (T=0.1, ≤4K tokens) clusters variant mentions of the same real-world entity within one type ("Meng et al." + "Meng 2024" + "本工作" → one canonical author). The canonical id is the first member of each cluster; relations are remapped and triples deduped; `paper_kg.parquet` is re-written so downstream stages see the canonical KG. Defends against the v1.11.1 Bug #3 (author misattribution) class at the extraction layer rather than another verifier rule. Soft-degrades to inputs on LLM failure or malformed JSON; defensive `_ensure_coverage` adds singleton clusters for any id the LLM forgot so dedup never silently drops entities. Implementation: `stages/s06_context/entity_dedup.py` (140 LOC) + `llm/prompts/entity_dedup.md`. Audit in `done.yaml.extra.entity_dedup` (before/after counts).
+
+### 4.6.5 prompt_tailor (v1.12 phase 4, opt-in)
+
+When `LAZY_PAPER_PROMPT_TAILOR=1`, s06_context appends a cheap pre-stage
+LLM call after KG extraction. It reads:
+
+- `context.yaml` (just-written): title, system, abbreviations, keywords,
+  key_terms, headline_metrics
+- `chapters_dir/chapter_001_INTRODUCTION.md` first 3000 chars (or empty
+  if no intro)
+
+It emits `prompt_augment.yaml` with four top-level keys:
+
+| Key | Purpose |
+|---|---|
+| `domain_framing` | 2-3 sentence prose about what THIS paper is and does |
+| `terminology` | list of {term, note} pairs drawn from THIS paper's text |
+| `metric_patterns` | list of {kind, regex} matching numeric patterns in THIS paper |
+| `comparator_style` | {format, example_from_paper} citation template + real instance |
+
+s08 calls `_render_augment_block(aug)` to render these four blocks as a
+markdown prefix, prepended to `_STRUCTURED_SYSTEM` before every compose
+LLM call (see `compose_structured`'s `augment_block` kwarg). The prefix
+applies to best-of-N initial draft pair, retry-when-empty, and
+retry-when-short branches — all 4 call sites use a local `system_prompt`
+variable that resolves to `augment_block + _STRUCTURED_SYSTEM` when an
+augment is present, else just `_STRUCTURED_SYSTEM` (byte-identical
+fallback when the flag is OFF).
+
+**Design rationale.** Phase 3c tried to make `_STRUCTURED_SYSTEM`
+domain-agnostic by adding "Smith et al. ResNet-50 on ImageNet" examples
+alongside the materials ones. RAGAS regressed (meng2024 −9pp, ali2025
+−4pp) — the LLM treated the extra examples as permission to drift.
+Phase 4 reverses the design: the static prompt stays clean and focused
+(materials-tuned methodology), while a per-paper augment block does
+runtime specialization. Generalization moves from prompt-body to
+architecture. Measured Phase 4 result: meng2024 0.55→0.68 (+13pp);
+ali2025 0.49→0.67 (+18pp). See `docs/archive/v1_12_phase4_summary.md`.
+
+**Soft-degrade.** Any pre-stage failure (PromptTailorError, LLM transport,
+unexpected exception) writes a `prompt_tailor.failed` marker and s06
+completes normally. s08 sees no `prompt_augment.yaml` and falls back to
+the vanilla `_STRUCTURED_SYSTEM` — pipeline never blocks.
+
+Implementation: `stages/s06_context/prompt_tailor.py` (~95 LOC) + `llm/prompts/prompt_tailor.md` (40 lines).
 
 ### 4.7 s07_figure_analyze — vision LLM per figure
 
@@ -498,6 +547,7 @@ For each claim, the checks below decide **reject / accept / accept-with-advisory
 
 | Check | Action | Implementation |
 |---|---|---|
+| **Anchored claim w/o quote** (v1.12 phase 2) — claim text names author or value+unit anchor; `cited_quote` empty | Reject (`anchored_claim_no_quote`); `LAZY_PAPER_ANCHORED_QUOTE=0` opts out | line 329-345 |
 | **Schema prefix leak** — `text` starts with `GroundedClaim:` / `Claim:` | Reject | line 323 |
 | **Quote vs chunk match** — `cited_quote` matches a cited chunk with fuzzy score ≥ 0.85 | Reject if no match | line 332-354 |
 | **Chunk-id slop fallback** — quote matches a different chunk | Patch `cited_chunk_ids`, accept | line 343-354 |
@@ -879,6 +929,8 @@ v1.11.0 was a **first-principles refactor** (commit `a4d90ab`) that **cut** thre
 
 **Code marker**: `structured.py:368-372` has `# v1.11 architecture-review CUT: cross-citation reject was 40 LOC...`
 
+**v1.12 phase 2 closure**: the underlying defect — empty `cited_quote` bypassing the verifier — was finally fixed in v1.12 phase 2 with the anchor-aware empty-quote branch at `structured.py:329-345` (see §5.5 verifier table top row). Pair with the HARD RULE addition to `_STRUCTURED_SYSTEM` (the s08 compose system prompt). The orthogonal reference-list check originally proposed here was NOT implemented; the anchor-based approach proved sufficient. Measured impact: meng2024's empty-`cited_quote` rate dropped from 32% to 0%; ali2025_flash RAGAS faithfulness +5.4pp. The apparent meng2024 faithfulness drop is a metric artifact — see `docs/archive/v1_12_phase2_summary.md` for full diagnostic.
+
 ### 11.2 figure-retry pass (cut)
 
 **What it did**: v1.10 Variant C added ~85 LOC after the verifier — when ≥ 50 % of `section_figures` were not literally mentioned in the verified draft, re-send the prompt asking the LLM to fill them in.
@@ -917,7 +969,7 @@ v1.11.0 passed the architecture-review ship gate (hardcode scan + lang threading
 From CHANGELOG v1.10 "Deferred to v1.11" still open:
 
 - **BS1+BS2 normalize**: letter-spaced subscripts (OCR outputs "L i 3 +" while the LLM writes "Li³⁺") are asymmetric between OCR and LLM, so the BS3+BS4 symmetric-folding strategy does not apply. Needs case-by-case handling; no schedule.
-- **s04 caption-aware numbering**: s04 currently numbers figures by OCR order (`Fig. 1, Fig. 2, ...`); an OCR miss shifts every later figure away from the paper's original numbering, so the LLM reading the source writes "Fig. 5" but s04 has no Fig. 5. We need to read the original figure number out of the caption text.
+- ~~**s04 caption-aware numbering**~~: **shipped** in v1.12 phase 1 as `--pdffigures2`, opt-in. See §4.4 "PDFFigures 2 reconciliation". Pending: enable by default once measured impact from `docs/archive/v1_12_phase1_summary.md` justifies it.
 - **comparator gap**: `build_required_mentions` only searches KG entities for comparators, but some papers cite work in the references list without naming it as an entity. We need to scan the body text for "Et al. ... reported" patterns.
 - **template-paper mismatch graceful degrade**: when an AFE template runs against a deep-learning paper, s08 produces OOS overflow ("源论文未涉及...") in every section instead of falling back to a generic paper structure.
 - **DOCX HYPERLINK dead code**: the DOCX renderer still does not consume `citation_mode=HYPERLINK` — only KEEP/REMOVE. The sources list needs wiring into the docx renderer.

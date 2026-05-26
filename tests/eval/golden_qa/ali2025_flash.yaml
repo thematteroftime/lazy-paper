@@ -1,0 +1,198 @@
+paper_id: ali2025_flash_v111_demo
+source_pdf: input/papers/ali2025_flash.pdf
+# Ground truth verified against runs/ali2025_flash_v111_demo/s03_chapter/chapters/ on 2026-05-25.
+items:
+  # === headline_metric (5 questions) ===
+  - id: q01
+    question: |
+      RAFE-FHC PZO 薄膜的核心储能性能指标（U_e, E_b, P_m, η）是多少？
+    ground_truth: |
+      RAFE-FHC PZO 薄膜实现：U_e = 63.5 J/cm³、E_b = 4827 kV/cm、P_m ≈ 70 μC/cm²、
+      峰值 η ~80%（在 E < 2000 kV/cm 时），在 E_b 下 η 保持约 60%。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [headline_metric, results, cross_chapter]
+
+  - id: q02
+    question: |
+      RAFE-FHC PZO 的热稳定性表现如何？工作温度上限是多少？
+    ground_truth: |
+      RAFE-FHC 在 25 °C 到 250 °C 整个区间内 U_e 和 η 的退化都 ≤ 3%（即 ΔU_e ≤3%、Δη ≤3%），
+      工作温度上限 250 °C — 满足混合动力汽车（<140 °C）与地下油气勘探（<200 °C）等极端环境需求。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [headline_metric, results]
+
+  - id: q03
+    question: |
+      FHC 工艺的加热与冷却速率分别是多少？整个工艺持续多久？
+    ground_truth: |
+      FHC（flash heating and cooling）的加热与冷却速率均约 1000 °C/s。
+      flash heating 在 650 ms 内完成，liquid N₂ 淬火（flash cooling）<1 s，整个工艺 <1 秒完成。
+    expected_chunks: [chapter_001_INTRODUCTION.md, chapter_002_RESULTS.md]
+    tags: [headline_metric, method, cross_chapter]
+
+  - id: q04
+    question: |
+      RAFE-FHC 与 AFE-CA 的漏电流相差多大？是 RAFE-FHC 的什么微观因素导致的？
+    ground_truth: |
+      在 400 kV/cm 直流场下，RAFE-FHC 的漏电流约 10⁻⁸ A/cm²，AFE-CA 约 2×10⁻³ A/cm² — 相差 5 个数量级。
+      原因：FHC 诱导的致密晶粒、亚晶界（sub-grain boundaries）和 Pb 空位的显著抑制，有效阻断漏电通道、增强电子散射、降低载流子浓度。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [headline_metric, results, mechanism]
+
+  - id: q05
+    question: |
+      不同退火工艺（CA / RTA / FH / FHC）下 PZO 薄膜的 E_b 各是多少？Weibull modulus β 如何变化？
+    ground_truth: |
+      E_b：CA 1228 kV/cm、RTA 1826 kV/cm、FH 2638 kV/cm、FHC 4827 kV/cm。
+      Weibull modulus β 从 AFE-CA 的 9.8 增大到 RAFE-FHC 的 49.4 — 显示 FHC 工艺显著改善可靠性与均匀性。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [headline_metric, results]
+
+  # === comparator + author_attribution (5 questions) ===
+  - id: q06
+    question: |
+      Pan 等人 2021 年报告的 BiFeO3-BaTiO3 RFE 体系储能性能是多少？
+    ground_truth: |
+      Pan et al. (2021) 通过化学掺杂在 BiFeO3-BaTiO3 体系中构建 superparaelectric 态，
+      实现 U_e = 152 J/cm³、η = 77%。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, author_attribution]
+
+  - id: q07
+    question: |
+      Kim 等人 2020 年通过什么方法在 PMN-PT RFE 薄膜中取得了什么性能？
+    ground_truth: |
+      Kim et al. (2020) 通过高能离子轰击（high-energy ion bombardment）在 0.68PMN-0.32PT RFE 薄膜中引入点缺陷，
+      实现 U_e = 133 J/cm³、η = 75%。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, author_attribution]
+
+  - id: q08
+    question: |
+      引用文献中 AgNbO3 基体系通过固溶 AgTaO3 取得了多大的 U_e 和 η？
+    ground_truth: |
+      在 AgNbO3 中通过与 AgTaO3 固溶构建 room temperature RAFE，实现 U_e = 6.3 J/cm³、η = 90%（引用 ref 11，Luo et al.）。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, author_attribution]
+
+  - id: q09
+    question: |
+      Table I 中列出的对比工作里，PLD + 离子注入工艺（ref 33）取得的 PZO RFE 薄膜性能是多少？退火时间多长？
+    ground_truth: |
+      ref 33 用 PLD + 离子注入获得 RFE PZO 薄膜：退火 3000 s，P_m = 60 μC/cm²、E_b = 4493 kV/cm、U_e = 62.3 J/cm³、η = 60%，
+      热稳定性 25→125 °C 下 ΔU_e ≤5%、Δη ≤5%。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [comparator, author_attribution, results]
+
+  - id: q10
+    question: |
+      文献中 E_b 与 d 的关系是什么标度律？式中 α 的范围是多少？
+    ground_truth: |
+      晶粒尺寸细化能增大击穿场强：E_b ∝ d^(-α)，其中 α ~ 0.2-0.4（引用 ref 13, 14）。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [comparator, mechanism]
+
+  # === figure_id (4 questions) ===
+  - id: q11
+    question: |
+      Fig. 1 包含哪几个子图？分别展示什么？
+    ground_truth: |
+      Fig. 1 有 A-H 共 8 个子图：
+      A 温度依赖介电常数 ε_r + 不同温度下的畴示意图；
+      B FHC 实验装置示意；
+      C 不同退火工艺时间对比（FHC <1 s vs CA >1000 s）；
+      D 不同工艺下 PZO 薄膜的 P-E 滞回线（含 J-E 切换电流插图）；
+      E 各薄膜温度依赖介电常数与损耗；
+      F RAFE 薄膜温度依赖介电常数（不同频率）；
+      G、H AFE 与 RAFE 薄膜温度依赖 P-E loops。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [figure_id, abstract]
+
+  - id: q12
+    question: |
+      Fig. 3G 展示了什么？图中亚晶界的取向偏差角是多少？
+    ground_truth: |
+      Fig. 3G 是 RAFE-FHC 薄膜中亚晶界（sub-GB）的 HAADF 图像，配 FFT 衍射花样插图；
+      该亚晶界的 misorientation angle = 1.7°。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [figure_id, mechanism]
+
+  - id: q13
+    question: |
+      Fig. 4F 验证了什么？测试的电场条件是什么？
+    ground_truth: |
+      Fig. 4F 展示 AFE 与 RAFE 薄膜在 1500 kV/cm 下的温度依赖储能性能 — 验证 RAFE-FHC 的优越热稳定性。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [figure_id, results]
+
+  - id: q14
+    question: |
+      Fig. S19 通过比较哪几组工艺隔离出"Pb 缺陷 vs 微观结构"的贡献？最终结论是什么？
+    ground_truth: |
+      Fig. S19 通过比较 RTA（有 Pb 缺陷、AFE）与 FH（无 Pb 缺陷、AFE）隔离 Pb 缺陷影响，
+      通过比较 FH（无 Pb 缺陷、无亚晶界、AFE）与 FHC（无 Pb 缺陷、有亚晶界 + nanodomains、RAFE）隔离微观结构影响。
+      结论：消除 Pb 损失能改善 E_b 和 U_e，但微观结构工程的贡献远大于 Pb 化学计量比 — 微观结构主导能量储存增强。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [figure_id, mechanism]
+
+  # === method / system / mechanism (3 questions) ===
+  - id: q15
+    question: |
+      FHC 工艺的两个关键步骤分别由什么物理机制实现？为什么选择 LN₂？
+    ground_truth: |
+      flash heating 由铜线圈电磁感应 + 热传导加热（薄膜搭石墨基板共同放入铜线圈）；
+      flash cooling 通过把样品浸入液氮（liquid N₂, LN2）实现，因为 LN2 提供约 1000 °C/s 的极速降温且非接触加热结构允许快速浸液。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [method, mechanism]
+
+  - id: q16
+    question: |
+      论文用什么开源软件做相场模拟和 DFT 计算？基本参数是什么？
+    ground_truth: |
+      相场：开源 FERRET 包，建立在 MOOSE (Multiphysics Object-Oriented Simulation Environment) 框架上，
+      使用有限元法（FEM）求解，3 阶 Hermite 单元 + Newton-Raphson + GMRES + implicit Euler；
+      模拟尺度 64Δx × 64Δx × 2Δx，Δx = 0.416 nm。
+      DFT：VASP，PBE-GGA 交换关联泛函，PAW 赝势，平面波截断能 540 eV；
+      AFE 相（40 atoms, Pbam）用 6×3×4 k 点网格。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [method]
+
+  - id: q17
+    question: |
+      论文为什么从"高温 nanodomains"切入设计 RAFE？这个想法借鉴自哪个领域的传统技术？
+    ground_truth: |
+      FE/AFE 在居里温度 T_c 附近因切换势垒降低而呈现弛豫特征（大量 nanodomains），导致 P-E 回线变窄、P_m 增大 → 高 U_e 与 η。
+      若能"冻结"这种高温 nanodomains 到室温，就能在室温保持窄回线 + 高 P_m。
+      该思路借鉴结构材料领域的传统"淬火（quenching）技术"。
+    expected_chunks: [chapter_001_INTRODUCTION.md]
+    tags: [mechanism, system]
+
+  # === cross-chapter / consistency (3 questions) ===
+  - id: q18
+    question: |
+      为什么本论文主张"微观结构 > Pb 缺陷"对储能性能的影响更大？
+    ground_truth: |
+      作者通过三组对比（RTA vs FH vs FHC）量化两因素：
+      RTA 有 Pb 损失，FH 与 FHC 都没；FH 无亚晶界，FHC 有亚晶界 + nanodomains。
+      RTA→FH 改善（消除 Pb 损失）远小于 FH→FHC 改善（微观结构升级），
+      因此结论是微观结构（sub-grains + nanodomains）主导 U_e 与 E_b 的提升，Pb 化学计量是次要贡献。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [mechanism, results, cross_chapter]
+
+  - id: q19
+    question: |
+      不同退火工艺的 U_e 分别是多少？RAFE-FHC 是其余几种工艺的几倍？
+    ground_truth: |
+      U_e：CA ~17.3 J/cm³、RTA ~20.1 J/cm³、FH ~27.9 J/cm³、FHC 63.5 J/cm³；
+      RAFE-FHC 是其他几种 AFE 薄膜的 2-4 倍（具体：63.5/17.3≈3.7×，63.5/20.1≈3.2×，63.5/27.9≈2.3×）。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [headline_metric, cross_chapter]
+
+  - id: q20
+    question: |
+      ε_r 与 E_b 在介电材料中的常见关系是什么？本工作 RAFE-PZO 在该 trade-off 中表现如何？
+    ground_truth: |
+      传统认知：ε_r 与 E_b 之间存在内在 trade-off，较大的 ε_r 通常伴随较低的 E_b（参考 14, 26, 27）。
+      本工作 RAFE-PZO 薄膜同时具备良好的 ε_r 与 E_b，打破了该 trade-off。
+    expected_chunks: [chapter_002_RESULTS.md]
+    tags: [comparator, mechanism]

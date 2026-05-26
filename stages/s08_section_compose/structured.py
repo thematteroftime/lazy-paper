@@ -15,6 +15,7 @@ the instructor flow.
 """
 from __future__ import annotations
 
+import os
 import re
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Literal
@@ -299,8 +300,11 @@ def verify_section_draft(
     quote's length. Exact-substring case returns 1.0; verbatim-with-typo
     LLM output stays well above 0.85.
 
-    Empty quotes skip verification (cited_chunk_ids alone is the grounding
-    signal — the LLM may still write good prose without verbatim quoting).
+    Empty quotes are only accepted for synthesis claims (those without
+    specific author / value+unit anchors detected by _claim_anchors). An
+    anchored claim with empty cited_quote is rejected with reason
+    `anchored_claim_no_quote` — set LAZY_PAPER_ANCHORED_QUOTE=0 to restore
+    pre-v1.12 behaviour. (v1.12 phase 2 closure of arch doc §11.1.)
 
     Tries the claim's `cited_chunk_ids` first. If none match, falls back to
     scanning ALL retrieved chunks — LLMs sometimes quote from chunk A but
@@ -327,7 +331,22 @@ def verify_section_draft(
             })
             continue
         if not c.cited_quote.strip():
-            accepted.append(c)
+            # v1.12 phase 2: anchor-aware empty-quote check.
+            # Pre-v1.12: blanket accept. The LLM exploited this by omitting
+            # cited_quote for hard-to-source claims, bypassing the verifier.
+            # Now: if the claim text names an author or specific value+unit
+            # (anchor present), the empty quote is REJECTED. Synthesis claims
+            # with no anchors still pass. LAZY_PAPER_ANCHORED_QUOTE=0 restores
+            # pre-v1.12 behaviour for backward compat.
+            anchors = _claim_anchors(c.text)
+            if anchors and os.environ.get("LAZY_PAPER_ANCHORED_QUOTE", "1") != "0":
+                rejected.append({
+                    "text": c.text[:120],
+                    "reason": "anchored_claim_no_quote",
+                    "anchors": anchors,
+                })
+                continue
+            accepted.append(c)  # true synthesis claim (no anchors)
             continue
         best_score = 0.0
         matched_cid: int | None = None
@@ -755,6 +774,48 @@ def select_top_required(
 # ─── compose pipeline (Day-2) ────────────────────────────────────────────────
 
 
+def _render_augment_block(aug: dict | None) -> str:
+    """Render the per-paper prompt_augment.yaml as a system-prompt prefix.
+
+    Returns empty string if aug is None / missing keys — caller prepends
+    only when non-empty. v1.12 phase 4.
+    """
+    if not aug or not isinstance(aug, dict):
+        return ""
+    content_parts: list[str] = []
+    framing = (aug.get("domain_framing") or "").strip()
+    if framing:
+        content_parts.append(framing)
+        content_parts.append("")
+    terms = aug.get("terminology") or []
+    if terms:
+        content_parts.append("## Terminology to preserve verbatim")
+        content_parts.append("")
+        for t in terms:
+            term = t.get("term", "") if isinstance(t, dict) else str(t)
+            note = t.get("note", "") if isinstance(t, dict) else ""
+            if term:
+                line = f"- {term}: {note}" if note else f"- {term}"
+                content_parts.append(line)
+        content_parts.append("")
+    style = aug.get("comparator_style") or {}
+    fmt = (style.get("format") if isinstance(style, dict) else "") or ""
+    example = (style.get("example_from_paper") if isinstance(style, dict) else "") or ""
+    if fmt or example:
+        content_parts.append("## Comparator citation style")
+        content_parts.append("")
+        if fmt:
+            content_parts.append(f"Format: {fmt}")
+        if example:
+            content_parts.append(f"Example from this paper: \"{example}\"")
+        content_parts.append("")
+    if not content_parts:
+        return ""
+    parts = ["## This paper — domain context", ""] + content_parts
+    body = "\n".join(parts).strip()
+    return body + "\n\n" if body else ""
+
+
 _STRUCTURED_SYSTEM = """You are composing one section of a research-paper deep analysis.
 
 You have been given a numbered list of source chunks in the USER message.
@@ -775,8 +836,26 @@ section MUST cover. For each, write a GroundedClaim that:
 
 For other claims (not required, just supporting the section's argument):
   - cite ≥1 chunk that supports the claim
-  - cited_quote may be verbatim or empty (empty skips verification)
   - keep prose in the requested language (Chinese unless the user says English)
+
+## HARD RULE: cited_quote must be non-empty for anchored claims
+
+A claim's `cited_quote` field is the verifier's primary grounding signal.
+Fill it as follows:
+
+  - **REQUIRED non-empty** when the claim text NAMES one of:
+      - a specific author ("Jiang et al.", "Ma 2022", "Smith and coworkers")
+      - a specific numeric value ("2.94 J/cm³", "91.04%", "340 kV/cm")
+    The cited_quote MUST contain the verbatim source span carrying that
+    anchor. Empty cited_quote on an anchored claim is REJECTED by the
+    verifier and the claim is lost from the rendered output.
+
+  - **MAY be empty** ONLY for synthesis claims that integrate multiple
+    chunks without a single source span — e.g. high-level summaries,
+    cross-chunk inferences. These pass without quote verification.
+
+When in doubt, copy a verbatim slice. Empty quote is the exception, not
+the default.
 
 Quote-then-claim discipline (for the verifier):
   - When you set cited_quote, copy it verbatim from the cited chunk — the
@@ -1037,6 +1116,7 @@ def compose_structured(
     section_figures: list[dict] | None = None,
     max_retries: int = 3,
     lang: str = "zh",
+    augment_block: str = "",
 ) -> tuple["SectionDraft", list[dict]]:
     """instructor call → SectionDraft → verifier gate.
 
@@ -1051,6 +1131,10 @@ def compose_structured(
     audit. Raises if instructor fails after max_retries.
     """
     import os as _os
+    # v1.12 phase 4: prepend per-paper augment to the system prompt.
+    # augment_block is "" when prompt_tailor was OFF or failed → fall back to
+    # vanilla _STRUCTURED_SYSTEM (no behaviour change).
+    system_prompt = (augment_block + _STRUCTURED_SYSTEM) if augment_block else _STRUCTURED_SYSTEM
     chunks_block = _format_chunks_block(chunks)
     required_block = _format_required_block(required)
     figures_msg = ""
@@ -1078,7 +1162,7 @@ def compose_structured(
 
     n = max(1, int(_os.environ.get("LAZY_PAPER_BEST_OF_N", "1")))
     if n == 1:
-        draft = _single_compose(llm, _STRUCTURED_SYSTEM, user_msg, chunks,
+        draft = _single_compose(llm, system_prompt, user_msg, chunks,
                                 max_retries, temperature=0.2)
     else:
         # Strategy K: N independent samples at slightly varied temperatures
@@ -1089,7 +1173,7 @@ def compose_structured(
             temp = 0.2 + 0.2 * i  # 0.2, 0.4, 0.6...
             try:
                 drafts.append(_single_compose(
-                    llm, _STRUCTURED_SYSTEM, user_msg, chunks,
+                    llm, system_prompt, user_msg, chunks,
                     max_retries, temperature=temp,
                 ))
             except Exception as exc:
@@ -1170,7 +1254,7 @@ def compose_structured(
                     f"      → evidence chunk: [{r.evidence_chunk_id}]"
                 )
             missing_diag = "\n".join(missing_diag_lines)
-            retry_system = _STRUCTURED_SYSTEM + (
+            retry_system = system_prompt + (
                 "\n\n## CRITICAL — SPECIFIC REQUIRED MENTIONS MISSING\n"
                 f"Your previous draft covered "
                 f"{len(required) - len(post_missing)}/{len(required)} "
@@ -1239,7 +1323,7 @@ def compose_structured(
             f"min_claims={min_claims} or min_chars={min_chars}",
             flush=True,
         )
-        retry_system = _STRUCTURED_SYSTEM + (
+        retry_system = system_prompt + (
             "\n\n## CRITICAL — SECTION TOO SHORT\n"
             f"Your previous draft has only {len(verified.claims)} verified "
             f"claims and {len(verified_text)} characters. Produce a more "

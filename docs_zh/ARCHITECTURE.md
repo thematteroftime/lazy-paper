@@ -497,6 +497,7 @@ Emit the SectionDraft JSON now.
 
 | 检查 | 触发动作 | 实现位置 |
 |---|---|---|
+| **锚定 claim 缺 quote** (v1.12 phase 2) — claim 文本含作者或数值+单位锚点；`cited_quote` 为空 | 拒绝（`anchored_claim_no_quote`）；`LAZY_PAPER_ANCHORED_QUOTE=0` 退出 | line 329-345 |
 | **schema prefix leak** — text 以 `GroundedClaim:` / `Claim:` 开头 | 直接 reject | line 323 |
 | **quote-vs-chunk match** — `cited_quote` 在 cited_chunk_ids 里 fuzzy match ≥ 0.85 | 没匹配上则 reject | line 332-354 |
 | **chunk-id slop fallback** — quote 在别的 chunk 里能匹上 | 修正 `cited_chunk_ids`，accept | line 343-354 |
@@ -876,6 +877,8 @@ v1.11.0 是一次 **first-principles refactor** (commit `a4d90ab`)，主动**删
 **为什么 cut**：根因是 `cited_quote == ""` 的 claim 被 verifier silently 接受，让 author hallucination 漏过 quote-grounding 门。修这条路径要在 **prompt** 强制 author claim 必须带 quote，而不是在 verifier 后端再加一层 reject。40 LOC 处理 1 个 paper (ali2025 ch08) 的边缘情况，性价比太低。**推迟到 v1.12 + 正交的 reference-list 检查** (claim 提到的 author 必须出现在 paper.references KG 实体里)。
 
 **代码标记**: `structured.py:368-372` 有 `# v1.11 architecture-review CUT: cross-citation reject was 40 LOC...`
+
+**v1.12 phase 2 闭环**：底层缺陷 —— empty `cited_quote` 绕过 verifier —— 在 v1.12 phase 2 通过 `structured.py:329-345` 的 anchor-aware 空 quote 分支最终修复（见 §5.5 verifier 表顶行）。同时配套在 `_STRUCTURED_SYSTEM`（s08 compose 系统 prompt）里加入 HARD RULE 约束。原计划的正交 reference-list 检查（引用作者必须出现在 `paper.references` KG 实体里）最终未实现；基于 anchor 的方案已证明足够。实测影响：meng2024 的 `cited_quote` 空率从 32% 降到 0%；ali2025_flash RAGAS faithfulness +5.4pp。meng2024 表面 faithfulness 下降是度量伪影 —— 完整诊断见 `docs/archive/v1_12_phase2_summary.md`。
 
 ### 11.2 figure-retry pass (cut)
 

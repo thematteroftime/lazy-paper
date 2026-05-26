@@ -7,6 +7,155 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.12-phase4] — 2026-05-26 (opt-in, flip default ON in a follow-up)
+
+#### Added — two-stage prompt tailoring (opt-in)
+
+Cheap pre-stage LLM call in `s06_context` reads the paper's already-extracted
+context + intro chapter and emits `prompt_augment.yaml` with per-paper
+`domain_framing`, `terminology`, `metric_patterns`, and a `comparator_style`
+example drawn FROM THIS PAPER. The s08 compose stage prepends a rendered
+version of this block to `_STRUCTURED_SYSTEM` before each compose call
+(including retry-when-empty and retry-when-short branches), specializing
+the generic prompt to whatever this paper actually contains.
+
+Opt in via `LAZY_PAPER_PROMPT_TAILOR=1` in `.env`. Default OFF in this
+commit; default flip pending one more round of measurement on more papers.
+
+#### Design rationale
+
+Phase 3c attempted cross-domain generalization by stuffing ML examples
+into the static prompt; it regressed RAGAS faithfulness on both demo
+papers (meng2024 −9pp, ali2025 −4pp) and was reverted. Phase 4 puts
+generalization at the architectural layer: the system prompt stays clean
+and focused (no hypothetical-other-domain examples), while a per-paper
+augment block does paper-specific specialization at runtime.
+
+#### Soft-degrade
+
+Pre-stage failure (LLM error, malformed JSON, missing intro chapter) writes
+`prompt_tailor.failed` and lets s08 fall back to the vanilla
+`_STRUCTURED_SYSTEM`. Never blocks the pipeline.
+
+#### Measured (per `docs/archive/v1_12_phase4_summary.md`)
+
+| Paper | v1.11.5 baseline | Phase 2 anchored | Phase 4 prompt-tailor | Δ vs Phase 2 |
+|---|---|---|---|---|
+| meng2024 · faithfulness | 0.656 | 0.545 | **0.677** | **+13.2pp** |
+| ali2025_flash · faithfulness | 0.446 | 0.491 | **0.668** | **+17.8pp** |
+
+ali2025_flash now nearly matches meng2024 (0.67 vs 0.68) — the pre-v1.12
+gap was not paper difficulty but the absence of per-paper specialization.
+Both papers also beat the v1.11.5 baseline. Ship gate (no regression > 1pp
+AND ≥+2pp on at least one paper) **passed with large margin**.
+
+### [v1.12-phase2] — 2026-05-26 (default ON)
+
+#### Fixed — anchored-quote bypass closed
+
+The s08 verifier's empty-`cited_quote` branch (documented in
+`docs/ARCHITECTURE.md` §11.1) used to blanket-accept any claim that left
+the quote field empty, letting the LLM bypass verification by simply
+omitting a quote. Now: claims whose text contains a specific author
+(`Jiang et al.`) or numeric value+unit (`2.94 J/cm³`) anchor MUST carry
+a non-empty `cited_quote` — empty quote on such a claim is rejected with
+`reason: anchored_claim_no_quote`.
+
+Synthesis claims (cross-chunk inferences with no specific anchor) still
+pass without quote verification — backward compatible.
+
+#### Added — `LAZY_PAPER_ANCHORED_QUOTE` env (default 1)
+
+Set to `0` to restore pre-v1.12 'blanket accept' behaviour. Provided for
+projects with frozen baselines that can't absorb a verifier behaviour
+change.
+
+#### Measured impact (per `docs/archive/v1_12_phase2_summary.md`)
+
+| Paper | Faithfulness (before → after) | per-section `cited_quote` empty rate |
+|---|---|---|
+| meng2024 | 0.667 → 0.545 | 32% → **0%** |
+| ali2025_flash | 0.437 → 0.491 | (similar reduction) |
+
+**Read the apparent meng2024 regression honestly**: the −12pp is a
+metric artifact, not a quality regression. Before Phase 2, 32% of
+meng2024's claims left `cited_quote` empty and bypassed the verifier
+entirely — RAGAS's LLM judge then opportunistically scored them as
+"faithful" if prose roughly matched context. Phase 2 forces those
+claims out (or makes them carry quotes) → the unreliable-but-judged-
+faithful surface shrinks → averaged faithfulness drops while
+**actual** store-and-retrieve correctness goes up. The 0% empty-rate
+is the real win. ali2025_flash's +5.4pp is the cleaner signal because
+its baseline had the same bypass at high density and benefited
+straightforwardly.
+
+#### Known side effect (Phase 2.5 candidate)
+
+The new HARD RULE prompt makes the LLM more cautious on already-clean
+sections: meng2024 §06 Polarization Behaviour (which had 0/11 empty-
+quote claims in v111) wrote only 5 quoted claims in v112 vs. v111's 11,
+losing 6 legitimate claims to over-self-censorship. Phase 2.5 will
+soften the prompt wording to scope it to NEW anchored claims rather
+than as a general "be careful" signal.
+
+### [v1.12-phase1] — 2026-05-25 (opt-in, default OFF)
+
+Phase 1 of the v1.12 data-correctness sprint. **Two opt-in features** + one
+**eval harness**. Both features are flag-gated; default behaviour unchanged.
+See `docs/archive/v1_12_phase1_summary.md` for measured impact.
+
+#### Added — RAGAS pytest harness (`-m ragas`)
+
+Faithfulness / context_recall / context_precision against
+`tests/eval/golden_qa/{meng2024,ali2025_flash}.yaml` (20 verified questions
+each). Used for regression on the two opt-in features. Wired to the
+project's existing DeepSeek + DashScope endpoints (overrides ragas's
+OpenAI defaults). Run with: `uv run pytest -m ragas tests/eval/ -v`.
+Output lands in `tests/eval/_ragas_out/<paper_id>.json`.
+
+Ragas is pinned to **0.1.21** because 0.2+/0.4+ have an unconditional
+`from langchain_community.chat_models.vertexai import ChatVertexAI` at
+module load, removed in langchain-community 0.3+. 0.1.21 is the last
+self-consistent release.
+
+#### Added — `--pdffigures2` flag (caption-anchored figure renumbering)
+
+Runs AI2's PDFFigures 2 sidecar after MinerU and renames `fig_id`s whose
+caption Jaccard ≥0.5 with a pdffigures2-detected figure. Fixes the v1.12
+known limit from `docs/ARCHITECTURE.md` §12 — OCR-order numbering shifts
+when MinerU skips one figure.
+
+**Docker-only by design** (project policy: no host JVM install).
+One-time build: `docker build -f Dockerfile.pdffigures2 -t lazy-paper/pdffigures2:0.1.0 .`,
+then `PDFFIGURES2_JAR=docker` in `.env`, then `--pdffigures2` on the CLI.
+
+Audit trail at `runs/<id>/s04_figures/_pdffigures2.yaml` lists every
+rename and keep with scores. SidecarUnavailable is non-fatal — pipeline
+continues with original MinerU numbering and a stderr warning.
+
+#### Added — `LAZY_PAPER_ENTITY_DEDUP=1` (LightRAG-inspired KG dedup)
+
+One LLM call in s06_context after KG extraction; merges variant author /
+material mentions of the same real-world entity within one type
+("Meng et al." + "Meng 2024" + "本工作" → one canonical author). Defends
+against the v1.11.1 Bug #3 (author misattribution) class at the
+extraction layer rather than adding another verifier rule downstream.
+
+Defensive coverage check: any entity the LLM forgets is added back as a
+singleton cluster (never silently drops). Malformed LLM JSON → soft-degrade
+to inputs. Re-writes `paper_kg.parquet` so downstream stages see the
+canonical KG. Audit in `done.yaml.extra.entity_dedup`.
+
+#### Internal — Eval infrastructure
+
+- `tests/eval/golden_qa/{meng2024,ali2025_flash}.yaml`: 40 verified Q&A
+  pairs covering headline_metric, author_attribution, comparator,
+  figure_id, mechanism, cross_chapter tags.
+- `tests/eval/conftest.py`: golden_papers + ragas_llm + ragas_embeddings
+  fixtures with `.env` auto-loading and Python 3.14 event-loop shim.
+- `pytest.markers`: new `ragas` marker, deselected by default alongside
+  `live`.
+
 ## [1.11.5] — 2026-05-24
 
 ### Added — `--ocr-lang` CLI flag

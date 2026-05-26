@@ -76,7 +76,12 @@ uv run python -m cli run \
   --formats docx,pdf,html,pptx
 ```
 
-Replace `papers/your-paper.pdf` with the path to your PDF. Replace the `--template` path with your section-outline `.docx` file (see the `templates/` folder for examples).
+Replace `papers/your-paper.pdf` with the path to your PDF. Replace the `--template` path with a section-outline `.docx` whose section titles match your paper's domain. The repo root ships two starters:
+
+- `Table of Contents-Relaxor AFE-ZGY-HW.docx` — materials science (ferroelectrics, energy storage, related)
+- `Table of Contents-CV-IMRaD.docx` — generic CV / ML / IMRaD (Introduction → Method → Experiments → Results → Discussion)
+
+**Template-paper domain fit matters.** Section headings are inserted verbatim into the compose prompt; an off-domain template produces either out-of-scope disclaimers or — with Phase 4 prompt tailoring ON — content jammed under the wrong heading. See the [template-domain mismatch warning](#template-paper-domain-fit-required-for-good-output) under "Prompt tailoring" below.
 
 Output lands at:
 
@@ -221,6 +226,126 @@ Comma-separated stage names. Useful when you edit the template and want to re-co
 rm -rf runs/mypaper/{s05_template,s08_section_compose,s09_render}
 uv run python -m cli run ... --paper-id mypaper
 ```
+
+---
+
+## v1.12 — optional features + default-on behaviour changes
+
+### PDFFigures 2 sidecar — caption-anchored figure numbering
+
+When MinerU OCR skips or mis-numbers a figure, the canonical `Figure N` printed in
+the paper's caption text is lost. PDFFigures 2 (AI2) re-extracts that canonical
+numbering directly from the caption regions, then reconciles against MinerU's
+output. Off by default; enable with `--pdffigures2`.
+
+Setup (docker-only — no host JVM install):
+
+```bash
+# One-time, ~5 min on first build
+docker build -f Dockerfile.pdffigures2 -t lazy-paper/pdffigures2:0.1.0 .
+```
+
+Then in `.env`: `PDFFIGURES2_JAR=docker`
+
+Use:
+
+```bash
+uv run python -m cli run --pdf paper.pdf --template t.docx --pdffigures2 ...
+```
+
+The reconciliation report lands in `runs/<id>/s04_figures/_pdffigures2.yaml`:
+
+```yaml
+report:
+  renames: [{from: "Fig. 2", to: "Fig. 3", score: 0.83}]   # MinerU mis-numbered Fig. 3 as Fig. 2
+  keeps:   [{fig_id: "Fig. 1", reason: "no_caption_match", best_score: 0.12}]
+```
+
+Only renames when caption Jaccard ≥0.5; otherwise MinerU's numbering is kept.
+
+### Entity dedup — author misattribution defence
+
+Merges variant author / material mentions during s06 KG extraction
+("Meng et al." + "Meng 2024" + "本工作" → one canonical entity). Defends against
+the v1.11.1 author-misattribution bug class at the extraction layer (rather than
+adding another verifier rule downstream). Off by default; enable with:
+
+```bash
+LAZY_PAPER_ENTITY_DEDUP=1
+```
+
+Adds one LLM call (~4K tokens, T=0.1) to s06. Soft-degrades to the original
+entities on any LLM failure or malformed JSON.
+
+### Anchored-quote enforcement (v1.12 phase 2) — default ON
+
+Pre-v1.12, claims with an empty `cited_quote` skipped verification
+entirely. The LLM exploited this to leave hard-to-source claims
+unverified. Phase 2 closes the bypass:
+
+- Claims whose text names a specific author (`Jiang et al.`) or numeric
+  value with unit (`2.94 J/cm³`, `91.04%`) MUST carry a non-empty
+  `cited_quote`. Empty quote on such a claim is rejected.
+- Synthesis claims (no specific anchor in text) still pass without
+  quote verification — backward compatible for cross-chunk summaries.
+
+Opt-out for backward compat:
+
+```bash
+LAZY_PAPER_ANCHORED_QUOTE=0   # in .env
+```
+
+The opt-out exists for projects with existing baselines / regressed
+prompts; new runs should leave it on.
+
+### Prompt tailoring (v1.12 phase 4, opt-in)
+
+The default s08 system prompt is tuned for materials-science papers (where
+the project was first developed). For cross-domain papers (ML, biology,
+chemistry, etc.), pass `LAZY_PAPER_PROMPT_TAILOR=1` to enable a two-stage
+prompt construction:
+
+1. **Pre-stage** (in `s06_context`): a cheap LLM call reads the paper's
+   already-extracted `context.yaml` + the intro chapter, then emits
+   `prompt_augment.yaml` with `domain_framing`, `terminology`,
+   `metric_patterns`, and a `comparator_style` example drawn from THIS
+   paper.
+2. **Thinking stage** (in `s08`): the augment block is prepended to the
+   generic system prompt. The thinking LLM sees a prompt tailored to this
+   specific paper's domain rather than a one-size-fits-all template.
+
+Enable in `.env`:
+
+```bash
+LAZY_PAPER_PROMPT_TAILOR=1
+```
+
+Cost: one extra LLM call per paper (~1K tokens, ~$0.001 on DeepSeek-chat).
+On failure, the pre-stage soft-degrades to a `.failed` marker and s08
+falls back to the vanilla prompt — never blocks the pipeline.
+
+#### Template-paper domain fit (required for good output)
+
+Prompt tailoring is **not a substitute for template selection**. The augment
+block tells the LLM "this paper is about X, use these terms"; it does **not**
+override the per-section heading that s08 still inserts from your template.
+When the heading and the paper disagree (e.g. running the Relaxor AFE template
+on an unCLIP CV paper), enabling Phase 4 actively makes things worse, because
+the LLM now confidently writes paper-specific content under a wrong heading.
+
+Measured impact on the unCLIP image-generation paper (10 Q/A, RAGAS faithfulness):
+
+| Template | `LAZY_PAPER_PROMPT_TAILOR` | Faithfulness |
+|---|---|---|
+| Relaxor AFE (wrong domain) | 0 | 0.353 |
+| Relaxor AFE (wrong domain) | 1 | **0.100** (regression) |
+| CV-IMRaD (matched domain)  | 1 | **0.810** |
+
+Rule of thumb: pick a template whose top-level section titles you would
+expect to see in the paper's actual table of contents. The ship-with-repo
+`Table of Contents-CV-IMRaD.docx` covers most ML / CV / IMRaD-style work.
+For other domains, copy a starter and rewrite the headings — guidance
+paragraphs and `{paper.system}` / `{paper.key_terms}` slots can stay.
 
 ---
 

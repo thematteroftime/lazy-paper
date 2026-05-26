@@ -1,0 +1,111 @@
+paper_id: hif_1_v111_demo
+source_pdf: input/papers/hif_1.pdf   # placeholder — file may not exist locally, just metadata
+# Ground truth verified against runs/hif_1_v111_demo/s03_chapter/chapters/ on 2026-05-26.
+# Paper: "Recent Advances in Unconventional Ferroelectrics and Multiferroics" (Yu, Ji, Luo, Gong, Xiang)
+items:
+  # === system (2 questions) ===
+  - id: q01
+    question: |
+      本综述涵盖了哪几类非常规铁电体？请列出至少五类。
+    ground_truth: |
+      综述系统介绍以下几类非常规铁电体：(1) Hf 基铁电体（HfO₂ 及其掺杂体）；
+      (2) 元素铁电体（如 Bi 单层、Te 纳米线）；(3) 堆叠铁电体（van der Waals 体系）；
+      (4) 极性金属（如 2D WTe₂）；(5) 分数量子铁电体（FQFE，如 α-In₂Se₃）；
+      (6) 纤锌矿型铁电体；(7) 自由悬浮铁电薄膜。
+    expected_chunks: [chapter_003_Introduction.md, chapter_007_2_Unconventional_Ferroelectrics.md]
+    tags: [system, abstract, cross_chapter]
+
+  - id: q02
+    question: |
+      HfO₂ 铁电性的极化机制与 BaTiO₃ 等传统铁电体有何本质区别？
+    ground_truth: |
+      传统铁电体（如 BaTiO₃）的铁电性由阳离子位移驱动（B 位阳离子 off-center 位移）；
+      而 HfO₂ 的铁电性由阴离子亚晶格驱动——是氧离子（而非铪离子）在晶格中发生显著位移，
+      产生铁电行为。这一阴离子位移机制意味着 HfO₂ 的铁电相在体块状态下不是热力学稳定相，
+      需要表面能效应、化学掺杂、退火工艺控制等精细调控才能稳定。
+    expected_chunks: [chapter_013_4_Summary_and_Perspectives.md]
+    tags: [system, mechanism]
+
+  # === headline_metric (2 questions) ===
+  - id: q03
+    question: |
+      Al₁₋ₓScₓN 中，Sc 掺杂的引入如何改变实用的矫顽场范围？以及最大剩余极化可达多少？
+    ground_truth: |
+      纯 AlN 的矫顽场高得无法实现实际铁电切换；引入 Sc 掺杂后，矫顽场降至可管控的
+      1.5–6.5 MV/cm 范围。Al₁₋ₓScₓN 的最大剩余极化值可达 165 μC/cm²。
+    expected_chunks: [chapter_005_2_6_Wurtzite-Based_Ferroelectrics.md]
+    tags: [headline_metric, method, system]
+
+  - id: q04
+    question: |
+      Te 纳米线的铁电极化量测值约为多少？与优化后的钙钛矿薄膜相比有何差距？
+    ground_truth: |
+      Te 纳米线通过 PFM 测量的极化值约为 ~0.026 μC/cm²，远低于优化钙钛矿薄膜的
+      50–100 μC/cm²，相差数个数量级。
+    expected_chunks: [chapter_000_Preface.md]
+    tags: [headline_metric, comparator, system]
+
+  # === comparator / author_attribution (2 questions) ===
+  - id: q05
+    question: |
+      堆叠铁电性（stacking ferroelectricity）的概念最初由谁提出？第一个实验验证的材料体系是什么？
+    ground_truth: |
+      堆叠铁电性的概念最初由 Li and Wu 首先引入（"first introduced by Li and Wu"）。
+      双层六方氮化硼（bilayer h-BN）是最早实验确认滑动铁电性的体系之一：AB 堆叠构型
+      破坏单层的反演对称性，产生面外铁电性，可通过层间滑动来切换极化。
+    expected_chunks: [chapter_001_2_3_Stacking_ferroelectricity.md]
+    tags: [comparator, author_attribution, system]
+
+  - id: q06
+    question: |
+      Fichtner et al. 在哪一年发现了掺杂 AlN 的铁电性？具体材料体系是什么？
+    ground_truth: |
+      Fichtner et al. 在 2019 年发现了铝氮化物的铁电性，具体材料为钪掺杂氮化铝
+      （scandium-doped aluminum nitride，Al₁₋ₓScₓN），在室温下展现出强健的铁电切换。
+    expected_chunks: [chapter_005_2_6_Wurtzite-Based_Ferroelectrics.md]
+    tags: [comparator, author_attribution, system]
+
+  # === method / mechanism (2 questions) ===
+  - id: q07
+    question: |
+      纤锌矿铁电体中集体（collective）切换与个体（individual）切换机制的本质区别是什么？
+      两者之间的转变发生在 Al₁₋ₓScₓN 中的哪个 Sc 浓度范围？
+    ground_truth: |
+      集体切换机制（见于二元纤锌矿及低掺杂浓度合金）：整个阳离子和阴离子亚晶格同时位移，
+      经过非极性六方中间结构（wz⁺ → h⁰ → wz⁻）；
+      个体切换机制（见于重掺杂合金）：单个四面体单元按顺序翻转，产生分形状畴壁，
+      切换动力学更快。二者的转变发生在 Sc 浓度 x ≈ 0.22–0.28 处。
+    expected_chunks: [chapter_005_2_6_Wurtzite-Based_Ferroelectrics.md]
+    tags: [method, mechanism]
+
+  - id: q08
+    question: |
+      分数量子铁电体（FQFE）违反了什么物理原理？单层 α-In₂Se₃ 是如何体现 FQFE 的？
+    ground_truth: |
+      FQFE 违反了 Neumann 原理（Neumann's principle）——该原理要求极化方向必须符合
+      铁电相的点群对称性；而 FQFE 体系可以展现被点群禁止的极化方向。
+      单层 α-In₂Se₃（点群 P3m1，理论上仅允许面外极化）却表现出面内极化，
+      这源于中间层 Se 原子发生分数晶格矢量位移，其切换势垒约为 40 meV/f.u.。
+    expected_chunks: [chapter_004_2_5_Fractional_quantum_ferroelectricity.md]
+    tags: [mechanism, method, system]
+
+  # === cross_chapter / figure_id (2 questions) ===
+  - id: q09
+    question: |
+      本综述中提到的内禀多铁性材料 Cu₂OSeO₃ 具备哪两种共存的铁序？其局限性是什么？
+    ground_truth: |
+      Cu₂OSeO₃ 同时具备 skyrmion（磁涡旋）和铁电性，是少数已知的能在同一晶相中
+      同时承载强铁电有序和内禀磁性 skyrmion 的材料之一（另一例为 GaV₄S₈）。
+      其主要局限为居里温度较低，限制了实际应用。
+    expected_chunks: [chapter_009_3_1_1_Skyrmion_and_ferroelectricity.md]
+    tags: [system, mechanism, cross_chapter]
+
+  - id: q10
+    question: |
+      在电场控制 skyrmion 的理论框架中，Xu et al. 提出了什么机制？该机制的缩写是什么？
+    ground_truth: |
+      Xu et al. 在 I 型多铁体中提出了 EPDQ 机制（Electric field–Polarization–DMI–topological charge），
+      即通过电场切换铁电极化，经由 DMI 的调控来实现磁拓扑荷的可控翻转，
+      并在多铁体 VOI₂ 单层（承载磁双曲面子，bimeron）中得到验证。
+    expected_chunks: [chapter_009_3_1_1_Skyrmion_and_ferroelectricity.md]
+    tags: [method, author_attribution, mechanism]

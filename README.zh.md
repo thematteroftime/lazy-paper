@@ -250,20 +250,26 @@ unit      u_Jcm3          J/cm³
   <em>来自 <code>runs/meng2024_v111_demo/s09_render/preview.pdf</code> 的真实页面 —— 左：标题 + 合成的引言段落；右：Fig. 1 抽取图与图注，配 s07 通过 figure_ids 硬约束保留下来的深度观察评注。</em>
 </p>
 
-### 跨域防御 —— 模板对不上时
+### 模板与论文领域必须匹配（重要）
 
-有时用户拿 AFE 模板去跑完全不相关的论文。`runs/hif_2_v111_demo/` 就是这种场景：unCLIP 图像生成论文被硬套到 relaxor-AFE 大纲上。composer 检测到不匹配后，会在每个跑题章节开头插入显式的越界声明，而不是硬编铁电内容：
+**模板里的章节标题必须与论文领域对上**。lazy-paper 会把每个章节标题原文喂进 s08 compose prompt。如果你拿 unCLIP 图像生成论文跑"Dielectric Properties of Relaxor AFE"这类标题，LLM 要么写一段越界声明（Phase 4 prompt tailoring 关闭时），要么——更糟——把 unCLIP 内容硬塞错误标题之下，读者看上去就是论文不忠实。
 
-```text
-runs/hif_2_v111_demo/s08_section_compose/chapters/05-Dielectric_Properties_of_Relax.md
+仓库根目录提供两份起手模板，按论文领域选用（或复制后修改）：
 
-本论文《Hierarchical Text-Conditional Image Generation with CLIP Latents》的主题
-是文本条件图像生成，完全不涉及反铁电体或弛豫反铁电体的介电性能 ...
-在unCLIP框架中，扩散prior在成对比较中优于自回归prior：扩散prior的
-photorealism偏好为48.9% ± 3.1%，diversity为70.5% ± 2.8% ...
-```
+| 文件 | 适用场景 |
+|---|---|
+| `Table of Contents-Relaxor AFE-ZGY-HW.docx` | 材料科学（铁电、储能及相关体系） |
+| `Table of Contents-CV-IMRaD.docx` | 通用 CV / ML / IMRaD 论文（Introduction → Method → Experiments → Results → Discussion） |
 
-章节本身仍按论文真实内容写出；opener 告诉读者：这个章节标题来自模板、不代表论文主旨。
+实证（对同一篇 unCLIP 论文 10 题 golden Q/A 跑 RAGAS faithfulness）：
+
+| 模板 | Phase 4 prompt tailoring | faithfulness |
+|---|---|---|
+| Relaxor AFE（领域错配） | 关 | 0.353 |
+| Relaxor AFE（领域错配） | 开 | **0.100**（倒退） |
+| CV-IMRaD（领域匹配） | 开 | **0.810** |
+
+同一篇论文、同一组 Phase 4 augment、同一组题目，仅模板不同。请把"选对模板"当作首要输入，而不是默认值。
 
 ## 快速开始
 
@@ -281,7 +287,7 @@ cp .env.example .env   # 填 MINERU_TOKEN + LLM_*_API_KEY
 # 运行
 uv run python -m cli run \
   --pdf "papers/your-paper.pdf" \
-  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \
+  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \   # ML/CV 论文换成 Table of Contents-CV-IMRaD.docx
   --paper-id mypaper --lang zh --formats docx,pdf,html,pptx
 ```
 

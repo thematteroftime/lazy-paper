@@ -365,6 +365,17 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
 
     template = yaml.safe_load((template_dir / "template.yaml").read_text(encoding="utf-8")) or []
     context = yaml.safe_load((context_dir / "context.yaml").read_text(encoding="utf-8")) or {}
+    # v1.12 phase 4: load prompt_augment.yaml if present (gated by env in s06).
+    augment_path = context_dir / "prompt_augment.yaml"
+    augment_block = ""
+    if augment_path.exists():
+        from stages.s08_section_compose.structured import _render_augment_block
+        try:
+            import yaml as _yaml
+            aug_raw = _yaml.safe_load(augment_path.read_text(encoding="utf-8")) or {}
+            augment_block = _render_augment_block(aug_raw)
+        except Exception:
+            augment_block = ""  # parse failure → fall back silently
     fig_notes = yaml.safe_load((fig_notes_dir / "fig_notes.yaml").read_text(encoding="utf-8")) or []
     figures = yaml.safe_load((figures_stage_dir / "figures.yaml").read_text(encoding="utf-8")) or []
 
@@ -476,6 +487,7 @@ def run(*, template_dir: Path, chapters_dir: Path, context_dir: Path,
                     paper_context=paper_context_str[:3000],
                     section_figures=section_figures,
                     lang=lang,
+                    augment_block=augment_block,
                 )
                 composed = draft.render(mode="REMOVE")
                 # Soft-warn audit: required mentions the LLM didn't cover

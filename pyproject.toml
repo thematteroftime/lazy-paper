@@ -52,7 +52,14 @@ Changelog = "https://github.com/thematteroftime/lazy-paper/blob/main/CHANGELOG.m
 Issues = "https://github.com/thematteroftime/lazy-paper/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=8",
+    # ragas 0.2+ has an unconditional `from langchain_community.chat_models.vertexai import ChatVertexAI`
+    # at module import time, which langchain-community>=0.3 removed. ragas 0.1.21 hard-pins
+    # langchain-community<0.3 and is the last self-consistent release; stay on it until upstream fixes.
+    "ragas==0.1.21",
+    "langchain-community<0.3",  # explicit transitive pin (redundant but documents intent)
+]
 
 [project.scripts]
 lazy-paper = "cli:main"
@@ -81,5 +88,6 @@ packages = [
 [tool.pytest.ini_options]
 markers = [
     "live: tests that call real LLM/OCR APIs (skipped by default; run via -m live)",
+    "ragas: ragas evaluation harness (skipped by default; run via -m ragas)",
 ]
-addopts = "-m 'not live'"
+addopts = "-m 'not live and not ragas'"

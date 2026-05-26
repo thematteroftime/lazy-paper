@@ -369,3 +369,67 @@ def run(*, docs_dir: Path, chapters_dir: Path, out_dir: Path,
     dump_yaml(out_dir / "mentions.yaml", mentions)
     mark_done(out_dir, {"figures": len(figures), "tables": len(tables)})
     return {"figures": len(figures), "tables": len(tables)}
+
+
+# ============================================================================
+# v1.12 phase 1: PDFFigures 2 reconciliation
+# ----------------------------------------------------------------------------
+# When the user opts in via --pdffigures2, AI2's caption-anchored extractor
+# provides the "Figure N" numbers the paper itself prints in caption text.
+# We rename MinerU's OCR-ordered fig_ids to match those numbers when caption
+# Jaccard >= threshold; otherwise we trust MinerU and log a "keep" entry.
+# ============================================================================
+
+def _caption_jaccard(a: str, b: str) -> float:
+    """Bag-of-words Jaccard over tokens of length >= 3 (lowercased)."""
+    ta = {w.lower() for w in (a or "").split() if len(w) >= 3}
+    tb = {w.lower() for w in (b or "").split() if len(w) >= 3}
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+def reconcile_with_pdffigures2(
+    mineru_figs: list[dict],
+    pf2: dict,
+    *,
+    jaccard_threshold: float = 0.5,
+) -> tuple[list[dict], dict]:
+    """Rename MinerU figure_ids to match pdffigures2's caption-anchored numbering.
+
+    Matching: for each MinerU figure, find the pdffigures2 figure with the
+    highest caption Jaccard score; if >= threshold, adopt pf2's fig_id.
+
+    Returns (new_figs, audit_report). Report shape:
+        {
+          "renames": [{"from": "Fig. 2", "to": "Fig. 3", "score": 0.83}],
+          "keeps":   [{"fig_id": "Fig. 1", "reason": "no_caption_match", "best_score": 0.1}],
+        }
+    """
+    pf2_figs = pf2.get("figures", [])
+    out: list[dict] = []
+    report: dict = {"renames": [], "keeps": []}
+    for fig in mineru_figs:
+        original = fig.get("fig_id", "")
+        best_score = 0.0
+        best_pf2 = None
+        for p in pf2_figs:
+            s = _caption_jaccard(fig.get("caption", ""), p.get("caption", ""))
+            if s > best_score:
+                best_score, best_pf2 = s, p
+        if best_pf2 and best_score >= jaccard_threshold:
+            new_id = best_pf2["fig_id"]
+            out.append({**fig, "fig_id": new_id})
+            if new_id != original:
+                report["renames"].append({
+                    "from": original, "to": new_id,
+                    "score": round(best_score, 3),
+                })
+        else:
+            out.append(fig)
+            report["keeps"].append({
+                "fig_id": original,
+                "reason": "no_caption_match",
+                "best_score": round(best_score, 3),
+            })
+    return out, report
