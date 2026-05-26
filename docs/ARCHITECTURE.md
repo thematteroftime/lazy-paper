@@ -280,6 +280,51 @@ The "FLAGSHIP GROUND TRUTH" block in `llm/prompts/section_compose.md` reads thes
 
 **Step 4 — entity dedup (v1.12 phase 1, opt-in)**: when `LAZY_PAPER_ENTITY_DEDUP=1`, the runner adds a LightRAG-inspired disambiguation pass after KG build. A single LLM call (T=0.1, ≤4K tokens) clusters variant mentions of the same real-world entity within one type ("Meng et al." + "Meng 2024" + "本工作" → one canonical author). The canonical id is the first member of each cluster; relations are remapped and triples deduped; `paper_kg.parquet` is re-written so downstream stages see the canonical KG. Defends against the v1.11.1 Bug #3 (author misattribution) class at the extraction layer rather than another verifier rule. Soft-degrades to inputs on LLM failure or malformed JSON; defensive `_ensure_coverage` adds singleton clusters for any id the LLM forgot so dedup never silently drops entities. Implementation: `stages/s06_context/entity_dedup.py` (140 LOC) + `llm/prompts/entity_dedup.md`. Audit in `done.yaml.extra.entity_dedup` (before/after counts).
 
+### 4.6.5 prompt_tailor (v1.12 phase 4, opt-in)
+
+When `LAZY_PAPER_PROMPT_TAILOR=1`, s06_context appends a cheap pre-stage
+LLM call after KG extraction. It reads:
+
+- `context.yaml` (just-written): title, system, abbreviations, keywords,
+  key_terms, headline_metrics
+- `chapters_dir/chapter_001_INTRODUCTION.md` first 3000 chars (or empty
+  if no intro)
+
+It emits `prompt_augment.yaml` with four top-level keys:
+
+| Key | Purpose |
+|---|---|
+| `domain_framing` | 2-3 sentence prose about what THIS paper is and does |
+| `terminology` | list of {term, note} pairs drawn from THIS paper's text |
+| `metric_patterns` | list of {kind, regex} matching numeric patterns in THIS paper |
+| `comparator_style` | {format, example_from_paper} citation template + real instance |
+
+s08 calls `_render_augment_block(aug)` to render these four blocks as a
+markdown prefix, prepended to `_STRUCTURED_SYSTEM` before every compose
+LLM call (see `compose_structured`'s `augment_block` kwarg). The prefix
+applies to best-of-N initial draft pair, retry-when-empty, and
+retry-when-short branches — all 4 call sites use a local `system_prompt`
+variable that resolves to `augment_block + _STRUCTURED_SYSTEM` when an
+augment is present, else just `_STRUCTURED_SYSTEM` (byte-identical
+fallback when the flag is OFF).
+
+**Design rationale.** Phase 3c tried to make `_STRUCTURED_SYSTEM`
+domain-agnostic by adding "Smith et al. ResNet-50 on ImageNet" examples
+alongside the materials ones. RAGAS regressed (meng2024 −9pp, ali2025
+−4pp) — the LLM treated the extra examples as permission to drift.
+Phase 4 reverses the design: the static prompt stays clean and focused
+(materials-tuned methodology), while a per-paper augment block does
+runtime specialization. Generalization moves from prompt-body to
+architecture. Measured Phase 4 result: meng2024 0.55→0.68 (+13pp);
+ali2025 0.49→0.67 (+18pp). See `docs/archive/v1_12_phase4_summary.md`.
+
+**Soft-degrade.** Any pre-stage failure (PromptTailorError, LLM transport,
+unexpected exception) writes a `prompt_tailor.failed` marker and s06
+completes normally. s08 sees no `prompt_augment.yaml` and falls back to
+the vanilla `_STRUCTURED_SYSTEM` — pipeline never blocks.
+
+Implementation: `stages/s06_context/prompt_tailor.py` (~95 LOC) + `llm/prompts/prompt_tailor.md` (40 lines).
+
 ### 4.7 s07_figure_analyze — vision LLM per figure
 
 | Field | Value |

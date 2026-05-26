@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.12-phase4] — 2026-05-26 (opt-in, flip default ON in a follow-up)
+
+#### Added — two-stage prompt tailoring (opt-in)
+
+Cheap pre-stage LLM call in `s06_context` reads the paper's already-extracted
+context + intro chapter and emits `prompt_augment.yaml` with per-paper
+`domain_framing`, `terminology`, `metric_patterns`, and a `comparator_style`
+example drawn FROM THIS PAPER. The s08 compose stage prepends a rendered
+version of this block to `_STRUCTURED_SYSTEM` before each compose call
+(including retry-when-empty and retry-when-short branches), specializing
+the generic prompt to whatever this paper actually contains.
+
+Opt in via `LAZY_PAPER_PROMPT_TAILOR=1` in `.env`. Default OFF in this
+commit; default flip pending one more round of measurement on more papers.
+
+#### Design rationale
+
+Phase 3c attempted cross-domain generalization by stuffing ML examples
+into the static prompt; it regressed RAGAS faithfulness on both demo
+papers (meng2024 −9pp, ali2025 −4pp) and was reverted. Phase 4 puts
+generalization at the architectural layer: the system prompt stays clean
+and focused (no hypothetical-other-domain examples), while a per-paper
+augment block does paper-specific specialization at runtime.
+
+#### Soft-degrade
+
+Pre-stage failure (LLM error, malformed JSON, missing intro chapter) writes
+`prompt_tailor.failed` and lets s08 fall back to the vanilla
+`_STRUCTURED_SYSTEM`. Never blocks the pipeline.
+
+#### Measured (per `docs/archive/v1_12_phase4_summary.md`)
+
+| Paper | v1.11.5 baseline | Phase 2 anchored | Phase 4 prompt-tailor | Δ vs Phase 2 |
+|---|---|---|---|---|
+| meng2024 · faithfulness | 0.656 | 0.545 | **0.677** | **+13.2pp** |
+| ali2025_flash · faithfulness | 0.446 | 0.491 | **0.668** | **+17.8pp** |
+
+ali2025_flash now nearly matches meng2024 (0.67 vs 0.68) — the pre-v1.12
+gap was not paper difficulty but the absence of per-paper specialization.
+Both papers also beat the v1.11.5 baseline. Ship gate (no regression > 1pp
+AND ≥+2pp on at least one paper) **passed with large margin**.
+
 ### [v1.12-phase2] — 2026-05-26 (default ON)
 
 #### Fixed — anchored-quote bypass closed
