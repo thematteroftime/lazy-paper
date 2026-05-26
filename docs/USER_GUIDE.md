@@ -293,6 +293,32 @@ LAZY_PAPER_ANCHORED_QUOTE=0   # in .env
 The opt-out exists for projects with existing baselines / regressed
 prompts; new runs should leave it on.
 
+### Prompt tailoring (v1.12 phase 4, opt-in)
+
+The default s08 system prompt is tuned for materials-science papers (where
+the project was first developed). For cross-domain papers (ML, biology,
+chemistry, etc.), pass `LAZY_PAPER_PROMPT_TAILOR=1` to enable a two-stage
+prompt construction:
+
+1. **Pre-stage** (in `s06_context`): a cheap LLM call reads the paper's
+   already-extracted `context.yaml` + the intro chapter, then emits
+   `prompt_augment.yaml` with `domain_framing`, `terminology`,
+   `metric_patterns`, and a `comparator_style` example drawn from THIS
+   paper.
+2. **Thinking stage** (in `s08`): the augment block is prepended to the
+   generic system prompt. The thinking LLM sees a prompt tailored to this
+   specific paper's domain rather than a one-size-fits-all template.
+
+Enable in `.env`:
+
+```bash
+LAZY_PAPER_PROMPT_TAILOR=1
+```
+
+Cost: one extra LLM call per paper (~1K tokens, ~$0.001 on DeepSeek-chat).
+On failure, the pre-stage soft-degrades to a `.failed` marker and s08
+falls back to the vanilla prompt — never blocks the pipeline.
+
 ---
 
 ## Troubleshooting
