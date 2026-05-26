@@ -222,6 +222,65 @@ uv run python -m cli run ... --paper-id mypaper
 
 ---
 
+## v1.12 — 可选功能与默认行为变更
+
+### PDFFigures 2 旁路 — 基于 caption 锚点的图号修正
+
+当 MinerU OCR 漏识别或错编图号时，论文 caption 区域印刷的 `Figure N` 标准编号会丢失。PDFFigures 2（AI2 出品）直接从 caption 区域重提取规范编号，再与 MinerU 输出做比对修正。**默认关闭**，通过 `--pdffigures2` 启用。
+
+配置（仅 Docker，无需在本机安装 JVM）：
+
+```bash
+# 首次构建，约 5 分钟
+docker build -f Dockerfile.pdffigures2 -t lazy-paper/pdffigures2:0.1.0 .
+```
+
+然后在 `.env` 里加：`PDFFIGURES2_JAR=docker`
+
+运行：
+
+```bash
+uv run python -m cli run --pdf paper.pdf --template t.docx --pdffigures2 ...
+```
+
+比对报告会落到 `runs/<id>/s04_figures/_pdffigures2.yaml`：
+
+```yaml
+report:
+  renames: [{from: "Fig. 2", to: "Fig. 3", score: 0.83}]   # MinerU 把 Fig. 3 错编为 Fig. 2
+  keeps:   [{fig_id: "Fig. 1", reason: "no_caption_match", best_score: 0.12}]
+```
+
+只有当 caption Jaccard 相似度 ≥ 0.5 时才会重命名；否则保留 MinerU 的原始编号。
+
+### 实体去重 — 作者归属错误防御
+
+在 s06 KG 抽取阶段合并同一作者 / 材料的不同写法
+（"Meng et al." + "Meng 2024" + "本工作" → 一个规范实体），从抽取层面防御 v1.11.1 版本已知的作者归属错误问题，无需在下游再叠一条 verifier 规则。**默认关闭**，启用方式：
+
+```bash
+LAZY_PAPER_ENTITY_DEDUP=1
+```
+
+在 s06 额外多一次 LLM 调用（~4K tokens，T=0.1）。若 LLM 失败或返回畸形 JSON，自动软降级回原始实体。
+
+### 锚定引用强制（v1.12 phase 2）— 默认开启
+
+v1.12 之前，`cited_quote` 为空的 claim 完全跳过校验，LLM 借此把难以溯源的 claim 留空来逃避验证。Phase 2 关闭了这个旁路：
+
+- 当 claim 文本中出现具体作者（`Jiang et al.`）或带单位的数值（`2.94 J/cm³`、`91.04%`）时，`cited_quote` 必须非空，否则被 verifier 拒绝。
+- 综合性 claim（文本中没有具体锚点）仍可空 quote 直接通过 —— 与跨 chunk 汇总写法保持向后兼容。
+
+向后兼容 opt-out：
+
+```bash
+LAZY_PAPER_ANCHORED_QUOTE=0   # 在 .env 中设置
+```
+
+opt-out 适用于已锁定 baseline 或提示词已回归的项目；新跑应保持默认开启。
+
+---
+
 ## 故障排查
 
 ### OCR 漏识别了某张图
