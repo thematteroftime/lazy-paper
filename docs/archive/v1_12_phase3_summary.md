@@ -1,3 +1,7 @@
+> **⚠ SUPERSEDED — Phase 3b (prompt compression) and Phase 3c (domain-agnostic example-stuffing) were reverted after RAGAS regression (meng2024 −9pp, ali2025 −4pp). Only Phase 3a (Chinese mirror) survived into the final branch. The architectural lesson — that generalization belongs at the architecture layer, not via prompt-body example-stuffing — drove Phase 4's two-stage prompt tailoring. See `v1_12_phase4_summary.md` for the successor approach.**
+
+---
+
 # v1.12 Phase 3 — Hygiene & Generalization Sweep
 
 > Implementation: 2026-05-26 on `worktree-v1.12-phase1` (additive on Phase 1+2).
