@@ -109,6 +109,26 @@ def run(*, chapters_dir: Path, out_dir: Path) -> dict:
         if headline:
             data["headline_metrics"] = headline
 
+    # v1.12 phase 4: optional prompt-tailoring pre-stage.
+    # When LAZY_PAPER_PROMPT_TAILOR=1, run a cheap LLM call to emit a
+    # per-paper prompt-augmentation block that s08 will prepend to
+    # _STRUCTURED_SYSTEM. Soft-degrade on any failure — drop a marker
+    # file and let s08 fall back to the vanilla prompt.
+    if os.environ.get("LAZY_PAPER_PROMPT_TAILOR", "0") == "1":
+        from stages.s06_context.prompt_tailor import (
+            generate_prompt_augment, PromptTailorError,
+        )
+        try:
+            augment = generate_prompt_augment(context=data, chapters_dir=chapters_dir)
+            dump_yaml(out_dir / "prompt_augment.yaml", augment)
+            extra["prompt_tailor"] = "ok"
+        except PromptTailorError as exc:
+            (out_dir / "prompt_tailor.failed").write_text(repr(exc), encoding="utf-8")
+            extra["prompt_tailor"] = "failed"
+        except Exception as exc:  # LLM transport / unexpected
+            (out_dir / "prompt_tailor.failed").write_text(repr(exc), encoding="utf-8")
+            extra["prompt_tailor"] = f"failed: {type(exc).__name__}"
+
     dump_yaml(out_dir / "context.yaml", data)
     mark_done(out_dir, extra)
     return data
