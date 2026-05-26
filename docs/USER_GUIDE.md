@@ -76,7 +76,7 @@ uv run python -m cli run \
   --formats docx,pdf,html,pptx
 ```
 
-Replace `papers/your-paper.pdf` with the path to your PDF. Replace the `--template` path with your section-outline `.docx` file (see the `templates/` folder for examples). Outline template can be any hierarchical structure — the pipeline is domain-agnostic; default examples use materials science.
+Replace `papers/your-paper.pdf` with the path to your PDF. Replace the `--template` path with your section-outline `.docx` file (see the `templates/` folder for examples).
 
 Output lands at:
 
