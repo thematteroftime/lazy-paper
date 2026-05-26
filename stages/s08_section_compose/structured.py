@@ -774,6 +774,48 @@ def select_top_required(
 # ─── compose pipeline (Day-2) ────────────────────────────────────────────────
 
 
+def _render_augment_block(aug: dict | None) -> str:
+    """Render the per-paper prompt_augment.yaml as a system-prompt prefix.
+
+    Returns empty string if aug is None / missing keys — caller prepends
+    only when non-empty. v1.12 phase 4.
+    """
+    if not aug or not isinstance(aug, dict):
+        return ""
+    content_parts: list[str] = []
+    framing = (aug.get("domain_framing") or "").strip()
+    if framing:
+        content_parts.append(framing)
+        content_parts.append("")
+    terms = aug.get("terminology") or []
+    if terms:
+        content_parts.append("## Terminology to preserve verbatim")
+        content_parts.append("")
+        for t in terms:
+            term = t.get("term", "") if isinstance(t, dict) else str(t)
+            note = t.get("note", "") if isinstance(t, dict) else ""
+            if term:
+                line = f"- {term}: {note}" if note else f"- {term}"
+                content_parts.append(line)
+        content_parts.append("")
+    style = aug.get("comparator_style") or {}
+    fmt = (style.get("format") if isinstance(style, dict) else "") or ""
+    example = (style.get("example_from_paper") if isinstance(style, dict) else "") or ""
+    if fmt or example:
+        content_parts.append("## Comparator citation style")
+        content_parts.append("")
+        if fmt:
+            content_parts.append(f"Format: {fmt}")
+        if example:
+            content_parts.append(f"Example from this paper: \"{example}\"")
+        content_parts.append("")
+    if not content_parts:
+        return ""
+    parts = ["## This paper — domain context", ""] + content_parts
+    body = "\n".join(parts).strip()
+    return body + "\n\n" if body else ""
+
+
 _STRUCTURED_SYSTEM = """You are composing one section of a research-paper deep analysis.
 
 You have been given a numbered list of source chunks in the USER message.
@@ -1074,6 +1116,7 @@ def compose_structured(
     section_figures: list[dict] | None = None,
     max_retries: int = 3,
     lang: str = "zh",
+    augment_block: str = "",
 ) -> tuple["SectionDraft", list[dict]]:
     """instructor call → SectionDraft → verifier gate.
 
@@ -1088,6 +1131,10 @@ def compose_structured(
     audit. Raises if instructor fails after max_retries.
     """
     import os as _os
+    # v1.12 phase 4: prepend per-paper augment to the system prompt.
+    # augment_block is "" when prompt_tailor was OFF or failed → fall back to
+    # vanilla _STRUCTURED_SYSTEM (no behaviour change).
+    system_prompt = (augment_block + _STRUCTURED_SYSTEM) if augment_block else _STRUCTURED_SYSTEM
     chunks_block = _format_chunks_block(chunks)
     required_block = _format_required_block(required)
     figures_msg = ""
@@ -1115,7 +1162,7 @@ def compose_structured(
 
     n = max(1, int(_os.environ.get("LAZY_PAPER_BEST_OF_N", "1")))
     if n == 1:
-        draft = _single_compose(llm, _STRUCTURED_SYSTEM, user_msg, chunks,
+        draft = _single_compose(llm, system_prompt, user_msg, chunks,
                                 max_retries, temperature=0.2)
     else:
         # Strategy K: N independent samples at slightly varied temperatures
@@ -1126,7 +1173,7 @@ def compose_structured(
             temp = 0.2 + 0.2 * i  # 0.2, 0.4, 0.6...
             try:
                 drafts.append(_single_compose(
-                    llm, _STRUCTURED_SYSTEM, user_msg, chunks,
+                    llm, system_prompt, user_msg, chunks,
                     max_retries, temperature=temp,
                 ))
             except Exception as exc:
@@ -1207,7 +1254,7 @@ def compose_structured(
                     f"      → evidence chunk: [{r.evidence_chunk_id}]"
                 )
             missing_diag = "\n".join(missing_diag_lines)
-            retry_system = _STRUCTURED_SYSTEM + (
+            retry_system = system_prompt + (
                 "\n\n## CRITICAL — SPECIFIC REQUIRED MENTIONS MISSING\n"
                 f"Your previous draft covered "
                 f"{len(required) - len(post_missing)}/{len(required)} "
@@ -1276,7 +1323,7 @@ def compose_structured(
             f"min_claims={min_claims} or min_chars={min_chars}",
             flush=True,
         )
-        retry_system = _STRUCTURED_SYSTEM + (
+        retry_system = system_prompt + (
             "\n\n## CRITICAL — SECTION TOO SHORT\n"
             f"Your previous draft has only {len(verified.claims)} verified "
             f"claims and {len(verified_text)} characters. Produce a more "

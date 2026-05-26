@@ -948,3 +948,31 @@ def test_unknown_figure_label_lang_aware(monkeypatch):
     )
     assert UNKNOWN_FIGURE_LABEL["en"] in accepted[0].text
     assert "源论文相关图示" not in accepted[0].text
+
+
+def test_render_augment_block_full():
+    """v1.12 phase 4: full aug dict renders into a prefix block."""
+    from stages.s08_section_compose.structured import _render_augment_block
+    aug = {
+        "domain_framing": "Lead-free RFE ceramics for energy storage.",
+        "terminology": [{"term": "W_rec", "note": "energy density, J/cm³"}],
+        "comparator_style": {
+            "format": "<Author> et al. reported <metric>=<value>",
+            "example_from_paper": "Jiang et al. reported W_rec=2.94 J/cm³",
+        },
+    }
+    out = _render_augment_block(aug)
+    assert "## This paper — domain context" in out
+    assert "Lead-free RFE ceramics" in out
+    assert "W_rec: energy density, J/cm³" in out
+    assert "<Author> et al." in out
+    assert "Jiang et al." in out
+    assert out.endswith("\n\n")  # ready to prepend
+
+
+def test_render_augment_block_empty_returns_empty_string():
+    """Missing or empty aug → return '' so caller falls back to vanilla prompt."""
+    from stages.s08_section_compose.structured import _render_augment_block
+    assert _render_augment_block(None) == ""
+    assert _render_augment_block({}) == ""
+    assert _render_augment_block({"domain_framing": ""}) == ""
