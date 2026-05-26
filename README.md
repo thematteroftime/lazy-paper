@@ -26,6 +26,8 @@
 
 Feed a scientific PDF + a `.docx` section-outline template. Get back **DOCX · PDF · HTML · PPTX** — bilingual deep-analysis documents with figures, tables, and quantitative anchors preserved.
 
+lazy-paper works with any scientific PDF and any section-outline template — default examples use materials science but the pipeline is domain-agnostic.
+
 ```
                                                   ┌──▶ preview.docx
 PDF  +  outline.docx                              │
@@ -62,7 +64,7 @@ Each stage writes `done.yaml` and is independently re-runnable; every LLM call p
 
 ## Real-Data Pipeline Walkthrough
 
-The diagram above shows the shape. The walkthrough below shows the substance — every snippet is a verbatim slice from `runs/meng2024_v111_demo/` (an ACS Appl. Mater. Interfaces 2024 NBT-based RFE paper). Read it once and you'll know exactly what happens to your PDF.
+The diagram above shows the shape. The walkthrough below shows the substance — every snippet is a verbatim slice from `runs/meng2024_v111_demo/` (an example from materials science). Read it once and you'll know exactly what happens to your PDF.
 
 ### s01 → s02 — OCR, then normalize
 
@@ -252,7 +254,7 @@ The structured claims flow into a Jinja HTML template; WeasyPrint converts to PD
 
 ### Cross-domain defence — when the template doesn't fit
 
-Sometimes a user runs the AFE-template against a totally unrelated paper. `runs/hif_2_v111_demo/` is exactly that: the unCLIP image-generation paper forced through the relaxor-AFE outline. The composer detects the mismatch and opens each off-topic chapter with an explicit out-of-scope disclaimer rather than hallucinating ferroelectric content:
+A cross-domain test (unCLIP image-generation paper through a materials-science outline) demonstrates the pipeline's graceful out-of-scope handling. `runs/hif_2_v111_demo/` is exactly that: the unCLIP image-generation paper forced through the relaxor-AFE outline. The composer detects the mismatch and opens each off-topic chapter with an explicit out-of-scope disclaimer rather than hallucinating ferroelectric content:
 
 ```text
 runs/hif_2_v111_demo/s08_section_compose/chapters/05-Dielectric_Properties_of_Relax.md

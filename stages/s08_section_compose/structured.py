@@ -786,7 +786,9 @@ section MUST cover. For each, write a GroundedClaim that:
   - includes the entity's verbatim text (chemical formula)
   - **when an `author` field is given, introduce the comparator using
     "<Author> et al." form**, e.g. "Jiang et al. reported W_rec=2.94 J/cm³
-    in Ca²⁺/Nb⁵⁺-codoped Bi₀.₅Na₀.₅TiO₃". Author attribution is required
+    in Ca²⁺/Nb⁵⁺-codoped Bi₀.₅Na₀.₅TiO₃" (materials science), or "Smith
+    et al. reported 92% accuracy on ImageNet with ResNet-50" (ML), or any
+    domain-appropriate verbatim attribution. Author attribution is required
     when provided; do not skip it.
   - includes the linked numeric value when given (e.g. "W_rec=2.94 J/cm³")
   - sets cited_chunk_ids to the evidence_chunk_id given for that entity
@@ -803,7 +805,7 @@ Fill it as follows:
 
   - **REQUIRED non-empty** when the claim text NAMES one of:
       - a specific author ("Jiang et al.", "Ma 2022", "Smith and coworkers")
-      - a specific numeric value ("2.94 J/cm³", "91.04%", "340 kV/cm")
+      - a specific numeric value ("2.94 J/cm³", "92%", "340 kV/cm", "BLEU score 36.8")
     The cited_quote MUST contain the verbatim source span carrying that
     anchor. Empty cited_quote on an anchored claim is REJECTED by the
     verifier and the claim is lost from the rendered output.
