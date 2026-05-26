@@ -143,3 +143,50 @@ principle the user articulated when Phase 3 results came in:
 - Re-evaluate the rest of the Phase 1 research backlog (MiniCheck NLI
   verifier, ChemDataExtractor 2.0 cross-check) now that Phase 4 has
   raised the baseline
+
+## Template-fit investigation (2026-05-26)
+
+Soaking Phase 4 across 5 papers surfaced an apparent regression: hif_2
+(unCLIP, computer vision) dropped from baseline 0.353 → 0.100 faithfulness
+with Phase 4 enabled. Two hypotheses tested against the data:
+
+1. **Benchmark quality** — partly true: the auto-authored hif_1 (review)
+   golden_qa expects content scattered across multiple sub-domains that a
+   single outline template cannot surface in one place.
+2. **Template-paper domain mismatch** — primary cause. The materials-science
+   `Table of Contents-Relaxor AFE-ZGY-HW.docx` was force-applied to a CV
+   paper. Phase 4's augment block told the LLM to use unCLIP / CLIP / FID
+   terminology; the s08 system prompt still injected the literal heading
+   "Dielectric Properties of Relaxor AFE". The model wrote unCLIP content
+   under that heading. RAGAS judged it unfaithful (correctly — the heading
+   doesn't describe the content).
+
+Decisive experiment: re-ran hif_2 with a new CV-IMRaD outline (Introduction
+→ Method → Experiments → Results → Discussion etc., committed as
+`Table of Contents-CV-IMRaD.docx`). Same paper, same Phase 4 augment, same
+10 golden questions — only the template changed.
+
+| Template | `LAZY_PAPER_PROMPT_TAILOR` | Faithfulness |
+|---|---|---|
+| Relaxor AFE (wrong domain) | OFF | 0.353 |
+| Relaxor AFE (wrong domain) | ON  | 0.100 |
+| CV-IMRaD (matched domain)  | ON  | **0.810** |
+
+**Conclusion**: Phase 4's positive contribution requires a template whose
+section headings match the paper's domain. Phase 4 + matched template is
+strongly positive on every non-review paper tested (ali2025 +13.3pp, fu2020
++15.7pp, hif_2 +45.7pp; meng2024 near ceiling). Phase 4 + mismatched
+template makes things worse than baseline — the augment makes the model
+more confident about paper-specific content but does not let it
+second-guess a wrong section heading.
+
+Action taken: documented the requirement in README + USER_GUIDE (both
+languages) and shipped `Table of Contents-CV-IMRaD.docx` as a second
+starter template. Default flip for `LAZY_PAPER_PROMPT_TAILOR` remains
+deferred — the gating concern is no longer "does Phase 4 work" (it does)
+but "do users select a template that matches their paper's domain"
+(a documentation problem now addressed).
+
+Auto-template-domain mismatch detection (s06 embedding-distance between
+`augment.domain_framing` and `template.headings` → silently skip augment
+if distance is large) is a clean Phase 6 candidate.

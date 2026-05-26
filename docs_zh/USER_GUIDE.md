@@ -76,7 +76,20 @@ uv run python -m cli run \
   --formats docx,pdf,html,pptx
 ```
 
-把 `papers/your-paper.pdf` 替换为你的 PDF 路径。`--template` 后面填入你的章节大纲 `.docx` 文件（在 `templates/` 目录下有示例）。
+把 `papers/your-paper.pdf` 替换为你的 PDF 路径。`--template` 后面填入章节大纲 `.docx`，**模板的章节标题要与你的论文领域对应**。仓库根目录提供两份起手模板：
+
+- `Table of Contents-Relaxor AFE-ZGY-HW.docx` —— 材料科学（铁电、储能及相关体系）
+- `Table of Contents-CV-IMRaD.docx` —— 通用 CV / ML / IMRaD（Introduction → Method → Experiments → Results → Discussion）
+
+**模板与论文领域必须匹配**。章节标题会被原文喂进 compose prompt；领域错配会要么写一段越界声明（默认模式下），要么在开启 `LAZY_PAPER_PROMPT_TAILOR=1`（Phase 4 prompt tailoring）时把论文内容硬塞错误标题之下。对同一篇 unCLIP 论文实测（10 题 golden Q/A，RAGAS faithfulness）：
+
+| 模板 | `LAZY_PAPER_PROMPT_TAILOR` | Faithfulness |
+|---|---|---|
+| Relaxor AFE（领域错配） | 0 | 0.353 |
+| Relaxor AFE（领域错配） | 1 | **0.100**（倒退） |
+| CV-IMRaD（领域匹配） | 1 | **0.810** |
+
+经验法则：模板的 top-level 章节标题应该接近你论文真实目录里能看到的那些标题。其他领域可以复制起手模板，只改标题，guidance 段落和 `{paper.system}` / `{paper.key_terms}` 占位符可保留。
 
 输出会落在：
 

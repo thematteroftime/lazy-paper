@@ -1,0 +1,174 @@
+paper_id: hif_2_v112_cvtmpl
+source_pdf: input/papers/hif_2.pdf
+items:
+- id: q01
+  question: 'unCLIP 模型的两阶段生成框架分别由哪两个组件构成？各自的作用是什么？
+
+    '
+  ground_truth: '两阶段框架由 prior 和 decoder 组成。prior P(z_i | y) 根据文本描述 y 生成 CLIP 图像嵌入
+    z_i；
+
+    decoder P(x | z_i, y) 根据 CLIP 图像嵌入（以及可选的文本描述）生成图像 x。
+
+    '
+  expected_chunks:
+  - chapter_001_Abstract.md
+  - chapter_010_2_Method.md
+  tags:
+  - system
+  - method
+  - cross_chapter
+- id: q02
+  question: 'unCLIP 使用什么架构作为 decoder，该 decoder 共有多少参数？
+
+    '
+  ground_truth: 'decoder 架构采用 3.5 billion 参数的 GLIDE 模型，与 Nichol et al. 中描述的架构及扩散超参数相同。
+
+    '
+  expected_chunks:
+  - chapter_010_2_Method.md
+  tags:
+  - system
+  - method
+  - author_attribution
+- id: q03
+  question: '在 MS-COCO 验证集上，unCLIP（diffusion prior）的零样本 FID 是多少？与 GLIDE 相比如何？
+
+    '
+  ground_truth: 'unCLIP（diffusion prior）在 MS-COCO 上达到零样本 FID 10.39，优于 GLIDE 的 12.24，
+
+    创下当时零样本模型的最优 FID。
+
+    '
+  expected_chunks:
+  - chapter_003_5_3_Improved_Diversity-Fidelity_Trade-off_with_Gui.md
+  - chapter_004_5_4_Comparison_on_MS-COCO.md
+  tags:
+  - headline_metric
+  - comparator
+  - results
+- id: q04
+  question: '人工评估中，unCLIP（AR prior）在 Photorealism、Caption Similarity 和 Diversity 三项指标的胜出比例分别是多少？
+
+    '
+  ground_truth: 'AR prior 对应：Photorealism 47.1% ± 3.1%，Caption Similarity 41.1% ±
+    3.0%，Diversity 62.6% ± 3.0%
+
+    （以上均为相对 GLIDE 的人类偏好百分比）。diffusion prior 表现更好：48.9% / 45.3% / 70.5%。
+
+    '
+  expected_chunks:
+  - chapter_002_Introduction.md
+  tags:
+  - headline_metric
+  - comparator
+  - results
+- id: q05
+  question: '在"prior 重要性"消融实验中，text-embedding decoder、zero-shot text-embedding 输入和完整
+    unCLIP stack 三者的 FID 分别是多少？
+
+    '
+  ground_truth: 'text-embedding decoder FID = 9.16；zero-shot text embedding 输入到 unCLIP
+    decoder FID = 7.99；
+
+    完整 unCLIP stack FID = 16.55（该值为小模型基线，表明完整 prior 方案最优）。
+
+    '
+  expected_chunks:
+  - chapter_019_5_1_Importance_of_the_Prior.md
+  tags:
+  - headline_metric
+  - method
+  - results
+- id: q06
+  question: 'GLIDE 是哪位作者的工作？unCLIP 的 decoder 与 GLIDE 是什么关系？
+
+    '
+  ground_truth: 'GLIDE 由 Nichol et al.（Nichol 等人）提出。unCLIP 的 decoder 直接采用了 3.5B 参数的
+    GLIDE 模型架构，
+
+    通过将 CLIP 嵌入投影并加入时间步嵌入来修改它，同时将 CLIP 嵌入投影为四个额外的 context token
+
+    拼接到 GLIDE text encoder 的输出序列中。
+
+    '
+  expected_chunks:
+  - chapter_011_2_1_Decoder.md
+  - chapter_010_2_Method.md
+  tags:
+  - comparator
+  - author_attribution
+  - method
+- id: q07
+  question: 'Ramesh et al. 的 DALL-E 与 Nichol et al. 的 GLIDE 在人工评估协议上有什么关系？
+
+    '
+  ground_truth: 'unCLIP 的人工评估遵循了 Ramesh et al. 和 Nichol et al. [40, 35] 的评估协议：
+
+    photorealism 评估要求用户从一对图像中选择更真实的；caption similarity 评估在此基础上
+
+    额外提供 caption，要求选择与 caption 更匹配的图像；diversity 评估展示两个 4×4 图像网格，
+
+    要求选择更多样的。
+
+    '
+  expected_chunks:
+  - chapter_020_5_2_Human_Evaluations.md
+  tags:
+  - comparator
+  - author_attribution
+  - method
+- id: q08
+  question: 'AR prior 如何降低 CLIP 图像嵌入的维度以提升训练效率？保留了多少个主成分？
+
+    '
+  ground_truth: 'AR prior 通过 PCA（主成分分析）将 CLIP 图像嵌入降维：原始 1,024 维空间中，
+
+    使用 SAM 训练 CLIP 后 rank 大幅降低，仅保留 319 个主成分即可保留几乎全部信息，
+
+    使推理时预测的 token 数量减少三倍，同时改善训练稳定性。
+
+    '
+  expected_chunks:
+  - chapter_012_2_2_Prior.md
+  tags:
+  - method
+  - mechanism
+- id: q09
+  question: 'unCLIP 在"文本差分（text diffs）"图像操控中如何计算方向向量？
+
+    '
+  ground_truth: '先取新文本描述 y 的 CLIP text embedding z_t 与原始图像描述的 CLIP text embedding
+    z_t0，
+
+    计算 text diff 向量 z_d = norm(z_t − z_t0)（归一化差值），然后通过球形插值
+
+    slerp(z_i, z_d, θ) 在原始图像 CLIP 嵌入 z_i 与 z_d 之间旋转，θ 典型范围为 [0.25, 0.50]，
+
+    并固定基础 DDIM 噪声进行解码。
+
+    '
+  expected_chunks:
+  - chapter_016_3_3_Text_Diffs.md
+  tags:
+  - method
+  - mechanism
+- id: q10
+  question: 'unCLIP 相比 GLIDE 存在哪两个主要局限？其根因是什么？
+
+    '
+  ground_truth: '局限一：attribute binding 较弱（如将两个物体与两个颜色分别绑定时容易混淆），
+
+    原因是 CLIP 嵌入本身不显式绑定 attribute 与 object；
+
+    局限二：难以生成连贯文字（如招牌上的文字），原因是 CLIP 嵌入不精确编码词语的拼写信息，
+
+    加之 BPE 编码对 caption 中词的拼写有遮蔽作用。
+
+    '
+  expected_chunks:
+  - chapter_007_7_Limitations_and_Risks.md
+  tags:
+  - mechanism
+  - cross_chapter
+  - results

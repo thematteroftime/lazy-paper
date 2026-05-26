@@ -250,20 +250,26 @@ The structured claims flow into a Jinja HTML template; WeasyPrint converts to PD
   <em>Real pages from <code>runs/meng2024_v111_demo/s09_render/preview.pdf</code> — left: title + composed introduction; right: extracted Fig. 1 inline with its caption and the s07 deep-observation critique that survived the figure_ids hard constraint.</em>
 </p>
 
-### Cross-domain defence — when the template doesn't fit
+### Template-paper domain fit — important
 
-Sometimes a user runs the AFE-template against a totally unrelated paper. `runs/hif_2_v111_demo/` is exactly that: the unCLIP image-generation paper forced through the relaxor-AFE outline. The composer detects the mismatch and opens each off-topic chapter with an explicit out-of-scope disclaimer rather than hallucinating ferroelectric content:
+**The template's section headings must match the paper's domain.** Lazy-paper inserts each section heading verbatim into the s08 compose prompt; if you ask the LLM to write "Dielectric Properties of Relaxor AFE" for an unCLIP image-generation paper, the model either writes an out-of-scope disclaimer (when Phase 4 prompt tailoring is OFF) or — worse — packs unCLIP content under the wrong heading and looks unfaithful to a reader.
 
-```text
-runs/hif_2_v111_demo/s08_section_compose/chapters/05-Dielectric_Properties_of_Relax.md
+We ship two starter templates at the repo root; pick the one closer to your paper's domain or copy and edit:
 
-本论文《Hierarchical Text-Conditional Image Generation with CLIP Latents》的主题
-是文本条件图像生成，完全不涉及反铁电体或弛豫反铁电体的介电性能 ...
-在unCLIP框架中，扩散prior在成对比较中优于自回归prior：扩散prior的
-photorealism偏好为48.9% ± 3.1%，diversity为70.5% ± 2.8% ...
-```
+| File | Best for |
+|---|---|
+| `Table of Contents-Relaxor AFE-ZGY-HW.docx` | Materials science (ferroelectrics, energy storage, related families) |
+| `Table of Contents-CV-IMRaD.docx` | Generic CV / ML / IMRaD-style papers (Introduction → Method → Experiments → Results → Discussion) |
 
-The chapter still gets written from the actual paper's facts; the opener tells the reader the section heading is structural, not substantive.
+Empirical evidence (RAGAS faithfulness on the unCLIP paper, 10 golden Q/A):
+
+| Template | Phase 4 prompt tailoring | faithfulness |
+|---|---|---|
+| Relaxor AFE (wrong domain) | OFF | 0.353 |
+| Relaxor AFE (wrong domain) | ON | **0.100** (regression) |
+| CV-IMRaD (correct domain) | ON | **0.810** |
+
+Same paper, same Phase 4 augment, same questions — only the template changed. Treat template selection as a first-class input, not a default.
 
 ## Quickstart
 
@@ -281,7 +287,7 @@ cp .env.example .env   # then fill MINERU_TOKEN + LLM_*_API_KEY
 # Run
 uv run python -m cli run \
   --pdf "papers/your-paper.pdf" \
-  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \
+  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \   # or Table of Contents-CV-IMRaD.docx for ML/CV papers
   --paper-id mypaper --lang zh --formats docx,pdf,html,pptx
 ```
 

@@ -76,7 +76,12 @@ uv run python -m cli run \
   --formats docx,pdf,html,pptx
 ```
 
-Replace `papers/your-paper.pdf` with the path to your PDF. Replace the `--template` path with your section-outline `.docx` file (see the `templates/` folder for examples).
+Replace `papers/your-paper.pdf` with the path to your PDF. Replace the `--template` path with a section-outline `.docx` whose section titles match your paper's domain. The repo root ships two starters:
+
+- `Table of Contents-Relaxor AFE-ZGY-HW.docx` — materials science (ferroelectrics, energy storage, related)
+- `Table of Contents-CV-IMRaD.docx` — generic CV / ML / IMRaD (Introduction → Method → Experiments → Results → Discussion)
+
+**Template-paper domain fit matters.** Section headings are inserted verbatim into the compose prompt; an off-domain template produces either out-of-scope disclaimers or — with Phase 4 prompt tailoring ON — content jammed under the wrong heading. See the [template-domain mismatch warning](#template-paper-domain-fit-required-for-good-output) under "Prompt tailoring" below.
 
 Output lands at:
 
@@ -318,6 +323,29 @@ LAZY_PAPER_PROMPT_TAILOR=1
 Cost: one extra LLM call per paper (~1K tokens, ~$0.001 on DeepSeek-chat).
 On failure, the pre-stage soft-degrades to a `.failed` marker and s08
 falls back to the vanilla prompt — never blocks the pipeline.
+
+#### Template-paper domain fit (required for good output)
+
+Prompt tailoring is **not a substitute for template selection**. The augment
+block tells the LLM "this paper is about X, use these terms"; it does **not**
+override the per-section heading that s08 still inserts from your template.
+When the heading and the paper disagree (e.g. running the Relaxor AFE template
+on an unCLIP CV paper), enabling Phase 4 actively makes things worse, because
+the LLM now confidently writes paper-specific content under a wrong heading.
+
+Measured impact on the unCLIP image-generation paper (10 Q/A, RAGAS faithfulness):
+
+| Template | `LAZY_PAPER_PROMPT_TAILOR` | Faithfulness |
+|---|---|---|
+| Relaxor AFE (wrong domain) | 0 | 0.353 |
+| Relaxor AFE (wrong domain) | 1 | **0.100** (regression) |
+| CV-IMRaD (matched domain)  | 1 | **0.810** |
+
+Rule of thumb: pick a template whose top-level section titles you would
+expect to see in the paper's actual table of contents. The ship-with-repo
+`Table of Contents-CV-IMRaD.docx` covers most ML / CV / IMRaD-style work.
+For other domains, copy a starter and rewrite the headings — guidance
+paragraphs and `{paper.system}` / `{paper.key_terms}` slots can stay.
 
 ---
 
