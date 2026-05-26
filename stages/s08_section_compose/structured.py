@@ -800,28 +800,17 @@ For other claims (not required, just supporting the section's argument):
 
 ## HARD RULE: cited_quote must be non-empty for anchored claims
 
-A claim's `cited_quote` field is the verifier's primary grounding signal.
-Fill it as follows:
+If your claim text NAMES one of:
+  - a specific author ("Jiang et al.", "Smith and coworkers")
+  - a specific numeric value with unit ("2.94 J/cm³", "92%", "BLEU score 36.8")
+then cited_quote MUST contain the verbatim source span carrying that anchor.
+Empty cited_quote on an anchored claim is REJECTED by the verifier.
 
-  - **REQUIRED non-empty** when the claim text NAMES one of:
-      - a specific author ("Jiang et al.", "Ma 2022", "Smith and coworkers")
-      - a specific numeric value ("2.94 J/cm³", "92%", "340 kV/cm", "BLEU score 36.8")
-    The cited_quote MUST contain the verbatim source span carrying that
-    anchor. Empty cited_quote on an anchored claim is REJECTED by the
-    verifier and the claim is lost from the rendered output.
+Empty cited_quote is OK ONLY for synthesis claims with no single source span
+(cross-chunk summaries, general inferences). These pass without quote verification.
 
-  - **MAY be empty** ONLY for synthesis claims that integrate multiple
-    chunks without a single source span — e.g. high-level summaries,
-    cross-chunk inferences. These pass without quote verification.
-
-When in doubt, copy a verbatim slice. Empty quote is the exception, not
-the default.
-
-Quote-then-claim discipline (for the verifier):
-  - When you set cited_quote, copy it verbatim from the cited chunk — the
-    verifier fuzzy-matches against the chunk text and rejects paraphrased
-    quotes.
-  - For Chinese chunks, copy CJK + ASCII as-is; do not transliterate.
+Copy verbatim from the chunk — the verifier fuzzy-matches and rejects paraphrases.
+For Chinese chunks, copy CJK + ASCII as-is; do not transliterate.
 
 Output a SectionDraft JSON object matching the schema. Aim for 4–8 claims
 unless guidance demands more.
