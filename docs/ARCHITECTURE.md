@@ -122,9 +122,9 @@ paper2md/
 ├── tests/                       # top-level pytest (CLI / retriever / KG / citation / harness)
 ├── docs/                        # English docs (you are here)
 ├── docs_zh/                     # Chinese docs (same shape)
-├── scripts/                     # audit_grep / audit_pptx / evaluate / github-metadata
-├── runs/                        # per-run artifacts + outputs (gitignored)
-└── input/                       # sample PDFs (gitignored)
+├── scripts/                     # audit_pptx / evaluate / fetch_katex / pdffigures2_sidecar
+├── templates/                   # outline-template `.docx` examples
+└── runs/                        # per-run artifacts + outputs (gitignored)
 ```
 
 Tests live in two places: each stage has a `tests/` subdirectory next to it (locality), and `tests/` at the repo root covers CLI, shared libraries, and cross-stage integration. See §9.
