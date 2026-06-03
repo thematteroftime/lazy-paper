@@ -1,6 +1,6 @@
 # lazy-paper — AI Agent 指南
 
-本文档面向被指派维护、扩展或调试本仓库的 AI 编码 agent（Claude Code、Cursor、Copilot 等）。前置阅读：`docs_zh/INTERNAL/HANDOFF.md` 和 `docs_zh/ARCHITECTURE.md`。
+本文档面向被指派维护、扩展或调试本仓库的 AI 编码 agent（Claude Code、Cursor、Copilot 等）。前置阅读：`docs_zh/ARCHITECTURE.md`。
 
 ## 给 agent 的 TL;DR
 
@@ -258,8 +258,6 @@ docs/
   ARCHITECTURE.md               # 每个阶段的契约（读完本文后看）
   AGENT_GUIDE.md                # 你正在看的文件
   USER_GUIDE.md                 # 终端用户手册（安装、快速上手、迭代、排错）
-  INTERNAL/HANDOFF.md           # 生产交接摘要
-  INTERNAL/superpowers/         # 历史规格 + 计划
 
 tests/                          # 跨切面测试（cli、llm client 等）
 runs/                           # 已 gitignore —— 每篇论文的产物（本地提交了 5 篇已验证论文）
