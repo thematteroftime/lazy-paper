@@ -41,13 +41,30 @@ Each stage writes `done.yaml` and is independently re-runnable; every LLM call p
 
 ## See what comes out
 
+**PDF / DOCX / HTML** — design tokens shared across all three (accent `#D97757`, serif headings, accent-bordered `深度观察` aside):
+
 <p align="center">
-  <img src="docs/assets/v113-pdf-p01.png" alt="Title page" width="270">
-  <img src="docs/assets/v113-pdf-p03.png" alt="Figure block + deep-observation aside" width="270">
-  <img src="docs/assets/v113-pdf-p05.png" alt="Energy-regularization chapter with inline math" width="270">
+  <img src="docs/assets/v113-pdf-p01.png" alt="Title page" width="265">
+  <img src="docs/assets/v113-pdf-p03.png" alt="Figure block + deep-observation aside" width="265">
+  <img src="docs/assets/v113-pdf-p05.png" alt="Energy-regularization chapter with inline math" width="265">
 </p>
 
-<p align="center"><em>Three real pages from <code>preview.pdf</code> — title + chapter, multi-panel figure with <code>深度观察</code> aside, and a math-heavy chapter.</em></p>
+**PPTX** — academic-defense styling, density-adaptive font, LLM-grouped section divider:
+
+<p align="center">
+  <img src="docs/assets/showcase-divider.png" alt="PPTX section-divider slide with KEY POINTS card" width="540">
+</p>
+
+## What's new in v1.13-render
+
+The most recent release rebuilds the rendering layer end-to-end:
+
+- **HTML** — KaTeX math, sticky topbar, right-rail TOC, three accent themes, copy-on-click LaTeX. `LAZY_PAPER_INLINE_KATEX=1` produces a fully offline single-file (~1.08 MB).
+- **DOCX** — accent palette + serif headings + accent-bordered deep-observation aside; same visual language as HTML/PDF.
+- **MinerU OCR** — handles `chart`-typed scientific plots (was silently skipping them); restored 10 / 12 figures on figure-rich text-PDFs.
+- **Chapter detection** — recognises Roman-numeral IEEE / conference section headings and modern RL / robotics anchors (`related work`, `evaluation`, `ablation`, …).
+
+Full diff in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Quickstart
 

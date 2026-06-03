@@ -41,13 +41,30 @@ flowchart LR
 
 ## 输出长什么样
 
+**PDF / DOCX / HTML** — 共享同一套 design tokens（accent `#D97757`、serif 标题、accent 边深度观察块）：
+
 <p align="center">
-  <img src="docs/assets/v113-pdf-p01.png" alt="封面页" width="270">
-  <img src="docs/assets/v113-pdf-p03.png" alt="图块 + 深度观察" width="270">
-  <img src="docs/assets/v113-pdf-p05.png" alt="带行内公式的章节" width="270">
+  <img src="docs/assets/v113-pdf-p01.png" alt="封面页" width="265">
+  <img src="docs/assets/v113-pdf-p03.png" alt="图块 + 深度观察" width="265">
+  <img src="docs/assets/v113-pdf-p05.png" alt="带行内公式的章节" width="265">
 </p>
 
-<p align="center"><em><code>preview.pdf</code> 三张真实截图——封面+章节、多面板图+深度观察块、含公式的章节。</em></p>
+**PPTX** — 学术答辩风、字号随密度自适应、LLM 分组的节分隔片：
+
+<p align="center">
+  <img src="docs/assets/showcase-divider.png" alt="PPTX 节分隔片 + KEY POINTS 卡" width="540">
+</p>
+
+## v1.13-render 都改了什么
+
+最新版本端到端重做了渲染层：
+
+- **HTML** —— KaTeX 公式渲染、sticky topbar、右侧 TOC、3 套强调色主题、点击复制 TeX。`LAZY_PAPER_INLINE_KATEX=1` 即可产出真正的单文件离线 HTML（~1.08 MB）。
+- **DOCX** —— accent 色板 + serif 标题 + accent 边深度观察块，与 HTML / PDF 同一套视觉语言。
+- **MinerU OCR** —— 处理 `chart` 类型的科研图（之前会静默漏掉），figure-rich 文本 PDF 上从 2/12 图涨到 12/12。
+- **章节探测** —— 识别罗马数字（IEEE / 会议论文）与机器人 / RL 常见锚词（`related work`、`evaluation`、`ablation`…）。
+
+完整变更见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 快速开始
 
