@@ -200,6 +200,8 @@ SECTION_ANCHORS = {
 
 `detect_science_anchor` (`runner.py:37`) 用 `_ANCHOR_LINE_RE` 匹配 `[#编号] [章节号.] <Title>` 形式，title 必须以 `[A-Z一-鿿]` 开头。匹配上后 `flush()` 把当前累积行写成一章。
 
+**章节号支持（v1.13）**：编号匹配组同时识别阿拉伯数字（`1.`、`2.3.`）**和**罗马数字（`I.`、`II.`、`III.`…）。IEEE / 会议论文用罗马数字编号的章节以前会被压成一坨 `Preface`，现在能正常切分。v1.13 同时扩充了 `SECTION_ANCHORS`：加入 `related work / background / problem statement / approach / system overview / evaluation / ablation / limitations / future work` 与中文等价（相关工作 / 背景 / 问题描述 / 方法概述 / 系统设计 / 评估 / 消融），机器人 / RL 论文也能正确识别。
+
 ### 4.4 s04_figures — 配图、合并 panel、建 mention map
 
 | 项 | 内容 |
@@ -227,6 +229,8 @@ FIG_MENTION_RE = re.compile(r"(?:Fig(?:ure)?\.?|图)\s*(\d+)([a-z])?", re.IGNORE
 `mentions.yaml` 是 `{chapter_filename: [Fig. 1, Fig. 3, ...]}` 倒排索引，给 s07 找 surrounding-text excerpt 用。
 
 **`is_generation_prompt_caption` (v1.11.1, `runner.py:28-56`)**：caption-stub 过滤器，丢掉 `(letter) A/An <curated descriptor> <medium> of …` 这种模式（典型例：DALL-E 论文 OCR 出来的字面 generation prompt `(a) A high quality photo of a dog playing in a green field next to a lake.` — hif_2 Fig 43 之前被 s07 当成物理图分析）。这是两层防御中的第一层；s07 还会再 skip 一次（见 §4.7）。curated descriptor list 严格，保住真实材料 caption (`"(a) SEM image of NBST"`) 不被误伤。
+
+**MinerU `chart`-vs-`image` 类型（v1.13，`stages/s01_ocr/mineru.py`）**：MinerU 的 `content_list.json` 把科研散点 / 折线 / 柱状图归为 `type: chart` + `chart_caption`，把实拍照片 / 矢量示意图归为 `type: image` + `image_caption`。v1.13 之前 `_content_list_to_docs` 只走 `image`，导致一篇散点图为主的文本 PDF（如 arXiv:2403.20001v2，MinerU 返回 16 张 raw 图但只有 2 张被标 `image`）丢掉 10/12 张图、剩两张还标错图号。修复：两种 type 都处理，`image_caption` 空时 fallback 到 `chart_caption`。同一修复链顺手让 `_ensure_figure_number` 跳过形如 `"(a) Straight Line Walking"` 的子面板 caption ——s04 的"就近 caption 配对"会让这四张子面板都挂到几行后的真实 `Fig. 3:` caption 上。
 
 ### 4.5 s05_template — 解析大纲 docx
 
@@ -331,17 +335,26 @@ class Document:
     chapters: tuple[Chapter, ...]
 
 class Chapter:  heading, level, blocks  # blocks 是 Paragraph | FigureBlock | TableBlock
+
+@dataclass(frozen=True)
+class Paragraph:
+    text: str                          # Unicode-normalized（给 DOCX / PPTX / 打印 PDF）
+    raw_text: str = ""                 # 保留 LaTeX 原文（给 HTML / KaTeX）；空串 → fallback 到 text
 ```
+
+**为什么用双 text 字段（v1.13）**：DOCX 与 PPTX 不能渲染 LaTeX，所以走 Unicode 归一化（`α_en`、`Σ|τ||q̇|`、`R²`）。HTML 把 LaTeX 直接交给 KaTeX，效果远超任何 Unicode 近似。Builder 同时填两个字段，让每个 renderer 自取：HTML 走 `raw_text` 经 `iter_html_runs(...)` 输出 `<span data-tex>`；DOCX 走 `text` 经 `iter_runs(...)` 输出 italic / bold run；PPTX 直接吃 `text`。WeasyPrint 因不跑 JS，会看到 `<span data-tex>` 内的 Unicode 兜底。
 
 **`DocumentBuilder.build()`** (`builder.py:22`)：把 markdown 字符串转换成 Document。**图绑定**逻辑在这里：`_is_referenced` (`builder.py:113`) 检测 `Fig. N` 或 `图N` / `图 N` 字面是否出现在章节正文里；命中则把这张图 embed 进 `FigureBlock`，且**每张图全文档只 embed 一次** (第一个引用它的章节赢)。
 
 **`_UNTITLED_FALLBACK` (v1.11.1, `builder.py:13`)**：`{"zh": "未命名章节", "en": "Untitled"}` — 当 markdown 缺少 H1/H2 heading 时按 `lang` 给章节填一个本地化兜底名（之前 zh 论文也会出现 "Untitled" 英文字面，与全文中文上下文断裂）。
 
 **4 个 renderer 都继承 `Renderer` (`renderers/base.py`)**：
-- `docx.py` — python-docx；中文 set East-Asia font 宋体；Times New Roman 西文。
-- `html.py` — Jinja2 + base64 image；HYPERLINK 模式把 `[span:doc:start-end]` 渲染成可点击的 `<sup>[1]</sup>` 上标 + sources footer。
-- `pdf.py` — 复用 HtmlRenderer 输出，过 WeasyPrint 转 PDF。
-- `pptx.py` — python-pptx；用 `slide_planner` 分配 slide kind (title/outline/section_divider/bullets/figure/closing_rich)，bullet 文本由 `pptx_summarizer` (LLM) 生成；带 LLM cache (`out_dir/llm_cache/`)。
+- `docx.py` — python-docx；中文宋体、西文 Times New Roman；**v1.13** 接入共享 design tokens（accent `#D97757` 章节编号 + heading 左侧 vertical border、次级灰图说、accent 边深度观察块），通过 OOXML `<w:pBdr>` / `<w:rFonts>` 实现。
+- `html.py` — Jinja2 + base64 image；HYPERLINK 模式把 `[span:doc:start-end]` 渲染成可点击的 `<sup>[1]</sup>` 上标 + sources footer；**v1.13** 公式 emit `<span class="math-inline|math-auto" data-tex="…">Unicode 兜底</span>`，KaTeX（默认 CDN，`LAZY_PAPER_INLINE_KATEX=1` 内联）首屏接管渲染。
+- `pdf.py` — 复用 HtmlRenderer 输出，过 WeasyPrint 转 PDF；`styles.css` 中的 `@media print` 屏蔽 topbar / TOC / 控件，公式以 italic serif Unicode 内联兜底（WeasyPrint 不跑 JS）。
+- `pptx.py` — python-pptx；用 `slide_planner` 分配 slide kind (title/outline/section_divider/bullets/figure/closing_rich)，bullet 文本由 `pptx_summarizer` (LLM) 生成；带 LLM cache (`out_dir/llm_cache/`)。v1.13 PPTX 没动。
+
+**设计语言来源**：HTML/DOCX/PDF 的视觉规范由 Claude Design 基于一份文字 spec（[STYLE_SPEC.md](../docs/STYLE_SPEC.md)）+ 参考图发出，[`docs/assets/lazy-paper-demo.html`](../docs/assets/lazy-paper-demo.html) 是契约文件，`html.py` + `styles.css` 都从它移植。Renderer 都是 stateless / 每文档；token 在 `styles.css` `:root`，3 套强调色主题（`orange / teal / indigo`）切换零 Python 改动。
 
 **partial failure 容错** (`runner.py:124-132`)：单个 renderer 失败不阻塞其他，error 落进 `done.yaml.formats[fmt]`，`partial: true` 触发 CLI WARNING。`--retry-failed` 只重跑失败的格式。
 
@@ -863,6 +876,31 @@ LAZY_PAPER_WHOLE_PAPER=1              # 跳过 retriever，直接喂全文 (Stra
 ```
 
 后三者历史实验未默认启用，保留为 fallback option 用于回归测试。
+
+### 10.10 渲染（v1.13）
+
+```bash
+LAZY_PAPER_INLINE_KATEX=1             # 把 KaTeX CSS + JS + 20 woff2 字体作为 data: URI
+                                       # 内联进 preview.html（440 KB → ~1.08 MB），
+                                       # 真正离线单文件可读。默认关，开 = 不再请求 cdn.jsdelivr.net。
+                                       # 首次使用前：
+                                       #   uv run python scripts/fetch_katex.py
+                                       # 把字体拉到 stages/s09_render/templates/vendor/katex/。
+```
+
+### 10.11 OCR 后端（v1.13）
+
+```bash
+MINERU_FORCE_OCR=1                    # 默认 ON（之前硬编码 OFF）。强制 MinerU 走 layout-OCR
+                                       # 而非"文本层优先"——figure-rich 文本 PDF 的矢量图
+                                       # 之前会被跳过，此修复关键。
+MINERU_ENABLE_TABLE=1                 # 默认 ON。
+MINERU_ENABLE_FORMULA=1                # 默认 ON。
+MINERU_KEEP_RAW=0                     # 默认 OFF。设为 1 保留 MinerU zip 解压物 (_mineru_raw/)，
+                                       # 排查某篇论文 figure recall 回归时用。
+MINERU_MODEL_VERSION=                 # 默认空（云端选）。未来 API 模型参数预留 hook；当前
+                                       # 仅接受空值（不发该字段）。
+```
 
 ---
 

@@ -1,9 +1,6 @@
-"""Render a Document to .docx using python-docx.
-
-v2 (2026-06): adopts the same design tokens as the HTML renderer (accent
-orange / serif headings / secondary-gray captions / accent-bordered deep
-observation blocks) so DOCX, HTML, and PDF share one visual language.
-"""
+"""Render a Document to .docx via python-docx, sharing the HTML renderer's
+design tokens (accent orange, serif headings, secondary-gray captions,
+accent-bordered deep-observation block)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,8 +18,7 @@ from stages.s09_render.renderers import RENDERERS
 from stages.s09_render.renderers.base import Renderer
 
 
-# Design tokens — mirror styles.css :root variables so DOCX output reads
-# with the same visual language as preview.html.
+# Hand-synced with the corresponding `:root` variables in styles.css.
 _ACCENT_RGB = (0xD9, 0x77, 0x57)
 _INK_PRIMARY_RGB = (0x1F, 0x1B, 0x16)
 _INK_SECONDARY_RGB = (0x5E, 0x58, 0x51)
@@ -166,11 +162,7 @@ class DocxRenderer(Renderer):
                        italic: bool = False,
                        color: tuple[int, int, int] | None = None,
                        set_ea: bool = True, serif: bool = False) -> None:
-        # serif=True flips Latin script to a serif face (Times) and CJK to
-        # Songti — used for paper-title / chapter heading. Default (serif=False)
-        # also uses Times for Latin so body and headings share a serif
-        # baseline; this matches the HTML where Songti is for headings only
-        # but DOCX historically uses Times throughout, so we keep that.
+        # serif=True swaps the CJK face to Songti for title / heading runs.
         latin = "Times New Roman"
         eastasia = "宋体" if not serif else "Songti SC"
         run.font.name = latin

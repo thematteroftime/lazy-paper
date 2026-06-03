@@ -411,7 +411,7 @@ inside each `<span data-tex>` since it never runs the KaTeX script.
 - `pdf.py` — reuses HtmlRenderer output and runs it through WeasyPrint; the `@media print` block in `styles.css` suppresses topbar / TOC / controls and styles the Unicode math fallback as italic serif inline.
 - `pptx.py` — `python-pptx`; `slide_planner` assigns slide kinds (title / outline / section_divider / bullets / figure / closing_rich); bullets come from `pptx_summarizer` (LLM); responses are cached at `out_dir/llm_cache/`. PPTX is unchanged in v1.13.
 
-**Design system origin.** The visual language was developed by Claude Design from a written spec ([STYLE_SPEC.md](STYLE_SPEC.md)) and a reference image; the HTML demo (`lazy-paper Demo.html` at repo root) is the contract `html.py` + `styles.css` were ported from. Renderers are stateless / per-doc; tokens live in `styles.css` `:root` so the three accent themes (`orange / teal / indigo`) require zero Python changes.
+**Design system origin.** The visual language was developed by Claude Design from a written spec ([STYLE_SPEC.md](STYLE_SPEC.md)) and a reference image; the HTML demo ([`docs/assets/lazy-paper-demo.html`](assets/lazy-paper-demo.html)) is the contract `html.py` + `styles.css` were ported from. Renderers are stateless / per-doc; tokens live in `styles.css` `:root` so the three accent themes (`orange / teal / indigo`) require zero Python changes.
 
 **Partial-failure tolerance** (`runner.py:124-132`): one renderer failing does not block the others. The error lands in `done.yaml.formats[fmt]`; `partial: true` triggers a CLI WARNING. `--retry-failed` reruns only the failed formats.
 

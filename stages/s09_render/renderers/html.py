@@ -1,13 +1,10 @@
-"""Render a Document to a single self-contained HTML file with base64 images.
+"""Render a Document to a self-contained HTML file with base64 images.
 
-v2 (2026-06): renders inline / display math as ``<span class="math-inline"
-data-tex="…">`` so KaTeX picks them up in the browser. A Unicode fallback
-sits inside each span so the WeasyPrint PDF path (no JS) still shows
-something. Bold ``**…**`` is emitted as ``<strong>``. Bare prose is HTML-
-escaped. Citation ``[span:…]`` markers are kept as superscript links and
-the click anchors are wired through a footer ``<section class="sources-footer">``
-that lazy-paper's HtmlRenderer accumulates as a side effect of rendering
-paragraphs (two-pass template render).
+Inline / display math becomes ``<span class="math-inline" data-tex="…">``
+so KaTeX picks it up in the browser; a Unicode fallback inside each span
+keeps WeasyPrint (no JS) readable. Bold ``**…**`` → ``<strong>``;
+``[span:…]`` citation markers → superscript links into the
+``<section class="sources-footer">`` populated by a two-pass template render.
 """
 from __future__ import annotations
 
@@ -34,9 +31,8 @@ _KATEX_DIR = _TEMPLATE_DIR / "vendor" / "katex"
 # Span-marker pattern (mirrors llm.citation._MARKER).
 _SPAN = re.compile(r"\[span:([^:\]]+):(\d+)-(\d+)\]")
 
-# Long-formula heuristic: if any of these LaTeX commands appear (or length > 40),
-# we render as `math-auto` so the in-browser JS will additionally promote the
-# expression to a display block. Pure-inline short tokens use `math-inline`.
+# Long-formula heuristic: math-auto if structurally heavy or longer than 40
+# chars, so the in-browser JS promotes it to a display block.
 _LONG_MATH_RE = re.compile(r"\\(?:frac|dfrac|sum|int|prod|bigg|Big)\b")
 
 
@@ -45,15 +41,11 @@ def _is_long_math(tex: str) -> bool:
 
 
 def _fallback_unicode(tex: str) -> str:
-    """Map raw LaTeX → Unicode (the same path PPTX/DOCX print-time uses)
-    so non-JS viewers (WeasyPrint, raw HTML save) still see *something*
-    inside ``<span data-tex>``. KaTeX replaces this on first render."""
-    # Wrap as inline math so normalize_math doesn't try to strip / mark.
+    """Unicode rendering of *tex* for non-JS viewers; KaTeX overwrites this."""
     return normalize_math(tex, mark_inline=False)
 
 
 # ──────────────────────────── KaTeX asset packaging ────────────────────────────
-
 
 _KATEX_FONT_RE = re.compile(
     r"url\((fonts/(KaTeX_[A-Za-z0-9_-]+\.woff2))\)\s*format\(['\"]?woff2['\"]?\)"
@@ -64,13 +56,9 @@ _KATEX_NON_WOFF2_SRC_RE = re.compile(
 
 
 def _load_inline_katex_assets() -> tuple[str, str] | None:
-    """Return (style_css, script_js) with woff2 fonts base64-inlined into the
-    CSS via ``data:`` URIs, or ``None`` if the vendor directory is missing.
-
-    The CSS shipped by KaTeX references each font in three formats (woff2, woff,
-    ttf). Browsers prefer woff2; the woff and ttf fallbacks would 404 in our
-    single-file output (no http server). We strip those `url(...woff)` /
-    `url(...ttf)` entries so the browser stops trying.
+    """Return (css, js) with woff2 fonts base64-inlined as ``data:`` URIs, or
+    ``None`` when the vendor dir is missing. KaTeX's CSS also references
+    .woff / .ttf fallbacks that would 404 in an offline file — strip them.
     """
     css_path = _KATEX_DIR / "katex.min.css"
     js_path = _KATEX_DIR / "katex.min.js"
@@ -108,16 +96,12 @@ class HtmlRenderer(Renderer):
 
     def __init__(self, *, citation_mode: CitationMode = CitationMode.HYPERLINK, **kwargs):
         env_mode = os.environ.get("LAZY_PAPER_HTML_CITATIONS", "").strip().lower()
-        if citation_mode == CitationMode.KEEP:
-            effective = CitationMode.KEEP
-        elif env_mode == "remove":
-            effective = CitationMode.REMOVE
-        elif env_mode == "keep":
-            effective = CitationMode.KEEP
-        elif env_mode == "hyperlink":
-            effective = CitationMode.HYPERLINK
-        else:
-            effective = citation_mode
+        env_override = {"remove": CitationMode.REMOVE,
+                        "keep": CitationMode.KEEP,
+                        "hyperlink": CitationMode.HYPERLINK}.get(env_mode)
+        # CLI --debug-citations (KEEP) wins over the env override.
+        effective = (CitationMode.KEEP if citation_mode == CitationMode.KEEP
+                     else env_override or citation_mode)
         super().__init__(citation_mode=effective, **kwargs)
         self._cite_registry: dict[tuple[str, int, int], int] = {}
 
@@ -134,25 +118,16 @@ class HtmlRenderer(Renderer):
         env.globals["block_images"] = self._block_images
         env.globals["render_paragraph"] = self._render_paragraph
         styles = (_TEMPLATE_DIR / "styles.css").read_text(encoding="utf-8")
-        # KaTeX: CDN (default) vs inlined assets (LAZY_PAPER_INLINE_KATEX=1).
-        # Inlining bumps the HTML by ~550 KB but makes the single-file output
-        # work offline — see scripts/fetch_katex.py for the vendor refresh.
-        katex_css_inline = ""
-        katex_js_inline = ""
-        use_inline = False
-        if _katex_inline_enabled():
-            bundle = _load_inline_katex_assets()
-            if bundle is not None:
-                katex_css_inline, katex_js_inline = bundle
-                use_inline = True
+        bundle = _load_inline_katex_assets() if _katex_inline_enabled() else None
         ctx = dict(
             doc=doc, styles=styles, sources=[],
-            katex_inline=use_inline,
-            katex_css_inline=Markup(katex_css_inline),
-            katex_js_inline=Markup(katex_js_inline),
+            katex_inline=bundle is not None,
+            katex_css_inline=Markup(bundle[0] if bundle else ""),
+            katex_js_inline=Markup(bundle[1] if bundle else ""),
         )
         template = env.get_template("preview.html.j2")
-        # Two-pass: first call populates _cite_registry, second emits sources.
+        # Two-pass: pass 1 populates _cite_registry as a side effect, pass 2
+        # emits sources.
         template.render(**ctx)
         ctx["sources"] = self._sources_list()
         return template.render(**ctx)
@@ -160,14 +135,9 @@ class HtmlRenderer(Renderer):
     # ────────────────────────── paragraph rendering ──────────────────────────
 
     def _render_paragraph(self, raw_text: str) -> Markup:
-        """Turn raw LLM paragraph text into HTML runs.
-
-        Pipeline:
-          1. Split on ``**bold**`` and inline/display LaTeX (iter_html_runs).
-          2. For each plain segment, additionally process ``[span:..]`` citation
-             markers per ``self.citation_mode``.
-          3. Math segments become ``<span class="math-inline|math-auto"
-             data-tex="…">unicode-fallback</span>``; bold becomes ``<strong>``.
+        """Split raw LLM text on ``**bold**`` / inline / display LaTeX, emit
+        ``<strong>`` / ``<span data-tex>`` / ``<figure class="formula-block">``;
+        process citation markers inside plain segments.
         """
         out: list[str] = []
         for kind, payload in iter_html_runs(raw_text or ""):

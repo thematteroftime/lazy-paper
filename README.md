@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.5-blue"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.13--render-blue"></a>
   <a href="#tests"><img alt="Tests" src="https://img.shields.io/badge/tests-321%20passing-22c55e"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
@@ -250,16 +250,16 @@ The structured claims flow into a Jinja HTML template; WeasyPrint converts to PD
   <em>Real pages from <code>runs/meng2024_v111_demo/s09_render/preview.pdf</code> — left: title + composed introduction; right: extracted Fig. 1 inline with its caption and the s07 deep-observation critique that survived the figure_ids hard constraint.</em>
 </p>
 
-### Template-paper domain fit — important
+### Template selection is the single most load-bearing choice — read this first
 
-**The template's section headings must match the paper's domain.** Lazy-paper inserts each section heading verbatim into the s08 compose prompt; if you ask the LLM to write "Dielectric Properties of Relaxor AFE" for an unCLIP image-generation paper, the model either writes an out-of-scope disclaimer (when Phase 4 prompt tailoring is OFF) or — worse — packs unCLIP content under the wrong heading and looks unfaithful to a reader.
+**The template's section headings are inserted verbatim into the s08 compose prompt.** If you hand "Dielectric Properties of Relaxor AFE" to an unCLIP image-generation paper, one of two things happens: the LLM writes an out-of-scope disclaimer (Phase-4 prompt-tailor OFF) or — worse — it stuffs unCLIP content under the wrong section and the output reads unfaithful. Same paper, same model, same prompt — a wrong template can swing RAGAS faithfulness from 0.81 down to 0.10.
 
-We ship two starter templates at the repo root; pick the one closer to your paper's domain or copy and edit:
-
-| File | Best for |
+| Template (`templates/<file>`) | Best for |
 |---|---|
-| `Table of Contents-Relaxor AFE-ZGY-HW.docx` | Materials science (ferroelectrics, energy storage, related families) |
 | `Table of Contents-CV-IMRaD.docx` | Generic CV / ML / IMRaD-style papers (Introduction → Method → Experiments → Results → Discussion) |
+| `Table of Contents-Relaxor AFE-ZGY-HW.docx` | Materials science (ferroelectrics, energy storage, related families) |
+| `Table of Contents-ATEC-B2w-Reward-ZGY.docx` | Reinforcement-learning reward design for legged / wheeled-legged robots (ATEC2026 B2w energy-regularization variant) |
+| `Table of Contents-ATEC-B2w-MUJICA-v2-ZGY.docx` | Multi-skill unified RL frameworks (energy + skill selector + DC-motor constraints, ATEC2026 B2w + Piper) |
 
 Empirical evidence (RAGAS faithfulness on the unCLIP paper, 10 golden Q/A):
 
@@ -269,7 +269,7 @@ Empirical evidence (RAGAS faithfulness on the unCLIP paper, 10 golden Q/A):
 | Relaxor AFE (wrong domain) | ON | **0.100** (regression) |
 | CV-IMRaD (correct domain) | ON | **0.810** |
 
-Same paper, same Phase 4 augment, same questions — only the template changed. Treat template selection as a first-class input, not a default.
+Treat template selection as a first-class input, not a default. The four shipped examples cover most use cases; for a new domain copy the closest match and edit the section headings. There is no "good enough generic template" — the wrong one quietly degrades every downstream stage.
 
 ## Quickstart
 
@@ -282,16 +282,29 @@ uv pip install -e ".[dev]"
 brew install pango gdk-pixbuf libffi cairo   # macOS only (WeasyPrint)
 
 # Configure
-cp .env.example .env   # then fill MINERU_TOKEN + LLM_*_API_KEY
+cp .env.example .env   # then fill the tokens — see "Get the API keys" below
 
-# Run
+# Run — pick the template that matches your paper's domain (read above first)
 uv run python -m cli run \
   --pdf "papers/your-paper.pdf" \
-  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \   # or Table of Contents-CV-IMRaD.docx for ML/CV papers
+  --template "templates/Table of Contents-CV-IMRaD.docx" \
   --paper-id mypaper --lang zh --formats docx,pdf,html,pptx
 ```
 
-Output lands at `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`.
+Output lands at `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`. The four shipped templates live in [`templates/`](templates/).
+
+### Get the API keys
+
+lazy-paper composes its outputs from three cloud roles. Sign up once, paste the key into `.env`, you're done.
+
+| Role | Recommended provider | Sign-up link | `.env` key |
+|---|---|---|---|
+| **OCR** (default) | MinerU cloud | <https://mineru.net> → account → API tokens | `MINERU_TOKEN` |
+| **OCR** (alt) | PaddleOCR-VL via Baidu AI Studio | <https://aistudio.baidu.com/paddleocr> | `PADDLEOCR_TOKEN` |
+| **Text LLM** (recommended) | DeepSeek-Reasoner | <https://platform.deepseek.com> → API keys | `LLM_TEXT_API_KEY` |
+| **Vision LLM** (recommended) | Qwen-VL on Aliyun DashScope / Bailian | <https://bailian.console.aliyun.com/> → API keys | `LLM_VISION_API_KEY` |
+
+All four are OpenAI-compatible — to use a different provider (OpenAI, Anthropic-compatible gateway, self-hosted vLLM, Ollama), point `LLM_*_BASE_URL` + `LLM_*_MODEL` at it. Detailed walkthrough in [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
 
 > **Windows users**: prefer the Docker path (`docker compose build && docker compose run --rm lazy-paper run …`) — WeasyPrint needs the GTK runtime which Docker bundles.
 
@@ -324,6 +337,16 @@ Output lands at `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`.
   <img src="docs/assets/showcase-divider.png" alt="Section divider with KEY POINTS card" width="640">
   <br>
   <em>A section-divider slide. Density-adaptive font + autofit safety net keeps long bullets readable.</em>
+</p>
+
+### v1.13 sample output
+
+<p align="center">
+  <img src="docs/assets/v113-pdf-p01.png" alt="Title page: serif paper title, eyebrow tag, chapter 01 with accent number and left border" width="300">
+  <img src="docs/assets/v113-pdf-p03.png" alt="Figure block with multi-panel layout, accent figcaption, and accent-bordered Deep Observation aside" width="300">
+  <img src="docs/assets/v113-pdf-p05.png" alt="Energy regularization chapter: inline math italic, accent chapter number, bold axioms" width="300">
+  <br>
+  <em>Real pages from <code>runs/atec-b2w-energy-rl/s09_render/preview.pdf</code> — left: title + chapter 01 with accent vertical bar; middle: Fig. 2 multi-panel + accent-bordered 深度观察 aside; right: energy-regularization chapter with inline italic math (KaTeX-fallback Unicode in PDF).</em>
 </p>
 
 ## Tech stack
@@ -409,7 +432,7 @@ uv run pytest -m live     # live LLM smoke tests (real keys)
   author  = {thematteroftime},
   title   = {lazy-paper: PDF research papers to multi-format deep analysis},
   url     = {https://github.com/thematteroftime/lazy-paper},
-  version = {1.11.1},
+  version = {1.13-render},
   year    = {2026}
 }
 ```
@@ -426,8 +449,10 @@ uv run pytest -m live     # live LLM smoke tests (real keys)
 | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | End user — setup, quickstart, iteration, troubleshooting |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Maintainer — per-stage contracts |
 | [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) | AI coding agent — workflow + anti-patterns |
+| [`docs/STYLE_SPEC.md`](docs/STYLE_SPEC.md) | Design language for HTML / PDF / DOCX output (v1.13) |
 | [`docs/TEST_FRAMEWORK.md`](docs/TEST_FRAMEWORK.md) | Quality test harness + audit pitfalls |
 | [`docs/INTERNAL/HANDOFF.md`](docs/INTERNAL/HANDOFF.md) | Next maintainer — verified state + change-locations |
+| [`templates/`](templates/) | Four ready-to-use outline templates (CV-IMRaD, Relaxor AFE, ATEC-B2w) |
 | [`docs_zh/`](docs_zh/) | Simplified-Chinese mirror of USER_GUIDE / ARCHITECTURE / AGENT_GUIDE / INTERNAL/HANDOFF |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-by-release diff |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | External contributor norms |

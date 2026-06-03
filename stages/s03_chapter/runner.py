@@ -6,27 +6,21 @@ from pathlib import Path
 
 from stages._common import dump_yaml, mark_done, slugify
 
-# ─── Bilingual section anchors (add a new key to extend a language) ───────
-# Each entry: lowercased English form OR Chinese literal. Matched against
-# the line's title; if any matches the chapter starts. Chinese papers
-# previously collapsed to a single chapter because only English anchors
-# were here.
+# Bilingual chapter anchors — extend with lowercase English / Chinese literals
+# to support a new language or paper genre.
 SECTION_ANCHORS = {
-    # English IMRaD
     "abstract", "introduction", "experimental", "experiments",
     "materials and methods", "methods", "methodology",
     "results", "results and discussion", "discussion",
     "conclusion", "conclusions", "summary",
     "acknowledgements", "acknowledgments",
     "references", "supplementary", "appendix",
-    # Common conference-paper variants (IEEE / robotics / RL):
     "related work", "related works", "background",
     "problem formulation", "problem statement",
     "approach", "method", "system overview", "system design",
     "evaluation", "evaluations", "ablation", "ablations",
     "discussion and conclusion", "discussions and conclusions",
     "limitations", "future work",
-    # Chinese equivalents
     "摘要", "引言", "前言", "绪论", "实验", "实验方法",
     "材料与方法", "材料和方法", "方法", "结果", "结果与讨论",
     "结果和讨论", "讨论", "结论", "总结", "致谢", "参考文献",
@@ -34,10 +28,7 @@ SECTION_ANCHORS = {
     "方法概述", "系统设计", "评估", "消融",
 }
 
-# Heading regex: number prefix optional; title starts with [A-Z一-鿿]
-# (latin capital OR CJK), continues with mixed alphanumeric + CJK + spaces.
-# Number prefix accepts either arabic ("1.", "2.3.") or Roman ("I.", "II.")
-# — IEEE/conference papers often use Roman numerals for top-level sections.
+# Heading number prefix accepts arabic ("1.", "2.3.") or Roman ("I.", "II.").
 _ANCHOR_LINE_RE = re.compile(
     r"^\s*(#{0,4}\s*)?(\d+(?:\.\d+){0,2}\.?\s+|[IVX]{1,5}\.\s+)?"
     r"(?P<title>[A-Z一-鿿][A-Za-z一-鿿 &/-]{1,60})\s*$"

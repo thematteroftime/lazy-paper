@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -38,16 +39,8 @@ def _env_bool(name: str, default: bool) -> bool:
 
 def _post_batch(token: str, pdf_name: str, data_id: str,
                 language: str = "en") -> tuple[str, str]:
-    # MinerU knobs (defaults tuned to maximize figure recall for figure-rich
-    # papers; the prior baseline `is_ocr=False, enable_table=default` lost all
-    # vector-graphics figures on text-PDFs like arXiv 2403.20001).
-    # MinerU cloud API knobs (officially documented at mineru.net/api/v4):
-    #   is_ocr=True       — force OCR layout analysis (catches more vector
-    #                       graphics figures on text-PDFs).
-    #   enable_table=True — table region detection.
-    #   enable_formula=True — equation extraction (writes $...$ inline).
-    # MINERU_MODEL_VERSION exists as an opt-in escape hatch for future API
-    # versions; when empty the cloud's default model picks the field.
+    # Defaults force layout-OCR so figure-rich text-PDFs return their
+    # vector-graphics figures (the cloud's text-layer fast path skipped them).
     is_ocr = _env_bool("MINERU_FORCE_OCR", True)
     enable_table = _env_bool("MINERU_ENABLE_TABLE", True)
     enable_formula = _env_bool("MINERU_ENABLE_FORMULA", True)
@@ -131,25 +124,17 @@ def _download_and_extract(zip_url: str, dest: Path) -> Path:
     return dest
 
 
-_FIG_NUM_RE = __import__("re").compile(r"^Fig(?:ure)?\.?\s*(\d+)", __import__("re").IGNORECASE)
-# Sub-panel labels emitted by MinerU on charts: "(a) ...", "(b ...", "(c)...".
-# These should NOT be promoted to standalone "Figure N." headers — they pair
-# with the next real "Fig. N:" caption on the page via s04's nearest-caption
-# logic, which is what gives correct sub-panel merging downstream.
-_SUBPANEL_RE = __import__("re").compile(r"^\s*\(?[a-zA-Z]\)?\.?\s+\S", __import__("re").IGNORECASE)
+_FIG_NUM_RE = re.compile(r"^Fig(?:ure)?\.?\s*(\d+)", re.IGNORECASE)
+# Sub-panel labels like "(a) Straight Line Walking" must not be promoted to
+# standalone "Figure N." headers — s04's nearest-caption pairing groups them
+# under the real caption that sits a few lines below.
+_SUBPANEL_RE = re.compile(r"^\s*\(?[a-zA-Z]\)?\.?\s+\S", re.IGNORECASE)
 
 
 def _ensure_figure_number(caption_text: str, expected_n: int) -> str:
-    """If `caption_text` already starts with 'Figure <digit>', return it untouched.
-    Otherwise inject `expected_n` so downstream FIG_CAP_RE matches.
-
-    MinerU's OCR occasionally drops the digit (e.g., "Figure ." for Fig. 2). This
-    keeps the s04 pairing robust without changing s04's regex.
-
-    Exception: sub-panel labels (e.g. "(a) Straight Line Walking") are returned
-    as-is — they're part of a larger figure and must NOT be promoted to a
-    standalone "Figure N." header (which would steal the sub-panel from the
-    real caption a few lines below in the page).
+    """Inject ``Figure <expected_n>`` if the caption lacks a leading figure
+    number, so downstream `FIG_CAP_RE` matches. Sub-panel labels and properly
+    numbered captions pass through untouched.
     """
     if not caption_text:
         return f"Figure {expected_n}. (caption missing)"
@@ -157,10 +142,8 @@ def _ensure_figure_number(caption_text: str, expected_n: int) -> str:
         return caption_text
     if _SUBPANEL_RE.match(caption_text):
         return caption_text
-    # Strip leading "Figure" + punctuation if present
-    import re as _re
-    stripped = _re.sub(r"^Fig(?:ure)?\.?\s*[.\$]*\s*", "", caption_text, count=1,
-                       flags=_re.IGNORECASE)
+    stripped = re.sub(r"^Fig(?:ure)?\.?\s*[.\$]*\s*", "", caption_text, count=1,
+                      flags=re.IGNORECASE)
     return f"Figure {expected_n}. {stripped}"
 
 
@@ -209,11 +192,8 @@ def _content_list_to_docs(content_list: list[dict], staged_imgs: Path,
                 else:
                     page_md_lines.append(txt)
             elif t in ("image", "chart"):
-                # MinerU classifies scientific plots as `chart` (with
-                # `chart_caption`) and photos / vector diagrams as `image`
-                # (with `image_caption`). For our purposes both are figures —
-                # the lazy-paper pipeline downstream just sees `<img>` tags +
-                # nearby caption lines.
+                # MinerU types scientific plots as `chart` and photos /
+                # diagrams as `image`; both are figures for our purposes.
                 src_path = item.get("img_path") or ""
                 if not src_path:
                     continue
@@ -222,18 +202,14 @@ def _content_list_to_docs(content_list: list[dict], staged_imgs: Path,
                     new_name = f"img_mineru_{img_counter:03d}.jpg"
                     src_abs = staged_imgs / Path(src_path).name
                     if not src_abs.exists():
-                        # try with full src path relative to ZIP root
                         src_abs = staged_imgs.parent / src_path
                     if src_abs.exists():
                         shutil.copy2(src_abs, dest_imgs / new_name)
                         img_map[src_path] = f"imgs/{new_name}"
                     else:
-                        # Image file not found on disk — record as missing so we
-                        # don't re-attempt the copy, but skip emitting the tag.
-                        img_map[src_path] = ""
+                        img_map[src_path] = ""  # mark missing, skip tag emit
                 rel = img_map[src_path]
                 if not rel:
-                    # source file was missing; skip this item entirely
                     continue
                 page_md_lines.append(f'<img src="{rel}">')
                 caps = item.get("image_caption") or item.get("chart_caption") or []

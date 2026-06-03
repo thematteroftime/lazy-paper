@@ -70,11 +70,8 @@ def _collapse_unicode_subscripts(text: str) -> str:
     return _UNICODE_SUB_RUN_RE.sub(repl, text)
 
 
-# Sentinel markers used to preserve "this was inline math" hints across the
-# Unicode normalization pass. Control chars are safe — no LLM output we've
-# seen contains them, and renderers can detect/strip them deterministically.
-# Renderers that support styled runs (DOCX, HTML, PDF) wrap content between
-# these as italic. PPTX strips them via _strip_math_markers().
+# Sentinels wrapping inline-math segments through the Unicode pass; DOCX /
+# HTML / PDF render them in italic, PPTX drops the markers.
 MATH_OPEN = "\x01"
 MATH_CLOSE = "\x02"
 
@@ -94,63 +91,45 @@ def normalize_math(text: str, *, mark_inline: bool = False) -> str:
     """
     if not text:
         return text
-    # ── pre-process LaTeX commands so the Unicode passes below see clean text ──
-    # Step 1: text-mode commands (\text{en} → en) — unwrap braces so the
-    # subscript pass doesn't translate `\text` letters into garbled subscripts.
+    # Strip / convert LaTeX commands before the Unicode pass so the
+    # sub/superscript stage doesn't translate command letters into garbled
+    # glyphs. Order matters: accents unwrap `\dot{q}` braces before \frac
+    # walks brace pairs.
     text = re.sub(r"\\(?:text|mathrm|mathbf|mathit|mathsf|mathcal|operatorname)"
                   r"\{([^{}]+)\}", r"\1", text)
-    # Step 2: size / spacing macros — purely typographical, drop them.
     text = re.sub(r"\\(?:Big|big|bigg|Bigg|left|right)(?![a-zA-Z])", "", text)
     text = re.sub(r"\\[,;:!\\ ]", " ", text)
-    # Step 3: accents BEFORE \frac so inner braces (`\dot{q}`) are unwrapped
-    # before the \frac{a}{b} matcher walks the brace pairs.
     for cmd, combining in (("dot", "̇"), ("hat", "̂"),
                            ("bar", "̄"), ("tilde", "̃"),
                            ("vec", "⃗")):
         text = re.sub(rf"\\{cmd}\{{([^{{}}])\}}", rf"\1{combining}", text)
-    # Step 4: math function names — drop the leading backslash so they render
-    # as plain ASCII (already English words).
     text = re.sub(r"\\(exp|sin|cos|tan|log|ln|max|min|arg|sup|inf"
                   r"|lim|det|gcd|sinh|cosh|tanh)(?![a-zA-Z])", r"\1", text)
-    # Step 5: Greek + sub/super first so ``\frac{σ_{en,x}|v|}{...}`` has its
-    # inner subscript braces translated away, leaving the \frac pass below
-    # with clean brace pairs.
     for latex_pat, unicode_char in _GREEK_LATEX.items():
         text = re.sub(latex_pat + r"(?![a-zA-Z])", unicode_char, text)
-    # Sub/superscript translation. When the {…} content has even one
-    # character that doesn't have a Unicode subscript/superscript glyph,
-    # fall back to ASCII ``_content`` / ``^content`` — otherwise a partial
-    # conversion fragments later when ``_collapse_unicode_subscripts`` runs
-    # over the mixed-glyph run (e.g. ``_{motion}`` → ``mₒtᵢₒn`` → ``Rm_ot_ion``).
+    # Sub/superscript translation. If any character in `_{…}` / `^{…}` lacks
+    # a Unicode glyph, fall back to ASCII `_content` so the run renders as a
+    # coherent token instead of fragmenting (e.g. `_{motion}` would otherwise
+    # become `mₒtᵢₒn` → `Rm_ot_ion` after the collapse pass below).
     def _braced_super(m):
         s = m.group(1)
         translated = s.translate(_SUPER_MAP)
-        return translated if translated != s and all(c in "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾" or c == "" for c in translated) else f"^{s}"
+        return translated if translated != s and all(c in "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾" for c in translated) else f"^{s}"
     def _braced_sub(m):
         s = m.group(1)
         translated = s.translate(_SUB_MAP)
-        # If translation is incomplete (some chars passed through unchanged),
-        # use the ASCII form so renderers show a single coherent token.
-        if any(c.isalpha() and c.isascii() for c in translated):
-            return f"_{s}"
-        return translated
-    def _single_sub(m):
-        ch = m.group(1)
-        tr = ch.translate(_SUB_MAP)
-        # Only collapse `_x` → subscript when the char actually has a subscript
-        # glyph; otherwise keep the underscore to preserve `R_motion` style.
-        return tr if tr != ch else f"_{ch}"
-    def _single_super(m):
-        ch = m.group(1)
-        tr = ch.translate(_SUPER_MAP)
-        return tr if tr != ch else f"^{ch}"
+        return f"_{s}" if any(c.isalpha() and c.isascii() for c in translated) else translated
+    def _single(map_, prefix):
+        def repl(m):
+            ch = m.group(1)
+            tr = ch.translate(map_)
+            return tr if tr != ch else f"{prefix}{ch}"
+        return repl
     text = re.sub(r"\^\{([^}]+)\}", _braced_super, text)
-    text = re.sub(r"\^([0-9a-zA-Z+\-])", _single_super, text)
+    text = re.sub(r"\^([0-9a-zA-Z+\-])", _single(_SUPER_MAP, "^"), text)
     text = re.sub(r"_\{([^}]+)\}", _braced_sub, text)
-    text = re.sub(r"_([0-9a-zA-Z+\-])", _single_sub, text)
-    # Step 6: \frac{a}{b} → (a)/(b). Now that inner subscripts are unwrapped,
-    # the brace pairs around the numerator and denominator are clean. Repeat
-    # until fixed-point so adjacent fractions all convert.
+    text = re.sub(r"_([0-9a-zA-Z+\-])", _single(_SUB_MAP, "_"), text)
+    # \frac{a}{b} → (a)/(b). Subscripts are gone, so brace pairs are clean.
     while True:
         new = re.sub(r"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}",
                      r"(\1)/(\2)", text)
@@ -159,9 +138,8 @@ def normalize_math(text: str, *, mark_inline: bool = False) -> str:
         text = new
 
     if mark_inline:
-        # Wrap inline / display math with sentinel chars so styled-run
-        # renderers can italicize them. We process the longest delimiters
-        # first to avoid partial matches.
+        # Wrap math with sentinels for styled-run renderers (\[..\] first so
+        # the \(..\) regex doesn't partial-match).
         text = re.sub(
             r"\\\[\s*(.+?)\s*\\\]",
             lambda m: f"{MATH_OPEN}{m.group(1)}{MATH_CLOSE}",
@@ -195,25 +173,8 @@ def normalize_math(text: str, *, mark_inline: bool = False) -> str:
     return text
 
 
-def strip_math_markers(text: str) -> str:
-    """Remove the MATH_OPEN/MATH_CLOSE sentinels (for renderers that don't
-    support italic runs, or for plain-text logging)."""
-    if not text:
-        return text
-    return text.replace(MATH_OPEN, "").replace(MATH_CLOSE, "")
-
-
-# Run-aware parsing helper used by DOCX/HTML renderers. Yields
-# ``(text, style)`` tuples where style ∈ {"plain", "bold", "italic"}.
-#
-# Supported markers:
-#   ``**bold**``   — markdown bold from LLM output (was rendered literally
-#                    before this helper — readers saw ``**foo**``).
-#   ``\x01math\x02`` — inline / display math wrapped by normalize_math.
-#
-# Nested markers are not supported: the first delimiter wins, the inner
-# delimiter is left as plain text. The LLM outputs we see in practice keep
-# bold and math segments disjoint.
+# Recognises ``**bold**`` and ``\x01math\x02`` segments for DOCX/HTML run
+# splitting. Nested markers fall through — the LLM keeps them disjoint.
 _RUN_RE = re.compile(
     r"(?P<bold>\*\*(.+?)\*\*)"
     r"|(?P<math>" + MATH_OPEN + r"(.+?)" + MATH_CLOSE + r")",

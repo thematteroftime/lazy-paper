@@ -30,6 +30,8 @@ mypaper/
 *.pdf
 *.docx
 .worktrees/
+# Public outline-template examples ARE committed; they're a load-bearing input
+!templates/*.docx
 
 .claude/
 .coverage
