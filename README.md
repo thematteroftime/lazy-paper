@@ -14,14 +14,22 @@
 <p align="center"><strong><a href="README.md">English</a> · <a href="README.zh.md">简体中文</a></strong></p>
 
 <p align="center">
+  <strong>Latest · <a href="CHANGELOG.md">v1.13-render</a></strong> (2026-06-03)
+  <br>
+  <sub>KaTeX HTML · accent-palette DOCX · MinerU chart-type fix · roman-numeral chapter detection</sub>
+</p>
+
+<p align="center">
   <img src="docs/assets/showcase-outline.png" alt="LLM-grouped outline" width="640">
 </p>
 
 ---
 
-## What it does
+## What is lazy-paper?
 
-Feed it a scientific PDF + a `.docx` section-outline template. Get back **DOCX · PDF · HTML · PPTX** — bilingual deep-analysis documents with figures, tables, and quantitative anchors preserved. One command, nine stages, every step resumable.
+**lazy-paper turns one scientific PDF into a critical reading of it — DOCX · PDF · HTML · PPTX, bilingual, figures and tables embedded, every claim grounded to source — in one command.** No prompt engineering, no manual reformatting, no copy-paste between tools.
+
+It's nine deterministic + LLM stages: OCR → cleaning → chapterization → figure / table indexing → context + KG → vision-LLM figure analysis → grounded section composition → four-format rendering. Each stage is independently resumable; every LLM call writes its prompt and response to disk so the whole pipeline is auditable.
 
 ```mermaid
 flowchart LR
@@ -37,7 +45,16 @@ flowchart LR
     S09 --> OUT[preview.docx · pdf · html · pptx]
 ```
 
-Each stage writes `done.yaml` and is independently re-runnable; every LLM call persists its prompt and response. Stage-by-stage walkthrough lives in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+### Why use it
+
+- **Grounded, not hallucinated.** Every claim cites a span in the source; an LLM verifier rejects unsupported sentences before they ship.
+- **Quantitative anchors preserved.** Numbers, units, formulas, figure references survive OCR → composition → rendering intact.
+- **Four formats, one source-of-truth.** DOCX, PDF (WeasyPrint), HTML (with KaTeX), PPTX (academic-defense styled) — all share the same Document model.
+- **Bilingual native.** Chinese / English switched at the CLI; templates, figure analyses, citation markers all localise.
+- **Resumable.** Each of nine stages drops a `done.yaml`; tweak a single LLM prompt and only that stage re-runs.
+- **Agent-friendly.** Stages are pure transforms with explicit inputs / outputs; the [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) lays out the contract for Claude / Copilot / Cursor / etc.
+
+Full stage-by-stage walkthrough lives in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## See what comes out
 
@@ -55,16 +72,6 @@ Each stage writes `done.yaml` and is independently re-runnable; every LLM call p
   <img src="docs/assets/showcase-divider.png" alt="PPTX section-divider slide with KEY POINTS card" width="540">
 </p>
 
-## What's new in v1.13-render
-
-The most recent release rebuilds the rendering layer end-to-end:
-
-- **HTML** — KaTeX math, sticky topbar, right-rail TOC, three accent themes, copy-on-click LaTeX. `LAZY_PAPER_INLINE_KATEX=1` produces a fully offline single-file (~1.08 MB).
-- **DOCX** — accent palette + serif headings + accent-bordered deep-observation aside; same visual language as HTML/PDF.
-- **MinerU OCR** — handles `chart`-typed scientific plots (was silently skipping them); restored 10 / 12 figures on figure-rich text-PDFs.
-- **Chapter detection** — recognises Roman-numeral IEEE / conference section headings and modern RL / robotics anchors (`related work`, `evaluation`, `ablation`, …).
-
-Full diff in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Quickstart
 

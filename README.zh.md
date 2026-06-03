@@ -14,14 +14,22 @@
 <p align="center"><strong><a href="README.md">English</a> · <a href="README.zh.md">简体中文</a></strong></p>
 
 <p align="center">
+  <strong>最新版本 · <a href="CHANGELOG.md">v1.13-render</a></strong>（2026-06-03）
+  <br>
+  <sub>KaTeX HTML · accent 调色 DOCX · MinerU chart 类型修复 · 罗马数字章节探测</sub>
+</p>
+
+<p align="center">
   <img src="docs/assets/showcase-outline.png" alt="LLM 分组大纲" width="640">
 </p>
 
 ---
 
-## 它做什么
+## lazy-paper 是什么
 
-喂进一份科研 PDF + 一份章节大纲 `.docx`，吐出 **DOCX · PDF · HTML · PPTX** 四格式的双语深度解读——图、表、量化锚点全部保留。一条命令、9 阶段、每步可断点续跑。
+**一条命令，把一篇科研 PDF 变成对它的批判式深读 —— DOCX · PDF · HTML · PPTX 四种格式、中英双语、图表内嵌、每一句结论都锚回原文。** 不需要写 prompt、不需要手动排版、不需要跨工具来回复制粘贴。
+
+它由 9 个确定性 + LLM 阶段组成：OCR → 清洗 → 章节划分 → 图表索引 → 上下文 + KG → 视觉 LLM 图分析 → 有据可查的章节撰写 → 4 格式渲染。每个阶段独立可重跑；每次 LLM 调用的 prompt 和 response 都落盘，整个流程可审计。
 
 ```mermaid
 flowchart LR
@@ -37,7 +45,16 @@ flowchart LR
     S09 --> OUT[preview.docx · pdf · html · pptx]
 ```
 
-每个 stage 都写 `done.yaml` 独立可重跑，每次 LLM 调用都把 prompt + response 落盘。逐阶段详解在 [`docs_zh/ARCHITECTURE.md`](docs_zh/ARCHITECTURE.md)。
+### 为什么用它
+
+- **有据可查、不是胡说。** 每条 claim 都引用原文 span；LLM verifier 在产出前就否决未支持的句子。
+- **量化锚点不丢。** 数字、单位、公式、图号在 OCR → 撰写 → 渲染全链路里保留原样。
+- **四格式同源。** DOCX、PDF（WeasyPrint）、HTML（KaTeX）、PPTX（学术答辩风）共用一份 Document model。
+- **双语原生。** CLI 一个 `--lang` 切换；模板、图分析、引用标记都本地化。
+- **可断点续跑。** 9 个 stage 各落 `done.yaml`，改一句 prompt 只重跑那一个 stage。
+- **Agent 友好。** Stage 是纯转换、输入输出显式；[`docs_zh/AGENT_GUIDE.md`](docs_zh/AGENT_GUIDE.md) 为 Claude / Copilot / Cursor 等给出协作契约。
+
+完整逐阶段详解：[`docs_zh/ARCHITECTURE.md`](docs_zh/ARCHITECTURE.md)。
 
 ## 输出长什么样
 
@@ -55,16 +72,6 @@ flowchart LR
   <img src="docs/assets/showcase-divider.png" alt="PPTX 节分隔片 + KEY POINTS 卡" width="540">
 </p>
 
-## v1.13-render 都改了什么
-
-最新版本端到端重做了渲染层：
-
-- **HTML** —— KaTeX 公式渲染、sticky topbar、右侧 TOC、3 套强调色主题、点击复制 TeX。`LAZY_PAPER_INLINE_KATEX=1` 即可产出真正的单文件离线 HTML（~1.08 MB）。
-- **DOCX** —— accent 色板 + serif 标题 + accent 边深度观察块，与 HTML / PDF 同一套视觉语言。
-- **MinerU OCR** —— 处理 `chart` 类型的科研图（之前会静默漏掉），figure-rich 文本 PDF 上从 2/12 图涨到 12/12。
-- **章节探测** —— 识别罗马数字（IEEE / 会议论文）与机器人 / RL 常见锚词（`related work`、`evaluation`、`ablation`…）。
-
-完整变更见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 快速开始
 
