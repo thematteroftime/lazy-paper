@@ -121,9 +121,9 @@ paper2md/
 │   └── s09_render/              # 4 个 renderer (docx / pdf / html / pptx)
 ├── tests/                       # 顶层 pytest (CLI / retriever / KG / citation / harness)
 ├── docs/                        # 用户/维护者文档
-├── scripts/                     # batch runner、variant-matrix、evaluate harness
-├── runs/                        # 每次 run 的中间产物 + 最终输出 (gitignored)
-└── input/                       # 示例 PDF (gitignored)
+├── scripts/                     # audit_pptx / evaluate / fetch_katex / pdffigures2_sidecar
+├── templates/                   # outline-template `.docx` 示例
+└── runs/                        # 每次 run 的中间产物 + 最终输出 (gitignored)
 ```
 
 `tests/` 在两个位置：每个 stage 自带 `tests/` 子目录 (locality)，顶层 `tests/` 跑 CLI、共享 lib、跨 stage 集成。详见 §9。
