@@ -70,7 +70,10 @@ class DocumentBuilder:
             if self._looks_like_md_table(text):
                 yield self._parse_md_table(text)
             else:
-                yield Paragraph(text=normalize_math(text))
+                yield Paragraph(
+                    text=normalize_math(text, mark_inline=True),
+                    raw_text=text,
+                )
 
     @staticmethod
     def _looks_like_md_table(text: str) -> bool:

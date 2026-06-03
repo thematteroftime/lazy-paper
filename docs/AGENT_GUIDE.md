@@ -69,8 +69,9 @@ uv run python -m cli run --pdf <pdf> --template <docx> --paper-id <pid> \
 
 ### Visual verification
 
-The PPT renderer's bugs are usually visual (font too small, overlap, wrong language). Always render to PNG for inspection:
+Renderer bugs are usually visual (font too small, overlap, wrong language, KaTeX failing to load). Always render to PNG for inspection.
 
+**PPTX:**
 ```bash
 /Applications/LibreOffice.app/Contents/MacOS/soffice \
   --headless --convert-to pdf --outdir /tmp/preview \
@@ -85,7 +86,17 @@ for i in [0, 1, 4, 7]:
 "
 ```
 
-Then read the PNGs via the Read tool to inspect.
+**HTML (v1.13)** — KaTeX renders client-side, so the file's static content
+is only the Unicode fallback. To verify the *rendered* result:
+- Open `preview.html` in a real browser and check that `<span data-tex>` /
+  `<figure class="formula-block">` show KaTeX-typeset math, not the
+  fallback text.
+- If `LAZY_PAPER_INLINE_KATEX=1` was set, the file should weigh ~1 MB and
+  have zero `cdn.jsdelivr.net` references (grep to confirm).
+- For PDF (same HTML through WeasyPrint), open it and confirm the math
+  fallback shows in italic serif — KaTeX did **not** run.
+
+Then read the PNGs / HTML / PDF via the Read tool to inspect.
 
 ### Talking to the user
 

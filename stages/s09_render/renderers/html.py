@@ -1,6 +1,14 @@
-"""Render a Document to a single self-contained HTML file with base64 images."""
+"""Render a Document to a self-contained HTML file with base64 images.
+
+Inline / display math becomes ``<span class="math-inline" data-tex="…">``
+so KaTeX picks it up in the browser; a Unicode fallback inside each span
+keeps WeasyPrint (no JS) readable. Bold ``**…**`` → ``<strong>``;
+``[span:…]`` citation markers → superscript links into the
+``<section class="sources-footer">`` populated by a two-pass template render.
+"""
 from __future__ import annotations
 
+import base64
 import os
 import re
 from pathlib import Path
@@ -11,52 +19,90 @@ from markupsafe import Markup, escape
 
 from llm.citation import CitationMode
 from stages._common.images import image_to_data_url
+from stages.s09_render._math import iter_html_runs, normalize_math
 from stages.s09_render.model import Document, FigureBlock
 from stages.s09_render.renderers import RENDERERS
 from stages.s09_render.renderers.base import Renderer
 
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
+_KATEX_DIR = _TEMPLATE_DIR / "vendor" / "katex"
 
 # Span-marker pattern (mirrors llm.citation._MARKER).
 _SPAN = re.compile(r"\[span:([^:\]]+):(\d+)-(\d+)\]")
 
+# Long-formula heuristic: math-auto if structurally heavy or longer than 40
+# chars, so the in-browser JS promotes it to a display block.
+_LONG_MATH_RE = re.compile(r"\\(?:frac|dfrac|sum|int|prod|bigg|Big)\b")
+
+
+def _is_long_math(tex: str) -> bool:
+    return bool(_LONG_MATH_RE.search(tex)) or len(tex) > 40
+
+
+def _fallback_unicode(tex: str) -> str:
+    """Unicode rendering of *tex* for non-JS viewers; KaTeX overwrites this."""
+    return normalize_math(tex, mark_inline=False)
+
+
+# ──────────────────────────── KaTeX asset packaging ────────────────────────────
+
+_KATEX_FONT_RE = re.compile(
+    r"url\((fonts/(KaTeX_[A-Za-z0-9_-]+\.woff2))\)\s*format\(['\"]?woff2['\"]?\)"
+)
+_KATEX_NON_WOFF2_SRC_RE = re.compile(
+    r",\s*url\(fonts/KaTeX_[A-Za-z0-9_-]+\.(?:woff|ttf)\)\s*format\(['\"]?(?:woff|truetype)['\"]?\)"
+)
+
+
+def _load_inline_katex_assets() -> tuple[str, str] | None:
+    """Return (css, js) with woff2 fonts base64-inlined as ``data:`` URIs, or
+    ``None`` when the vendor dir is missing. KaTeX's CSS also references
+    .woff / .ttf fallbacks that would 404 in an offline file — strip them.
+    """
+    css_path = _KATEX_DIR / "katex.min.css"
+    js_path = _KATEX_DIR / "katex.min.js"
+    fonts_dir = _KATEX_DIR / "fonts"
+    if not css_path.exists() or not js_path.exists() or not fonts_dir.exists():
+        return None
+
+    css = css_path.read_text(encoding="utf-8")
+
+    def _inline_font(m: re.Match[str]) -> str:
+        rel = m.group(1)  # "fonts/KaTeX_Main-Regular.woff2"
+        fpath = _KATEX_DIR / rel
+        if not fpath.exists():
+            return m.group(0)
+        b64 = base64.b64encode(fpath.read_bytes()).decode("ascii")
+        return f"url(data:font/woff2;base64,{b64}) format('woff2')"
+
+    css = _KATEX_FONT_RE.sub(_inline_font, css)
+    # Drop dangling woff / ttf src() entries — they'd 404 in an offline file.
+    css = _KATEX_NON_WOFF2_SRC_RE.sub("", css)
+
+    js = js_path.read_text(encoding="utf-8")
+    return css, js
+
+
+def _katex_inline_enabled() -> bool:
+    raw = os.environ.get("LAZY_PAPER_INLINE_KATEX", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
 
 class HtmlRenderer(Renderer):
-    """HTML output with clickable per-claim citation anchors by default.
-
-    The verifier in v1.8.1+ already validates every quote against its
-    source span; HYPERLINK mode surfaces that effort to the reader as a
-    superscript link that jumps to a `Sources` footer. Disable with
-    `LAZY_PAPER_HTML_CITATIONS=remove` to fall back to plain prose, or
-    pass `--debug-citations` to keep the raw `[span:...]` markers.
-    """
+    """HTML output with clickable per-claim citation anchors by default."""
 
     extension: ClassVar[str] = "html"
 
     def __init__(self, *, citation_mode: CitationMode = CitationMode.HYPERLINK, **kwargs):
-        # HTML default is HYPERLINK (the parameter default reflects that).
-        # Precedence when resolving the effective mode:
-        #   1. CLI `--debug-citations` is honored — caller passes KEEP.
-        #   2. env `LAZY_PAPER_HTML_CITATIONS=remove|keep|hyperlink` overrides.
-        #   3. Caller's explicit citation_mode wins over the default.
-        #   4. Else HYPERLINK.
-        # `.strip()` first so trailing whitespace from .env files doesn't
-        # silently break the override (audit β#2).
         env_mode = os.environ.get("LAZY_PAPER_HTML_CITATIONS", "").strip().lower()
-        if citation_mode == CitationMode.KEEP:
-            effective = CitationMode.KEEP
-        elif env_mode == "remove":
-            effective = CitationMode.REMOVE
-        elif env_mode == "keep":
-            effective = CitationMode.KEEP
-        elif env_mode == "hyperlink":
-            effective = CitationMode.HYPERLINK
-        else:
-            effective = citation_mode
+        env_override = {"remove": CitationMode.REMOVE,
+                        "keep": CitationMode.KEEP,
+                        "hyperlink": CitationMode.HYPERLINK}.get(env_mode)
+        # CLI --debug-citations (KEEP) wins over the env override.
+        effective = (CitationMode.KEEP if citation_mode == CitationMode.KEEP
+                     else env_override or citation_mode)
         super().__init__(citation_mode=effective, **kwargs)
-        # Per-render citation registry, populated by _render_paragraph and
-        # consumed by the template footer.
         self._cite_registry: dict[tuple[str, int, int], int] = {}
 
     def render(self, doc: Document, out_path: Path) -> None:
@@ -72,38 +118,82 @@ class HtmlRenderer(Renderer):
         env.globals["block_images"] = self._block_images
         env.globals["render_paragraph"] = self._render_paragraph
         styles = (_TEMPLATE_DIR / "styles.css").read_text(encoding="utf-8")
+        bundle = _load_inline_katex_assets() if _katex_inline_enabled() else None
+        ctx = dict(
+            doc=doc, styles=styles, sources=[],
+            katex_inline=bundle is not None,
+            katex_css_inline=Markup(bundle[0] if bundle else ""),
+            katex_js_inline=Markup(bundle[1] if bundle else ""),
+        )
         template = env.get_template("preview.html.j2")
-        # Two-pass render: the first pass walks every paragraph via
-        # _render_paragraph, which populates self._cite_registry as a
-        # side effect. The result is discarded; the second pass uses
-        # the now-populated registry to emit the sources footer.
-        # Render is sub-100ms, so the cost is acceptable.
-        template.render(doc=doc, styles=styles, sources=[])
-        return template.render(doc=doc, styles=styles, sources=self._sources_list())
+        # Two-pass: pass 1 populates _cite_registry as a side effect, pass 2
+        # emits sources.
+        template.render(**ctx)
+        ctx["sources"] = self._sources_list()
+        return template.render(**ctx)
 
-    def _render_paragraph(self, text: str) -> Markup:
-        """Render paragraph text, converting span markers to anchor markup
-        when in HYPERLINK mode and tracking the citation registry."""
-        if self.citation_mode == CitationMode.KEEP:
-            return Markup(escape(text))
-        if self.citation_mode == CitationMode.REMOVE:
-            return Markup(escape(_SPAN.sub("", text)))
-        # HYPERLINK
+    # ────────────────────────── paragraph rendering ──────────────────────────
+
+    def _render_paragraph(self, raw_text: str) -> Markup:
+        """Split raw LLM text on ``**bold**`` / inline / display LaTeX, emit
+        ``<strong>`` / ``<span data-tex>`` / ``<figure class="formula-block">``;
+        process citation markers inside plain segments.
+        """
         out: list[str] = []
+        for kind, payload in iter_html_runs(raw_text or ""):
+            if kind == "plain":
+                out.append(self._render_plain_with_citations(payload))
+            elif kind == "bold":
+                # Bold body may itself contain citations / math — recurse one level.
+                inner = self._render_plain_with_citations(payload)
+                out.append(f"<strong>{inner}</strong>")
+            elif kind == "math_inline":
+                out.append(self._render_inline_math(payload))
+            elif kind == "math_display":
+                out.append(self._render_display_math(payload))
+        return Markup("".join(out))
+
+    def _render_plain_with_citations(self, text: str) -> str:
+        if self.citation_mode == CitationMode.KEEP:
+            return str(escape(text))
+        if self.citation_mode == CitationMode.REMOVE:
+            return str(escape(_SPAN.sub("", text)))
+        # HYPERLINK
+        chunks: list[str] = []
         pos = 0
         for m in _SPAN.finditer(text):
             if m.start() > pos:
-                out.append(str(escape(text[pos:m.start()])))
+                chunks.append(str(escape(text[pos:m.start()])))
             doc_id, start, end = m.group(1), int(m.group(2)), int(m.group(3))
             n = self._register_cite((doc_id, start, end))
-            out.append(
+            chunks.append(
                 f'<sup class="cite-anchor"><a href="#cite-{n}" '
                 f'title="{escape(doc_id)}:{start}-{end}">[{n}]</a></sup>'
             )
             pos = m.end()
         if pos < len(text):
-            out.append(str(escape(text[pos:])))
-        return Markup("".join(out))
+            chunks.append(str(escape(text[pos:])))
+        return "".join(chunks)
+
+    @staticmethod
+    def _render_inline_math(tex: str) -> str:
+        cls = "math-auto" if _is_long_math(tex) else "math-inline"
+        fallback = escape(_fallback_unicode(tex))
+        return (f'<span class="{cls}" data-tex="{escape(tex)}">{fallback}</span>')
+
+    @staticmethod
+    def _render_display_math(tex: str) -> str:
+        # Display math gets its own block + copy-on-click affordances.
+        fallback = escape(_fallback_unicode(tex))
+        chip = '</> click to copy'
+        return (
+            f'<figure class="formula-block" data-tex="{escape(tex)}">'
+            f'<div class="math-fallback">{fallback}</div>'
+            f'<span class="tex-chip">{chip}</span>'
+            f'</figure>'
+        )
+
+    # ────────────────────────── citation registry ──────────────────────────
 
     def _register_cite(self, key: tuple[str, int, int]) -> int:
         n = self._cite_registry.get(key)

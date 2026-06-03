@@ -101,8 +101,8 @@ A run takes 5–20 minutes depending on paper length and API latency. Each stage
 
 | Backend | Flag | Best for | Notes |
 |---|---|---|---|
-| **MinerU** | `OCR_BACKEND=mineru` | Figure-heavy papers; multi-column layouts | Cloud API; requires `MINERU_TOKEN`; slightly slower |
-| **PaddleOCR-VL** | `OCR_BACKEND=paddleocr` | Text-heavy papers; fast turnaround | Cloud API; requires `PADDLEOCR_TOKEN`; default in `.env.example` |
+| **MinerU** | `OCR_BACKEND=mineru` | Figure-heavy papers; multi-column layouts; scientific plots (line / bar / scatter) | Cloud API; requires `MINERU_TOKEN`. v1.13 handles MinerU's `chart`-typed items (was silently skipping ~80 % of plot figures on text-PDFs) |
+| **PaddleOCR-VL** | `OCR_BACKEND=paddleocr` | Text-heavy papers; fast turnaround | Cloud API; requires `PADDLEOCR_TOKEN` |
 
 Set in `.env`, or override per-run:
 
@@ -110,7 +110,7 @@ Set in `.env`, or override per-run:
 OCR_BACKEND=mineru uv run python -m cli run ...
 ```
 
-If your paper has many figures and the default PaddleOCR misses image bounding boxes, switch to MinerU.
+If your paper has many figures and the default backend misses image bounding boxes, switch — MinerU is usually the right call for figure-rich text-PDFs after the v1.13 chart-type fix.
 
 ---
 
@@ -342,10 +342,71 @@ Measured impact on the unCLIP image-generation paper (10 Q/A, RAGAS faithfulness
 | CV-IMRaD (matched domain)  | 1 | **0.810** |
 
 Rule of thumb: pick a template whose top-level section titles you would
-expect to see in the paper's actual table of contents. The ship-with-repo
-`Table of Contents-CV-IMRaD.docx` covers most ML / CV / IMRaD-style work.
-For other domains, copy a starter and rewrite the headings — guidance
-paragraphs and `{paper.system}` / `{paper.key_terms}` slots can stay.
+expect to see in the paper's actual table of contents. The four examples
+in `templates/` cover most use cases:
+
+- `templates/Table of Contents-CV-IMRaD.docx` — generic CV / ML / IMRaD
+- `templates/Table of Contents-Relaxor AFE-ZGY-HW.docx` — materials science
+- `templates/Table of Contents-ATEC-B2w-Reward-ZGY.docx` — RL reward design (robotics)
+- `templates/Table of Contents-ATEC-B2w-MUJICA-v2-ZGY.docx` — multi-skill RL (robotics)
+
+For other domains, copy the closest match and rewrite the section headings.
+Guidance paragraphs and `{paper.system}` / `{paper.key_terms}` placeholders
+can stay.
+
+---
+
+## v1.13 — Design system + offline single-file HTML
+
+Released 2026-06-03. End-to-end render upgrade; no public API change.
+
+### What you get without any flags
+
+- **Cleaner DOCX**: chapter numbers in accent orange (`#D97757`), serif
+  headings with a left vertical accent bar, secondary-gray figure
+  captions, accent-bordered "深度观察" deep-observation blocks.
+- **Cleaner HTML**: sticky topbar (brand · doc title · live locator), a
+  right-rail TOC with scroll highlight, three accent themes (orange /
+  teal / indigo) toggleable from the top control strip, copy-on-click
+  LaTeX, a lightbox for figure images.
+- **Cleaner math**: HTML output hands each formula to KaTeX (CDN link
+  by default — see below). The same Unicode fallback that DOCX uses
+  sits inside every `<span data-tex>` so WeasyPrint PDF still shows
+  readable text when JS doesn't run.
+- **Wider reading column** (920 px) so Chinese fits ~40-44 chars per
+  line — the academic comfort range.
+
+### Going offline single-file
+
+Default HTML output (~440 KB) links the jsdelivr CDN for KaTeX. For
+fully offline single-file delivery:
+
+```bash
+# One-time: fetch katex.min.css + katex.min.js + 20 woff2 fonts into vendor/
+uv run python scripts/fetch_katex.py
+
+# Then run with the inline flag
+LAZY_PAPER_INLINE_KATEX=1 uv run python -m cli run …
+```
+
+This base64-inlines the fonts as `data:` URIs and grows preview.html to
+~1.08 MB. No CDN calls; no missing-font reflow on first paint.
+
+### Better figure recall on text-PDFs (default ON)
+
+`MINERU_FORCE_OCR=1` (and `MINERU_ENABLE_TABLE / FORMULA`) are now default.
+If your text-PDF previously lost figures because MinerU was trusting the
+text layer instead of doing layout-OCR, v1.13 fixes that. Set the env
+back to `0` if you specifically want the faster text-layer path and your
+paper has no vector plots.
+
+### Better section detection for IEEE / conference papers
+
+The s03 chapter detector now matches roman numerals (`I.`, `II.`, …) and
+robotics / RL-specific section anchors (`related work`, `approach`,
+`evaluation`, `ablation`, `limitations`, `future work` + Chinese
+equivalents). Papers that previously collapsed to one big `Preface`
+chapter now split correctly.
 
 ---
 

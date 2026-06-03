@@ -76,10 +76,12 @@ uv run python -m cli run \
   --formats docx,pdf,html,pptx
 ```
 
-把 `papers/your-paper.pdf` 替换为你的 PDF 路径。`--template` 后面填入章节大纲 `.docx`，**模板的章节标题要与你的论文领域对应**。仓库根目录提供两份起手模板：
+把 `papers/your-paper.pdf` 替换为你的 PDF 路径。`--template` 后面填入章节大纲 `.docx`，**模板的章节标题要与你的论文领域对应**。仓库下 [`templates/`](../templates/) 收录 4 份现成示例：
 
-- `Table of Contents-Relaxor AFE-ZGY-HW.docx` —— 材料科学（铁电、储能及相关体系）
-- `Table of Contents-CV-IMRaD.docx` —— 通用 CV / ML / IMRaD（Introduction → Method → Experiments → Results → Discussion）
+- `templates/Table of Contents-CV-IMRaD.docx` —— 通用 CV / ML / IMRaD（Introduction → Method → Experiments → Results → Discussion）
+- `templates/Table of Contents-Relaxor AFE-ZGY-HW.docx` —— 材料科学（铁电、储能及相关体系）
+- `templates/Table of Contents-ATEC-B2w-Reward-ZGY.docx` —— 腿式/轮足机器人 RL 奖励设计（ATEC2026 B2w 能耗正则化）
+- `templates/Table of Contents-ATEC-B2w-MUJICA-v2-ZGY.docx` —— 多技能统一 RL（ATEC2026 B2w + Piper）
 
 **模板与论文领域必须匹配**。章节标题会被原文喂进 compose prompt；领域错配会要么写一段越界声明（默认模式下），要么在开启 `LAZY_PAPER_PROMPT_TAILOR=1`（Phase 4 prompt tailoring）时把论文内容硬塞错误标题之下。对同一篇 unCLIP 论文实测（10 题 golden Q/A，RAGAS faithfulness）：
 
@@ -89,7 +91,7 @@ uv run python -m cli run \
 | Relaxor AFE（领域错配） | 1 | **0.100**（倒退） |
 | CV-IMRaD（领域匹配） | 1 | **0.810** |
 
-经验法则：模板的 top-level 章节标题应该接近你论文真实目录里能看到的那些标题。其他领域可以复制起手模板，只改标题，guidance 段落和 `{paper.system}` / `{paper.key_terms}` 占位符可保留。
+经验法则：模板的 top-level 章节标题应该接近你论文真实目录里能看到的那些标题。其他领域可以从 `templates/` 里复制最近邻的一份再改标题；guidance 段落和 `{paper.system}` / `{paper.key_terms}` 占位符可保留。
 
 输出会落在：
 
@@ -109,8 +111,8 @@ runs/mypaper/s09_render/
 
 | 后端 | 配置 | 适用场景 | 备注 |
 |---|---|---|---|
-| **MinerU** | `OCR_BACKEND=mineru` | 图多的论文；多栏排版 | 云端 API；需要 `MINERU_TOKEN`；略慢 |
-| **PaddleOCR-VL** | `OCR_BACKEND=paddleocr` | 纯文本论文；周转快 | 云端 API；需要 `PADDLEOCR_TOKEN`；`.env.example` 默认 |
+| **MinerU** | `OCR_BACKEND=mineru` | 图多的论文；多栏排版；科研散点/折线/柱状图 | 云端 API；需要 `MINERU_TOKEN`。v1.13 起处理 MinerU 的 `chart` type 条目（此前会静默漏掉 ~80% 的科研图） |
+| **PaddleOCR-VL** | `OCR_BACKEND=paddleocr` | 纯文本论文；周转快 | 云端 API；需要 `PADDLEOCR_TOKEN` |
 
 可以在 `.env` 里配置，也可以在单次运行时覆盖：
 
@@ -118,7 +120,7 @@ runs/mypaper/s09_render/
 OCR_BACKEND=mineru uv run python -m cli run ...
 ```
 
-如果你的论文图较多、默认的 PaddleOCR 漏识别了图像边界框，请切换到 MinerU。
+图多的论文优先 MinerU——v1.13 的 chart-type 修复让它在 figure-rich 文本 PDF 上明显更稳。
 
 ---
 
@@ -291,6 +293,41 @@ LAZY_PAPER_ANCHORED_QUOTE=0   # 在 .env 中设置
 ```
 
 opt-out 适用于已锁定 baseline 或提示词已回归的项目；新跑应保持默认开启。
+
+---
+
+## v1.13 — 设计系统 + 单文件离线 HTML
+
+发布日期 2026-06-03。端到端的渲染层升级，CLI 接口不变。
+
+### 不需要任何 flag 就能看到的变化
+
+- **DOCX 更干净**：章节编号用强调橙 `#D97757`，标题 serif + 左侧 vertical accent bar；图说改成次级灰；"深度观察"块带 accent 边框。
+- **HTML 更现代**：sticky topbar（品牌 · 文档标题 · 当前定位）+ 右侧滚动跟随的 IntersectionObserver TOC + 三套强调色主题（orange / teal / indigo）+ 点击复制 TeX + 图片 lightbox。
+- **公式更漂亮**：HTML 把每条公式交给 KaTeX 渲染（默认 CDN，见下）；每个 `<span data-tex>` 里都塞了 Unicode 兜底文本，所以 WeasyPrint PDF（不跑 JS）仍然能读。
+- **阅读列更宽**（920 px），中文每行 ~40-44 字，进学术阅读舒适区。
+
+### 单文件离线模式
+
+默认 HTML（~440 KB）通过 CDN 加载 KaTeX。需要完全离线（邮件、内网传发）：
+
+```bash
+# 一次性拉 katex.min.css / katex.min.js / 20 woff2 字体到 vendor/
+uv run python scripts/fetch_katex.py
+
+# 再用 inline 开关跑
+LAZY_PAPER_INLINE_KATEX=1 uv run python -m cli run …
+```
+
+会把字体 base64 编进 CSS，preview.html 涨到 ~1.08 MB；首屏不再请求 CDN，无字体回流闪烁。
+
+### 文本 PDF 也能抢回所有图（默认开启）
+
+`MINERU_FORCE_OCR=1` + `MINERU_ENABLE_TABLE/FORMULA` 已默认开启。如果以前你的文本 PDF 因为 MinerU 走"文本层优先"路径漏了图，v1.13 直接修复。只在论文确认没有矢量图、追求最快路径时关掉。
+
+### IEEE / 会议论文也能正确分章
+
+s03 章节探测器现在识别罗马数字（`I.`、`II.`…）以及机器人/RL 常见的章节锚（`related work` / `approach` / `evaluation` / `ablation` / `limitations` / `future work` 及中文等价）。以前会被压成一坨 `Preface` 的论文现在能正常分章。
 
 ---
 

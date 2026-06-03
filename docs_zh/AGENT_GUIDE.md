@@ -69,7 +69,9 @@ uv run python -m cli run --pdf <pdf> --template <docx> --paper-id <pid> \
 
 ### 视觉验证
 
-PPT 渲染器的 bug 通常是视觉性的（字体过小、重叠、语言错误）。务必渲染为 PNG 来检查：
+渲染器的 bug 通常是视觉性的（字体过小、重叠、语言错误、KaTeX 没加载到）。务必渲染为 PNG 检查。
+
+**PPTX：**
 
 ```bash
 /Applications/LibreOffice.app/Contents/MacOS/soffice \
@@ -85,7 +87,12 @@ for i in [0, 1, 4, 7]:
 "
 ```
 
-然后通过 Read 工具读取 PNG 来检查。
+**HTML（v1.13）** —— KaTeX 在客户端渲染，文件里只能看到 Unicode 兜底。验证真渲染结果要走浏览器：
+- 在真实浏览器打开 `preview.html`，确认 `<span data-tex>` / `<figure class="formula-block">` 显示出 KaTeX 排版的数学，而不是兜底文本。
+- 如果用了 `LAZY_PAPER_INLINE_KATEX=1`，文件应该 ~1 MB 且 grep 不到 `cdn.jsdelivr.net`。
+- PDF（同套 HTML 走 WeasyPrint），打开后应看到公式以 italic serif 兜底显示 —— KaTeX **不**会跑。
+
+然后通过 Read 工具读取 PNG / HTML / PDF 来检查。
 
 ### 与用户沟通
 

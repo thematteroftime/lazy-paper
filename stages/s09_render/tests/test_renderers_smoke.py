@@ -56,7 +56,10 @@ def test_html_renderer_self_contained_base64(tmp_path: Path, one_image: Path):
     html = out.read_text(encoding="utf-8")
     assert "Smoke Test Paper" in html
     assert "引言" in html
-    assert "图 1. 第一张图" in html
+    # v2 (2026-06): caption label is wrapped in <span class="fig-tag"> so
+    # the literal "图 1. 第一张图" is split across tags. Verify both parts.
+    assert '<span class="fig-tag">图 1.</span>' in html
+    assert "第一张图" in html
     # Base64 embedded image — no external file refs
     assert 'src="data:image/' in html
     assert 'src="/tmp' not in html  # absolute paths must NOT leak

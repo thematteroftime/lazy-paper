@@ -70,22 +70,99 @@ def _collapse_unicode_subscripts(text: str) -> str:
     return _UNICODE_SUB_RUN_RE.sub(repl, text)
 
 
-def normalize_math(text: str) -> str:
-    """Convert LaTeX math expressions in *text* to Unicode for PPT rendering."""
+# Sentinels wrapping inline-math segments through the Unicode pass; DOCX /
+# HTML / PDF render them in italic, PPTX drops the markers.
+MATH_OPEN = "\x01"
+MATH_CLOSE = "\x02"
+
+
+def normalize_math(text: str, *, mark_inline: bool = False) -> str:
+    """Convert LaTeX math expressions in *text* to Unicode.
+
+    When ``mark_inline=True``, inline math delimiters ``\\(...\\)``,
+    ``\\[...\\]``, and ``$...$`` are replaced with the MATH_OPEN/MATH_CLOSE
+    sentinels so the DOCX/HTML/PDF renderers can render those segments in
+    italic — giving formulas visual distinction from surrounding prose
+    without touching the LLM prompts.
+
+    The default is ``mark_inline=False`` so PPTX and plain-text callers get
+    a clean flat string. DOCX/HTML/PDF go through ``builder.DocumentBuilder``
+    which passes ``mark_inline=True`` explicitly.
+    """
     if not text:
         return text
+    # Strip / convert LaTeX commands before the Unicode pass so the
+    # sub/superscript stage doesn't translate command letters into garbled
+    # glyphs. Order matters: accents unwrap `\dot{q}` braces before \frac
+    # walks brace pairs.
+    text = re.sub(r"\\(?:text|mathrm|mathbf|mathit|mathsf|mathcal|operatorname)"
+                  r"\{([^{}]+)\}", r"\1", text)
+    text = re.sub(r"\\(?:Big|big|bigg|Bigg|left|right)(?![a-zA-Z])", "", text)
+    text = re.sub(r"\\[,;:!\\ ]", " ", text)
+    for cmd, combining in (("dot", "̇"), ("hat", "̂"),
+                           ("bar", "̄"), ("tilde", "̃"),
+                           ("vec", "⃗")):
+        text = re.sub(rf"\\{cmd}\{{([^{{}}])\}}", rf"\1{combining}", text)
+    text = re.sub(r"\\(exp|sin|cos|tan|log|ln|max|min|arg|sup|inf"
+                  r"|lim|det|gcd|sinh|cosh|tanh)(?![a-zA-Z])", r"\1", text)
     for latex_pat, unicode_char in _GREEK_LATEX.items():
         text = re.sub(latex_pat + r"(?![a-zA-Z])", unicode_char, text)
-    text = re.sub(r"\^\{([^}]+)\}", lambda m: m.group(1).translate(_SUPER_MAP), text)
-    text = re.sub(r"\^([0-9a-zA-Z+\-])", lambda m: m.group(1).translate(_SUPER_MAP), text)
-    text = re.sub(r"_\{([^}]+)\}", lambda m: m.group(1).translate(_SUB_MAP), text)
-    text = re.sub(r"_([0-9a-zA-Z+\-])", lambda m: m.group(1).translate(_SUB_MAP), text)
-    text = re.sub(r"\$([^$]+)\$", r"\1", text)
-    # Strip LaTeX inline/display math delimiters
-    text = re.sub(r"\\\(\s*", "", text)   # \(
-    text = re.sub(r"\s*\\\)", "", text)   # \)
-    text = re.sub(r"\\\[\s*", "", text)   # \[
-    text = re.sub(r"\s*\\\]", "", text)   # \]
+    # Sub/superscript translation. If any character in `_{…}` / `^{…}` lacks
+    # a Unicode glyph, fall back to ASCII `_content` so the run renders as a
+    # coherent token instead of fragmenting (e.g. `_{motion}` would otherwise
+    # become `mₒtᵢₒn` → `Rm_ot_ion` after the collapse pass below).
+    def _braced_super(m):
+        s = m.group(1)
+        translated = s.translate(_SUPER_MAP)
+        return translated if translated != s and all(c in "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾" for c in translated) else f"^{s}"
+    def _braced_sub(m):
+        s = m.group(1)
+        translated = s.translate(_SUB_MAP)
+        return f"_{s}" if any(c.isalpha() and c.isascii() for c in translated) else translated
+    def _single(map_, prefix):
+        def repl(m):
+            ch = m.group(1)
+            tr = ch.translate(map_)
+            return tr if tr != ch else f"{prefix}{ch}"
+        return repl
+    text = re.sub(r"\^\{([^}]+)\}", _braced_super, text)
+    text = re.sub(r"\^([0-9a-zA-Z+\-])", _single(_SUPER_MAP, "^"), text)
+    text = re.sub(r"_\{([^}]+)\}", _braced_sub, text)
+    text = re.sub(r"_([0-9a-zA-Z+\-])", _single(_SUB_MAP, "_"), text)
+    # \frac{a}{b} → (a)/(b). Subscripts are gone, so brace pairs are clean.
+    while True:
+        new = re.sub(r"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}",
+                     r"(\1)/(\2)", text)
+        if new == text:
+            break
+        text = new
+
+    if mark_inline:
+        # Wrap math with sentinels for styled-run renderers (\[..\] first so
+        # the \(..\) regex doesn't partial-match).
+        text = re.sub(
+            r"\\\[\s*(.+?)\s*\\\]",
+            lambda m: f"{MATH_OPEN}{m.group(1)}{MATH_CLOSE}",
+            text, flags=re.DOTALL,
+        )
+        text = re.sub(
+            r"\\\(\s*(.+?)\s*\\\)",
+            lambda m: f"{MATH_OPEN}{m.group(1)}{MATH_CLOSE}",
+            text, flags=re.DOTALL,
+        )
+        text = re.sub(
+            r"\$([^$\n]+)\$",
+            lambda m: f"{MATH_OPEN}{m.group(1)}{MATH_CLOSE}",
+            text,
+        )
+    else:
+        # Flat-string callers (PPTX) — strip delimiters entirely.
+        text = re.sub(r"\$([^$]+)\$", r"\1", text)
+        text = re.sub(r"\\\(\s*", "", text)
+        text = re.sub(r"\s*\\\)", "", text)
+        text = re.sub(r"\\\[\s*", "", text)
+        text = re.sub(r"\s*\\\]", "", text)
+
     text = text.replace(r"\%", "%").replace(r"\&", "&")
     text = _collapse_unicode_subscripts(text)
     # v1.3.1: rare Unicode dashes/spaces/punctuation that the default PPT body
@@ -94,6 +171,85 @@ def normalize_math(text: str) -> str:
     for ch, repl in _EXOTIC_PUNCT_FALLBACK.items():
         text = text.replace(ch, repl)
     return text
+
+
+# Recognises ``**bold**`` and ``\x01math\x02`` segments for DOCX/HTML run
+# splitting. Nested markers fall through — the LLM keeps them disjoint.
+_RUN_RE = re.compile(
+    r"(?P<bold>\*\*(.+?)\*\*)"
+    r"|(?P<math>" + MATH_OPEN + r"(.+?)" + MATH_CLOSE + r")",
+    re.DOTALL,
+)
+
+
+def iter_html_runs(raw_text: str):
+    """Yield ``(kind, payload)`` tuples for HTML rendering of raw LLM output.
+
+    Unlike :func:`iter_runs` (which works on the normalize_math output),
+    this consumes the **original** LLM text and preserves LaTeX source so
+    the HTML renderer can pass it to KaTeX via ``data-tex``.
+
+    Yields ``(kind, payload)`` where kind ∈ ``{"plain", "bold", "math_inline",
+    "math_display"}``. For math kinds the payload is the raw LaTeX source
+    (no delimiters). For ``plain`` and ``bold`` it's the text segment.
+
+    Recognized:
+        ``**bold**``                       → ("bold", "bold")
+        ``\\[display\\]`` or ``$$..$$``   → ("math_display", "tex")
+        ``\\(inline\\)`` or ``$..$``       → ("math_inline", "tex")
+    """
+    if not raw_text:
+        return
+    pat = re.compile(
+        r"(?P<bold>\*\*(.+?)\*\*)"
+        r"|(?P<dmath>\\\[\s*(.+?)\s*\\\]|\$\$\s*(.+?)\s*\$\$)"
+        r"|(?P<imath>\\\(\s*(.+?)\s*\\\)|\$([^$\n]+?)\$)",
+        re.DOTALL,
+    )
+    pos = 0
+    for m in pat.finditer(raw_text):
+        if m.start() > pos:
+            yield ("plain", raw_text[pos:m.start()])
+        if m.group("bold") is not None:
+            yield ("bold", m.group(2))
+        elif m.group("dmath") is not None:
+            yield ("math_display", m.group(4) or m.group(5))
+        else:  # imath
+            yield ("math_inline", m.group(7) or m.group(8))
+        pos = m.end()
+    if pos < len(raw_text):
+        yield ("plain", raw_text[pos:])
+
+
+def iter_runs(text: str):
+    """Yield ``(segment, style)`` tuples for paragraph text.
+
+    Style is ``"plain"``, ``"bold"``, or ``"italic"``. Renderers that don't
+    support multiple runs can fall back to ``strip_math_markers(text)`` and
+    a regex strip of ``**`` markers.
+
+    As a safety net, any stray MATH sentinels in returned segments are
+    stripped — they should never appear (a balanced pair is consumed by the
+    regex), but a malformed input must not leak control chars into XML
+    output (python-docx) or HTML.
+    """
+    if not text:
+        return
+
+    def _clean(s: str) -> str:
+        return s.replace(MATH_OPEN, "").replace(MATH_CLOSE, "")
+
+    pos = 0
+    for m in _RUN_RE.finditer(text):
+        if m.start() > pos:
+            yield (_clean(text[pos:m.start()]), "plain")
+        if m.group("bold") is not None:
+            yield (_clean(m.group(2)), "bold")
+        else:
+            yield (_clean(m.group(4)), "italic")
+        pos = m.end()
+    if pos < len(text):
+        yield (_clean(text[pos:]), "plain")
 
 
 # v1.3.1: small map of exotic Unicode punctuation that has no glyph in the

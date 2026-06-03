@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.11.5-blue"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.13--render-blue"></a>
   <a href="#测试"><img alt="Tests" src="https://img.shields.io/badge/tests-301%20passing-22c55e"></a>
   <a href="docs_zh/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
@@ -250,16 +250,18 @@ unit      u_Jcm3          J/cm³
   <em>来自 <code>runs/meng2024_v111_demo/s09_render/preview.pdf</code> 的真实页面 —— 左：标题 + 合成的引言段落；右：Fig. 1 抽取图与图注，配 s07 通过 figure_ids 硬约束保留下来的深度观察评注。</em>
 </p>
 
-### 模板与论文领域必须匹配（重要）
+### 选对模板是整个流程最关键的一步——请先读这一节
 
-**模板里的章节标题必须与论文领域对上**。lazy-paper 会把每个章节标题原文喂进 s08 compose prompt。如果你拿 unCLIP 图像生成论文跑"Dielectric Properties of Relaxor AFE"这类标题，LLM 要么写一段越界声明（Phase 4 prompt tailoring 关闭时），要么——更糟——把 unCLIP 内容硬塞错误标题之下，读者看上去就是论文不忠实。
+**模板里的章节标题会原文塞进 s08 compose prompt。** 拿"Dielectric Properties of Relaxor AFE"去跑一篇 unCLIP 图像生成论文，结局只有两种：要么 LLM 写一段越界声明（Phase-4 prompt-tailor 关时），要么——更糟——把 unCLIP 内容硬塞进错误标题之下，整篇读上去就像在胡说。同一篇论文、同一模型、同一 prompt，一个错模板能把 RAGAS faithfulness 从 0.81 拉到 0.10。
 
-仓库根目录提供两份起手模板，按论文领域选用（或复制后修改）：
+仓库下 [`templates/`](templates/) 收录 4 份现成模板，按论文领域挑选；新领域复制最近邻的一份再改章节标题：
 
-| 文件 | 适用场景 |
+| 模板（`templates/<file>`） | 适用场景 |
 |---|---|
-| `Table of Contents-Relaxor AFE-ZGY-HW.docx` | 材料科学（铁电、储能及相关体系） |
 | `Table of Contents-CV-IMRaD.docx` | 通用 CV / ML / IMRaD 论文（Introduction → Method → Experiments → Results → Discussion） |
+| `Table of Contents-Relaxor AFE-ZGY-HW.docx` | 材料科学（铁电、储能及相关体系） |
+| `Table of Contents-ATEC-B2w-Reward-ZGY.docx` | 腿式/轮足机器人 RL 奖励设计（ATEC2026 B2w 能耗正则化变体） |
+| `Table of Contents-ATEC-B2w-MUJICA-v2-ZGY.docx` | 多技能统一 RL 框架（能耗 + 技能选择器 + DC 电机约束，ATEC2026 B2w + Piper） |
 
 实证（对同一篇 unCLIP 论文 10 题 golden Q/A 跑 RAGAS faithfulness）：
 
@@ -269,7 +271,7 @@ unit      u_Jcm3          J/cm³
 | Relaxor AFE（领域错配） | 开 | **0.100**（倒退） |
 | CV-IMRaD（领域匹配） | 开 | **0.810** |
 
-同一篇论文、同一组 Phase 4 augment、同一组题目，仅模板不同。请把"选对模板"当作首要输入，而不是默认值。
+把"选对模板"当成首要输入，而不是默认值。没有"通用模板"的捷径——错模板会安静地拖垮下游所有阶段。
 
 ## 快速开始
 
@@ -282,14 +284,29 @@ uv pip install -e ".[dev]"
 brew install pango gdk-pixbuf libffi cairo   # macOS 必装（WeasyPrint）
 
 # 配置
-cp .env.example .env   # 填 MINERU_TOKEN + LLM_*_API_KEY
+cp .env.example .env   # 然后填入 token，参考下面"申请 API key"
 
-# 运行
+# 运行 —— 模板按你论文的领域挑选（先读上一节）
 uv run python -m cli run \
   --pdf "papers/your-paper.pdf" \
-  --template "Table of Contents-Relaxor AFE-ZGY-HW.docx" \   # ML/CV 论文换成 Table of Contents-CV-IMRaD.docx
+  --template "templates/Table of Contents-CV-IMRaD.docx" \
   --paper-id mypaper --lang zh --formats docx,pdf,html,pptx
 ```
+
+输出在 `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`。四份示例模板见 [`templates/`](templates/)。
+
+### 申请 API key
+
+lazy-paper 用到三类云端角色。各注册一次、把 key 填进 `.env` 就行。
+
+| 角色 | 推荐服务商 | 申请链接 | `.env` 字段 |
+|---|---|---|---|
+| **OCR**（默认） | MinerU 云 | <https://mineru.net> → 账户 → API tokens | `MINERU_TOKEN` |
+| **OCR**（备选） | 百度 AI Studio · PaddleOCR-VL | <https://aistudio.baidu.com/paddleocr> | `PADDLEOCR_TOKEN` |
+| **文本 LLM**（推荐） | DeepSeek-Reasoner | <https://platform.deepseek.com> → API keys | `LLM_TEXT_API_KEY` |
+| **视觉 LLM**（推荐） | 阿里云百炼 · Qwen-VL | <https://bailian.console.aliyun.com/> → API-KEY | `LLM_VISION_API_KEY` |
+
+四项都是 OpenAI 兼容协议。要换别家（OpenAI、Anthropic 网关、本地 vLLM / Ollama），改 `LLM_*_BASE_URL` + `LLM_*_MODEL` 即可。详细流程见 [`docs_zh/USER_GUIDE.md`](docs_zh/USER_GUIDE.md)。
 
 产物：`runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`。
 
@@ -304,15 +321,15 @@ uv run python -m cli run \
   </tr>
   <tr>
     <td><code>docx</code></td>
-    <td>自包含 Word 文档；西文 Times New Roman、中文宋体</td>
+    <td>自包含 Word 文档；西文 Times New Roman、中文宋体；v1.13 接上共享 design tokens（accent <code>#D97757</code> 章节编号 + 左侧 vertical bar、次级灰图说、accent 边深度观察块）</td>
   </tr>
   <tr>
     <td><code>pdf</code></td>
-    <td>与 DOCX 同内容，通过 WeasyPrint 渲染共享 HTML 模板</td>
+    <td>WeasyPrint 渲染 HTML 输出；打印 CSS 屏蔽 topbar / TOC / 控件，公式以 Unicode 兜底（serif italic）行内呈现</td>
   </tr>
   <tr>
     <td><code>html</code></td>
-    <td>单文件、图像 base64 内嵌——可邮件、可浏览器直接打开</td>
+    <td>单文件、图像 base64 内嵌。v1.13 新增 sticky topbar、右侧 IntersectionObserver TOC、三套强调色主题、点击复制 TeX、KaTeX 公式渲染。默认走 jsdelivr CDN；设 <code>LAZY_PAPER_INLINE_KATEX=1</code> 把 KaTeX 资源全部 inline，做到真正离线（~1.08 MB）</td>
   </tr>
   <tr>
     <td><code>pptx</code></td>
@@ -324,6 +341,16 @@ uv run python -m cli run \
   <img src="docs/assets/showcase-divider.png" alt="节分隔片 + KEY POINTS 卡" width="640">
   <br>
   <em>节分隔片。字号随要点密度自适应，autofit 兜底确保长 bullet 不溢出。</em>
+</p>
+
+### v1.13 实际输出截图
+
+<p align="center">
+  <img src="docs/assets/v113-pdf-p01.png" alt="封面：serif 标题、eyebrow tag、章节 01 带 accent 编号与左侧 vertical bar" width="300">
+  <img src="docs/assets/v113-pdf-p03.png" alt="多面板图块、accent 图说、深度观察块带 accent 左边" width="300">
+  <img src="docs/assets/v113-pdf-p05.png" alt="能耗正则化章节：行内公式 italic、accent 章节编号、加粗公理" width="300">
+  <br>
+  <em>截自 <code>runs/atec-b2w-energy-rl/s09_render/preview.pdf</code> —— 左：封面 + 章节 01 accent 竖条；中：Fig. 2 多面板 + 深度观察块；右：能耗正则化章节带行内 italic 公式（PDF 走 Unicode 兜底）。</em>
 </p>
 
 ## 技术栈
@@ -409,7 +436,7 @@ uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
   author  = {thematteroftime},
   title   = {lazy-paper: PDF research papers to multi-format deep analysis},
   url     = {https://github.com/thematteroftime/lazy-paper},
-  version = {1.11.1},
+  version = {1.13-render},
   year    = {2026}
 }
 ```
@@ -426,8 +453,10 @@ uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 | [`docs_zh/USER_GUIDE.md`](docs_zh/USER_GUIDE.md) | 终端用户 —— 安装、快速开始、迭代、排障 |
 | [`docs_zh/ARCHITECTURE.md`](docs_zh/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 + Strategy KL 详解 + 数据流图 |
 | [`docs_zh/AGENT_GUIDE.md`](docs_zh/AGENT_GUIDE.md) | AI 编程 agent —— 工作流与反模式 |
+| [`docs/STYLE_SPEC.md`](docs/STYLE_SPEC.md) | HTML / PDF / DOCX 输出的设计语言（v1.13，英文） |
 | [`docs_zh/INTERNAL/HANDOFF.md`](docs_zh/INTERNAL/HANDOFF.md) | 下一任维护者 —— 验证态 + 改动入口 |
 | [`docs/TEST_FRAMEWORK.md`](docs/TEST_FRAMEWORK.md) | 评测 harness 与 TestCase 编写（英文） |
+| [`templates/`](templates/) | 4 份现成 outline 模板（CV-IMRaD、Relaxor AFE、ATEC-B2w） |
 | [`docs/`](docs/) | 英文版同结构文档（含历史设计文档归档） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本差异 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 外部贡献者约定（英文） |

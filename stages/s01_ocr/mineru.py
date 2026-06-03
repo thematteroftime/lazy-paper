@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -29,16 +30,33 @@ class MinerUError(RuntimeError):
     pass
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _post_batch(token: str, pdf_name: str, data_id: str,
                 language: str = "en") -> tuple[str, str]:
+    # Defaults force layout-OCR so figure-rich text-PDFs return their
+    # vector-graphics figures (the cloud's text-layer fast path skipped them).
+    is_ocr = _env_bool("MINERU_FORCE_OCR", True)
+    enable_table = _env_bool("MINERU_ENABLE_TABLE", True)
+    enable_formula = _env_bool("MINERU_ENABLE_FORMULA", True)
+    model_version = os.environ.get("MINERU_MODEL_VERSION", "").strip()
+    payload: dict[str, object] = {
+        "enable_formula": enable_formula,
+        "enable_table": enable_table,
+        "language": language,
+        "files": [{"name": pdf_name, "is_ocr": is_ocr, "data_id": data_id}],
+    }
+    if model_version:
+        payload["model_version"] = model_version
     r = requests.post(
         BATCH_URL,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json={
-            "enable_formula": True,
-            "language": language,
-            "files": [{"name": pdf_name, "is_ocr": False, "data_id": data_id}],
-        },
+        json=payload,
         timeout=30,
     )
     if not r.ok:
@@ -106,24 +124,26 @@ def _download_and_extract(zip_url: str, dest: Path) -> Path:
     return dest
 
 
-_FIG_NUM_RE = __import__("re").compile(r"^Fig(?:ure)?\.?\s*(\d+)", __import__("re").IGNORECASE)
+_FIG_NUM_RE = re.compile(r"^Fig(?:ure)?\.?\s*(\d+)", re.IGNORECASE)
+# Sub-panel labels like "(a) Straight Line Walking" must not be promoted to
+# standalone "Figure N." headers — s04's nearest-caption pairing groups them
+# under the real caption that sits a few lines below.
+_SUBPANEL_RE = re.compile(r"^\s*\(?[a-zA-Z]\)?\.?\s+\S", re.IGNORECASE)
 
 
 def _ensure_figure_number(caption_text: str, expected_n: int) -> str:
-    """If `caption_text` already starts with 'Figure <digit>', return it untouched.
-    Otherwise inject `expected_n` so downstream FIG_CAP_RE matches.
-
-    MinerU's OCR occasionally drops the digit (e.g., "Figure ." for Fig. 2). This
-    keeps the s04 pairing robust without changing s04's regex.
+    """Inject ``Figure <expected_n>`` if the caption lacks a leading figure
+    number, so downstream `FIG_CAP_RE` matches. Sub-panel labels and properly
+    numbered captions pass through untouched.
     """
     if not caption_text:
         return f"Figure {expected_n}. (caption missing)"
     if _FIG_NUM_RE.match(caption_text):
         return caption_text
-    # Strip leading "Figure" + punctuation if present
-    import re as _re
-    stripped = _re.sub(r"^Fig(?:ure)?\.?\s*[.\$]*\s*", "", caption_text, count=1,
-                       flags=_re.IGNORECASE)
+    if _SUBPANEL_RE.match(caption_text):
+        return caption_text
+    stripped = re.sub(r"^Fig(?:ure)?\.?\s*[.\$]*\s*", "", caption_text, count=1,
+                      flags=re.IGNORECASE)
     return f"Figure {expected_n}. {stripped}"
 
 
@@ -171,7 +191,9 @@ def _content_list_to_docs(content_list: list[dict], staged_imgs: Path,
                     page_md_lines.append(f"{'#' * level} {txt}")
                 else:
                     page_md_lines.append(txt)
-            elif t == "image":
+            elif t in ("image", "chart"):
+                # MinerU types scientific plots as `chart` and photos /
+                # diagrams as `image`; both are figures for our purposes.
                 src_path = item.get("img_path") or ""
                 if not src_path:
                     continue
@@ -180,21 +202,17 @@ def _content_list_to_docs(content_list: list[dict], staged_imgs: Path,
                     new_name = f"img_mineru_{img_counter:03d}.jpg"
                     src_abs = staged_imgs / Path(src_path).name
                     if not src_abs.exists():
-                        # try with full src path relative to ZIP root
                         src_abs = staged_imgs.parent / src_path
                     if src_abs.exists():
                         shutil.copy2(src_abs, dest_imgs / new_name)
                         img_map[src_path] = f"imgs/{new_name}"
                     else:
-                        # Image file not found on disk — record as missing so we
-                        # don't re-attempt the copy, but skip emitting the tag.
-                        img_map[src_path] = ""
+                        img_map[src_path] = ""  # mark missing, skip tag emit
                 rel = img_map[src_path]
                 if not rel:
-                    # source file was missing; skip this item entirely
                     continue
                 page_md_lines.append(f'<img src="{rel}">')
-                caps = item.get("image_caption") or []
+                caps = item.get("image_caption") or item.get("chart_caption") or []
                 for cap in caps:
                     cap_clean = _ensure_figure_number(
                         (cap or "").strip(), expected_n=img_counter,
@@ -259,7 +277,10 @@ def run(*, pdf: Path, out_dir: Path, token: str, ocr_lang: str = "en") -> dict:
         "docs": n_pages,
         "images_extracted": len(list(dest_imgs.glob("*.jpg"))),
     })
-    # Clean up extracted raw zip dir to save space
-    shutil.rmtree(stage_dir, ignore_errors=True)
+    # Clean up extracted raw zip dir to save space, unless caller wants to
+    # diagnose figure-recall regressions (MINERU_KEEP_RAW=1 preserves the zip
+    # extraction so you can inspect *_content_list.json directly).
+    if not _env_bool("MINERU_KEEP_RAW", False):
+        shutil.rmtree(stage_dir, ignore_errors=True)
     return {"backend": "mineru", "docs": n_pages,
             "images": len(list(dest_imgs.glob("*.jpg")))}

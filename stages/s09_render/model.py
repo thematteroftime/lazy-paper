@@ -8,7 +8,8 @@ from typing import Union
 
 @dataclass(frozen=True)
 class Paragraph:
-    text: str
+    text: str                       # Unicode-normalized (DOCX/PPTX/print PDF)
+    raw_text: str = ""              # LaTeX-preserving (HTML/KaTeX); empty → use text
 
 
 @dataclass(frozen=True)

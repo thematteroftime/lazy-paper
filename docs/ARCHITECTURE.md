@@ -1,8 +1,8 @@
 # lazy-paper architecture
 
-> A maintainer-level reference for the 9-stage pipeline that turns a PDF research paper into bilingual DOCX/PDF/HTML/PPTX deep analysis. Code version **v1.11.4** (2026-05-24). 300 pytest tests.
+> A maintainer-level reference for the 9-stage pipeline that turns a PDF research paper into bilingual DOCX/PDF/HTML/PPTX deep analysis. Code version **v1.13-render** (2026-06-03). 321 pytest tests.
 >
-> Install, CLI flags, and provider setup live in [README.md](../README.md) and [USER_GUIDE.md](USER_GUIDE.md). This file is the "how the system works" side.
+> Install, CLI flags, and provider setup live in [README.md](../README.md) and [USER_GUIDE.md](USER_GUIDE.md). The visual design language for HTML/PDF/DOCX output lives in [STYLE_SPEC.md](STYLE_SPEC.md). This file is the "how the system works" side.
 >
 > A Chinese version with the same structure (and a few extra design notes) lives at [`docs_zh/ARCHITECTURE.md`](../docs_zh/ARCHITECTURE.md).
 
@@ -201,6 +201,8 @@ SECTION_ANCHORS = {
 
 `detect_science_anchor` (`runner.py:37`) matches `[# number] [chapter no.] <Title>` with `_ANCHOR_LINE_RE`. The title must start with `[A-Z一-鿿]`. On a match, `flush()` finalises the accumulated lines into a chapter.
 
+**Number-prefix recognition (v1.13)**: the chapter-number group accepts arabic (`1.`, `2.3.`) **or** roman (`I.`, `II.`, `III.`, …). IEEE / conference papers whose top-level sections are roman-numbered previously collapsed into one big `Preface` chapter; with roman support they split correctly. The v1.13 expansion also added `related work / background / problem statement / approach / system overview / evaluation / ablation / limitations / future work` and their Chinese equivalents to `SECTION_ANCHORS` so robotics / RL paper structures register.
+
 ### 4.4 s04_figures — pair figures, merge panels, build mention map
 
 | Field | Value |
@@ -228,6 +230,8 @@ To add a language, extend the `Fig(?:ure)?\.?|图` alternation with the new pref
 `mentions.yaml` is a reverse index `{chapter_filename: [Fig. 1, Fig. 3, ...]}` that s07 uses to pull surrounding text.
 
 **`is_generation_prompt_caption` (v1.11.1, `runner.py:28-56`)** is a caption-stub filter. It drops captions matching `(letter) A/An <curated descriptor> <medium> of …` (typical example: the DALL-E paper's OCR returned the literal generation prompt `(a) A high quality photo of a dog playing in a green field next to a lake.` — `hif_2` Fig 43 was being fed to vision-LLM as physics). This is the first of two defence layers; s07 skips again (see §4.7). The descriptor list is strict so real captions like `"(a) SEM image of NBST"` survive.
+
+**MinerU `chart`-vs-`image` typing (v1.13, `stages/s01_ocr/mineru.py`)**. MinerU's `content_list.json` classifies scientific plots (line / bar / scatter) as `type: chart` with `chart_caption`, and photographs / vector diagrams as `type: image` with `image_caption`. Before v1.13 `_content_list_to_docs` only walked `image`, so a figure-rich text-PDF whose plots are all `chart` (e.g. arXiv:2403.20001v2 returned 16 raw `images/` files but only 2 `image`-typed entries) lost 10/12 figures and mis-labeled the two survivors. Fix: handle both types, fall back to `chart_caption` when `image_caption` is empty. Same fix flow makes `_ensure_figure_number` skip number injection for sub-panel captions like `"(a) Straight Line Walking"` — s04's nearest-caption pairing then correctly groups the four panels under the real `Fig. 3:` caption that sits a few lines below.
 
 **PDFFigures 2 reconciliation (v1.12 phase 1, opt-in, `runner.py:374+`)** — when `--pdffigures2` is set and `PDFFIGURES2_JAR=docker` is in env, s04 invokes AI2's PDFFigures 2 sidecar (`scripts/pdffigures2_sidecar.py` → docker → JSON) after the MinerU pass. `reconcile_with_pdffigures2()` matches each MinerU figure against pdffigures2's caption-anchored figure list via bag-of-words Jaccard ≥0.5 and overwrites `fig_id` to the canonical "Figure N" the paper itself prints. Audit trail at `_pdffigures2.yaml`. **Docker-only by design**: project policy bans host JVM installs; the Dockerfile (`Dockerfile.pdffigures2`) is a 2-stage build (sbtscala → eclipse-temurin-jre) producing `lazy-paper/pdffigures2:0.1.0`. Closes the v1.12 known limit "caption-aware numbering" from §12. Default OFF until measured impact lands.
 
@@ -381,17 +385,33 @@ class Document:
     chapters: tuple[Chapter, ...]
 
 class Chapter:  heading, level, blocks  # blocks: Paragraph | FigureBlock | TableBlock
+
+@dataclass(frozen=True)
+class Paragraph:
+    text: str                          # Unicode-normalized (DOCX / PPTX / print PDF)
+    raw_text: str = ""                 # LaTeX-preserving (HTML / KaTeX); "" → use text
 ```
+
+**Why a dual text field (v1.13).** DOCX and PPTX cannot render LaTeX, so
+they need Unicode (`α_en`, `Σ|τ||q̇|`, `R²`). HTML hands LaTeX straight
+to KaTeX, which renders much better than any Unicode approximation. The
+builder fills both fields and lets each renderer pick: HTML walks
+`raw_text` through `iter_html_runs(...)` and emits `<span data-tex>`;
+DOCX walks `text` through `iter_runs(...)` and emits italic / bold runs;
+PPTX takes `text` as-is. WeasyPrint reads the HTML's Unicode fallback
+inside each `<span data-tex>` since it never runs the KaTeX script.
 
 **`DocumentBuilder.build()`** (`builder.py:22`) converts markdown into a Document. **Figure binding** lives here: `_is_referenced` (`builder.py:113`) checks whether `Fig. N` / `图N` / `图 N` appears in the chapter body. A hit embeds the figure in a `FigureBlock`, and **each figure embeds at most once across the whole document** (first referencing chapter wins).
 
 **`_UNTITLED_FALLBACK` (v1.11.1, `builder.py:13`)**: `{"zh": "未命名章节", "en": "Untitled"}` — when the markdown lacks an H1/H2 heading, the chapter heading is filled in by `lang`-aware fallback (before v1.11.1, Chinese papers could end up with the English literal "Untitled" mid-document).
 
 **Four renderers, all subclass `Renderer` (`renderers/base.py`)**:
-- `docx.py` — `python-docx`; East-Asia font Song Ti for Chinese; Times New Roman for Western.
-- `html.py` — Jinja2 + base64 images; HYPERLINK mode renders `[span:doc:start-end]` as clickable `<sup>[1]</sup>` superscripts with a sources footer.
-- `pdf.py` — reuses HtmlRenderer output and runs it through WeasyPrint.
-- `pptx.py` — `python-pptx`; `slide_planner` assigns slide kinds (title / outline / section_divider / bullets / figure / closing_rich); bullets come from `pptx_summarizer` (LLM); responses are cached at `out_dir/llm_cache/`.
+- `docx.py` — `python-docx`; East-Asia font Song Ti for Chinese, Times New Roman for Western; **v1.13** adopts the shared design tokens (accent `#D97757` for chapter numbers + heading left border, secondary gray for captions, italic accent-bordered deep-observation aside) via OOXML `<w:pBdr>` / `<w:rFonts>`.
+- `html.py` — Jinja2 + base64 images; HYPERLINK mode renders `[span:doc:start-end]` as clickable `<sup>[1]</sup>` superscripts with a sources footer; **v1.13** emits `<span class="math-inline|math-auto" data-tex="…">unicode-fallback</span>` so KaTeX (linked from CDN by default, inlined when `LAZY_PAPER_INLINE_KATEX=1`) replaces the fallback on first paint while WeasyPrint and a raw "view source" still show something readable.
+- `pdf.py` — reuses HtmlRenderer output and runs it through WeasyPrint; the `@media print` block in `styles.css` suppresses topbar / TOC / controls and styles the Unicode math fallback as italic serif inline.
+- `pptx.py` — `python-pptx`; `slide_planner` assigns slide kinds (title / outline / section_divider / bullets / figure / closing_rich); bullets come from `pptx_summarizer` (LLM); responses are cached at `out_dir/llm_cache/`. PPTX is unchanged in v1.13.
+
+**Design system origin.** The visual language was developed by Claude Design from a written spec ([STYLE_SPEC.md](STYLE_SPEC.md)) and a reference image; the HTML demo ([`docs/assets/lazy-paper-demo.html`](assets/lazy-paper-demo.html)) is the contract `html.py` + `styles.css` were ported from. Renderers are stateless / per-doc; tokens live in `styles.css` `:root` so the three accent themes (`orange / teal / indigo`) require zero Python changes.
 
 **Partial-failure tolerance** (`runner.py:124-132`): one renderer failing does not block the others. The error lands in `done.yaml.formats[fmt]`; `partial: true` triggers a CLI WARNING. `--retry-failed` reruns only the failed formats.
 
@@ -903,6 +923,35 @@ LLM_EMBEDDINGS_BATCH_SIZE=10          # DashScope cap
 LLM_MAX_TOKENS_CEILING=40000          # clamp max_tokens on every LLM call (default 40000)
 LAZY_PAPER_HTML_CITATIONS=hyperlink   # HTML cite marker mode
                                        # hyperlink (default) / keep / remove
+```
+
+### 10.9 Rendering (v1.13)
+
+```bash
+LAZY_PAPER_INLINE_KATEX=1             # inline KaTeX CSS + JS + 20 woff2 fonts as
+                                       # data: URIs (preview.html ~440 KB → ~1.08 MB),
+                                       # so single-file HTML works offline.
+                                       # Default OFF → link cdn.jsdelivr.net at runtime.
+                                       # First-time setup:
+                                       #   uv run python scripts/fetch_katex.py
+                                       # populates stages/s09_render/templates/vendor/katex/.
+```
+
+### 10.10 OCR backends (v1.13)
+
+```bash
+MINERU_FORCE_OCR=1                    # default ON (was hard-coded OFF). Forces MinerU's
+                                       # layout-OCR path instead of trusting the text layer —
+                                       # essential for figure-rich text-PDFs whose vector
+                                       # plots would otherwise be skipped.
+MINERU_ENABLE_TABLE=1                 # default ON.
+MINERU_ENABLE_FORMULA=1                # default ON.
+MINERU_KEEP_RAW=0                     # default OFF. Set to 1 to preserve the unzipped
+                                       # MinerU response (_mineru_raw/) for diagnosis when
+                                       # figure recall regresses on a specific paper.
+MINERU_MODEL_VERSION=                 # default empty (cloud picks). Reserved hook for
+                                       # future MinerU API model parameter; the only
+                                       # currently-accepted value is "" (omit field).
 ```
 
 ### 10.9 Experimental / legacy
