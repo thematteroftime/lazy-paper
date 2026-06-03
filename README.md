@@ -449,11 +449,8 @@ uv run pytest -m live     # live LLM smoke tests (real keys)
 | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | End user — setup, quickstart, iteration, troubleshooting |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Maintainer — per-stage contracts |
 | [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) | AI coding agent — workflow + anti-patterns |
-| [`docs/STYLE_SPEC.md`](docs/STYLE_SPEC.md) | Design language for HTML / PDF / DOCX output (v1.13) |
-| [`docs/TEST_FRAMEWORK.md`](docs/TEST_FRAMEWORK.md) | Quality test harness + audit pitfalls |
-| [`docs/INTERNAL/HANDOFF.md`](docs/INTERNAL/HANDOFF.md) | Next maintainer — verified state + change-locations |
 | [`templates/`](templates/) | Four ready-to-use outline templates (CV-IMRaD, Relaxor AFE, ATEC-B2w) |
-| [`docs_zh/`](docs_zh/) | Simplified-Chinese mirror of USER_GUIDE / ARCHITECTURE / AGENT_GUIDE / INTERNAL/HANDOFF |
+| [`docs_zh/`](docs_zh/) | Simplified-Chinese mirror of USER_GUIDE / ARCHITECTURE / AGENT_GUIDE |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-by-release diff |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | External contributor norms |
 

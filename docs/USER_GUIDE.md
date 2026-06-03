@@ -169,7 +169,7 @@ Trade-offs:
 - **Latency**: s08 takes about 1.7–2× longer.
 - **Quality**: the verifier rejects unsupported claims. The retry-when-empty trigger then recovers comparator citations the default composer can drop.
 
-Validated on the 18-paper v1.9.2 corpus + v1.10 9-paper variant test: **meng2024 T1 = 9/9/9 (stdev 0)** across three independent runs after informed-retry shipped in v1.9.0 (was floor 12, mean 15.0 in v1.8.1). Full data in `docs/archive/v1_9_validation_results.md` and `docs/archive/v1_10_variant_comparison.md`.
+Validated on the 18-paper v1.9.2 corpus + v1.10 9-paper variant test: **meng2024 T1 = 9/9/9 (stdev 0)** across three independent runs after informed-retry shipped in v1.9.0 (was floor 12, mean 15.0 in v1.8.1).
 
 Leave these unset for the fast/cheap default composer — it gives good results on most papers at half the cost.
 

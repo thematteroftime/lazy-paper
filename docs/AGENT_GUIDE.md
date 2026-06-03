@@ -1,6 +1,6 @@
 # lazy-paper — AI Agent Guide
 
-This guide is for AI coding agents (Claude Code, Cursor, Copilot, etc.) maintaining, extending, or debugging this repo. Read `docs/INTERNAL/HANDOFF.md` and `docs/ARCHITECTURE.md` first.
+This guide is for AI coding agents (Claude Code, Cursor, Copilot, etc.) maintaining, extending, or debugging this repo. Read `docs/ARCHITECTURE.md` first.
 
 ## TL;DR for agents
 
@@ -262,8 +262,6 @@ docs/
   ARCHITECTURE.md               # per-stage contract (read after this file)
   AGENT_GUIDE.md                # you are here
   USER_GUIDE.md                 # end-user runbook (setup, quickstart, iteration, troubleshooting)
-  INTERNAL/HANDOFF.md           # production hand-off summary
-  INTERNAL/superpowers/         # historical specs + plans
 
 tests/                          # cross-cutting tests (cli, llm client, etc.)
 runs/                           # gitignored — per-paper artifacts (5 verified papers committed locally)

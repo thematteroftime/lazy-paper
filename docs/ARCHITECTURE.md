@@ -2,7 +2,7 @@
 
 > A maintainer-level reference for the 9-stage pipeline that turns a PDF research paper into bilingual DOCX/PDF/HTML/PPTX deep analysis. Code version **v1.13-render** (2026-06-03). 321 pytest tests.
 >
-> Install, CLI flags, and provider setup live in [README.md](../README.md) and [USER_GUIDE.md](USER_GUIDE.md). The visual design language for HTML/PDF/DOCX output lives in [STYLE_SPEC.md](STYLE_SPEC.md). This file is the "how the system works" side.
+> Install, CLI flags, and provider setup live in [README.md](../README.md) and [USER_GUIDE.md](USER_GUIDE.md). This file is the "how the system works" side.
 >
 > A Chinese version with the same structure (and a few extra design notes) lives at [`docs_zh/ARCHITECTURE.md`](../docs_zh/ARCHITECTURE.md).
 
@@ -81,7 +81,7 @@ LAZY_PAPER_KG_PROMPT=paper_kg_v3.md   # KG extracts author entities, linked to c
 LAZY_PAPER_BEST_OF_N=2                # two LLM samples per section, round-robin merge
 ```
 
-Together they lifted literature-citation recovery on meng2024 from ~10 to a stable 15 / 17 (mean across three runs). Details in `docs/archive/v1_8_validation_results.md`.
+Together they lifted literature-citation recovery on meng2024 from ~10 to a stable 15 / 17 (mean across three runs).
 
 The letters: **K** = best-of-N merge, **L** = structured compose + verifier. Code lives in `_STRUCTURED_SYSTEM`, `_single_compose`, `_merge_drafts`.
 
@@ -320,7 +320,7 @@ Phase 4 reverses the design: the static prompt stays clean and focused
 (materials-tuned methodology), while a per-paper augment block does
 runtime specialization. Generalization moves from prompt-body to
 architecture. Measured Phase 4 result: meng2024 0.55→0.68 (+13pp);
-ali2025 0.49→0.67 (+18pp). See `docs/archive/v1_12_phase4_summary.md`.
+ali2025 0.49→0.67 (+18pp).
 
 **Soft-degrade.** Any pre-stage failure (PromptTailorError, LLM transport,
 unexpected exception) writes a `prompt_tailor.failed` marker and s06
@@ -411,7 +411,7 @@ inside each `<span data-tex>` since it never runs the KaTeX script.
 - `pdf.py` — reuses HtmlRenderer output and runs it through WeasyPrint; the `@media print` block in `styles.css` suppresses topbar / TOC / controls and styles the Unicode math fallback as italic serif inline.
 - `pptx.py` — `python-pptx`; `slide_planner` assigns slide kinds (title / outline / section_divider / bullets / figure / closing_rich); bullets come from `pptx_summarizer` (LLM); responses are cached at `out_dir/llm_cache/`. PPTX is unchanged in v1.13.
 
-**Design system origin.** The visual language was developed by Claude Design from a written spec ([STYLE_SPEC.md](STYLE_SPEC.md)) and a reference image; the HTML demo ([`docs/assets/lazy-paper-demo.html`](assets/lazy-paper-demo.html)) is the contract `html.py` + `styles.css` were ported from. Renderers are stateless / per-doc; tokens live in `styles.css` `:root` so the three accent themes (`orange / teal / indigo`) require zero Python changes.
+**Design system origin.** The visual language was developed by Claude Design from a reference image; the HTML demo ([`docs/assets/lazy-paper-demo.html`](assets/lazy-paper-demo.html)) is the contract `html.py` + `styles.css` were ported from. Renderers are stateless / per-doc; tokens live in `styles.css` `:root` so the three accent themes (`orange / teal / indigo`) require zero Python changes.
 
 **Partial-failure tolerance** (`runner.py:124-132`): one renderer failing does not block the others. The error lands in `done.yaml.formats[fmt]`; `partial: true` triggers a CLI WARNING. `--retry-failed` reruns only the failed formats.
 
@@ -978,7 +978,7 @@ v1.11.0 was a **first-principles refactor** (commit `a4d90ab`) that **cut** thre
 
 **Code marker**: `structured.py:368-372` has `# v1.11 architecture-review CUT: cross-citation reject was 40 LOC...`
 
-**v1.12 phase 2 closure**: the underlying defect — empty `cited_quote` bypassing the verifier — was finally fixed in v1.12 phase 2 with the anchor-aware empty-quote branch at `structured.py:329-345` (see §5.5 verifier table top row). Pair with the HARD RULE addition to `_STRUCTURED_SYSTEM` (the s08 compose system prompt). The orthogonal reference-list check originally proposed here was NOT implemented; the anchor-based approach proved sufficient. Measured impact: meng2024's empty-`cited_quote` rate dropped from 32% to 0%; ali2025_flash RAGAS faithfulness +5.4pp. The apparent meng2024 faithfulness drop is a metric artifact — see `docs/archive/v1_12_phase2_summary.md` for full diagnostic.
+**v1.12 phase 2 closure**: the underlying defect — empty `cited_quote` bypassing the verifier — was finally fixed in v1.12 phase 2 with the anchor-aware empty-quote branch at `structured.py:329-345` (see §5.5 verifier table top row). Pair with the HARD RULE addition to `_STRUCTURED_SYSTEM` (the s08 compose system prompt). The orthogonal reference-list check originally proposed here was NOT implemented; the anchor-based approach proved sufficient. Measured impact: meng2024's empty-`cited_quote` rate dropped from 32% to 0%; ali2025_flash RAGAS faithfulness +5.4pp.
 
 ### 11.2 figure-retry pass (cut)
 
@@ -1018,7 +1018,7 @@ v1.11.0 passed the architecture-review ship gate (hardcode scan + lang threading
 From CHANGELOG v1.10 "Deferred to v1.11" still open:
 
 - **BS1+BS2 normalize**: letter-spaced subscripts (OCR outputs "L i 3 +" while the LLM writes "Li³⁺") are asymmetric between OCR and LLM, so the BS3+BS4 symmetric-folding strategy does not apply. Needs case-by-case handling; no schedule.
-- ~~**s04 caption-aware numbering**~~: **shipped** in v1.12 phase 1 as `--pdffigures2`, opt-in. See §4.4 "PDFFigures 2 reconciliation". Pending: enable by default once measured impact from `docs/archive/v1_12_phase1_summary.md` justifies it.
+- ~~**s04 caption-aware numbering**~~: **shipped** in v1.12 phase 1 as `--pdffigures2`, opt-in. See §4.4 "PDFFigures 2 reconciliation".
 - **comparator gap**: `build_required_mentions` only searches KG entities for comparators, but some papers cite work in the references list without naming it as an entity. We need to scan the body text for "Et al. ... reported" patterns.
 - **template-paper mismatch graceful degrade**: when an AFE template runs against a deep-learning paper, s08 produces OOS overflow ("源论文未涉及...") in every section instead of falling back to a generic paper structure.
 - **DOCX HYPERLINK dead code**: the DOCX renderer still does not consume `citation_mode=HYPERLINK` — only KEEP/REMOVE. The sources list needs wiring into the docx renderer.
@@ -1032,11 +1032,6 @@ From CHANGELOG v1.10 "Deferred to v1.11" still open:
 
 - User guide: [`docs/USER_GUIDE.md`](USER_GUIDE.md)
 - Agent / AI collaboration: [`docs/AGENT_GUIDE.md`](AGENT_GUIDE.md)
-- Maintainer handoff: [`docs/INTERNAL/HANDOFF.md`](INTERNAL/HANDOFF.md)
 - Chinese architecture doc: [`docs_zh/ARCHITECTURE.md`](../docs_zh/ARCHITECTURE.md)
-- v1.10 variant comparison: [`docs/archive/v1_10_variant_comparison.md`](archive/v1_10_variant_comparison.md)
-- v1.10 external reference (6 OSS systems): [`docs/archive/v1_10_external_reference.md`](archive/v1_10_external_reference.md)
-- Historical validation (v1.4–v1.9): [`docs/archive/`](archive/)
-- Test framework: [`docs/TEST_FRAMEWORK.md`](TEST_FRAMEWORK.md)
 - Full changelog: [`CHANGELOG.md`](../CHANGELOG.md)
 - Third-party notices: [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)

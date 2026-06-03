@@ -2,7 +2,7 @@
 
 > 面向新人（包括未来 Claude session 和外部贡献者）的系统级参考。读完后无需阅读源码，就能理解整个 pipeline 是怎么把一篇 PDF 论文变成多格式深度分析的。
 >
-> 本文档对应代码版本 **v1.11.4**（2026-05-24），300 个 pytest 测试，9 个 pipeline stage。
+> 本文档对应代码版本 **v1.13-render**（2026-06-03），321 个 pytest 测试，9 个 pipeline stage。
 >
 > 安装、CLI 命令、provider 配置请看 [README.zh.md](../README.zh.md) / [USER_GUIDE.md](USER_GUIDE.md)；本文档专注于 **"系统是怎么工作的"**。
 >
@@ -82,7 +82,7 @@ LAZY_PAPER_KG_PROMPT=paper_kg_v3.md   # 让 KG 抽取 author 实体并 link 到 
 LAZY_PAPER_BEST_OF_N=2                # 每章节跑 2 次 LLM，round-robin 合并
 ```
 
-它们一起把每章节的 literature citation recovery 从 baseline 10/17 提到 15/17 (meng2024 平均)。详见 `docs/archive/v1_8_validation_results.md`。
+它们一起把每章节的 literature citation recovery 从 baseline 10/17 提到 15/17 (meng2024 平均)。
 
 "KL"中的 K = best-of-N merge，L = structured + verifier。代码里出现的 `_STRUCTURED_SYSTEM` / `_single_compose` / `_merge_drafts` 都是 KL 的实现。
 
@@ -354,7 +354,7 @@ class Paragraph:
 - `pdf.py` — 复用 HtmlRenderer 输出，过 WeasyPrint 转 PDF；`styles.css` 中的 `@media print` 屏蔽 topbar / TOC / 控件，公式以 italic serif Unicode 内联兜底（WeasyPrint 不跑 JS）。
 - `pptx.py` — python-pptx；用 `slide_planner` 分配 slide kind (title/outline/section_divider/bullets/figure/closing_rich)，bullet 文本由 `pptx_summarizer` (LLM) 生成；带 LLM cache (`out_dir/llm_cache/`)。v1.13 PPTX 没动。
 
-**设计语言来源**：HTML/DOCX/PDF 的视觉规范由 Claude Design 基于一份文字 spec（[STYLE_SPEC.md](../docs/STYLE_SPEC.md)）+ 参考图发出，[`docs/assets/lazy-paper-demo.html`](../docs/assets/lazy-paper-demo.html) 是契约文件，`html.py` + `styles.css` 都从它移植。Renderer 都是 stateless / 每文档；token 在 `styles.css` `:root`，3 套强调色主题（`orange / teal / indigo`）切换零 Python 改动。
+**设计语言来源**：HTML/DOCX/PDF 的视觉规范由 Claude Design 基于一份参考图发出，[`docs/assets/lazy-paper-demo.html`](../docs/assets/lazy-paper-demo.html) 是契约文件，`html.py` + `styles.css` 都从它移植。Renderer 都是 stateless / 每文档；token 在 `styles.css` `:root`，3 套强调色主题（`orange / teal / indigo`）切换零 Python 改动。
 
 **partial failure 容错** (`runner.py:124-132`)：单个 renderer 失败不阻塞其他，error 落进 `done.yaml.formats[fmt]`，`partial: true` 触发 CLI WARNING。`--retry-failed` 只重跑失败的格式。
 
@@ -916,7 +916,7 @@ v1.11.0 是一次 **first-principles refactor** (commit `a4d90ab`)，主动**删
 
 **代码标记**: `structured.py:368-372` 有 `# v1.11 architecture-review CUT: cross-citation reject was 40 LOC...`
 
-**v1.12 phase 2 闭环**：底层缺陷 —— empty `cited_quote` 绕过 verifier —— 在 v1.12 phase 2 通过 `structured.py:329-345` 的 anchor-aware 空 quote 分支最终修复（见 §5.5 verifier 表顶行）。同时配套在 `_STRUCTURED_SYSTEM`（s08 compose 系统 prompt）里加入 HARD RULE 约束。原计划的正交 reference-list 检查（引用作者必须出现在 `paper.references` KG 实体里）最终未实现；基于 anchor 的方案已证明足够。实测影响：meng2024 的 `cited_quote` 空率从 32% 降到 0%；ali2025_flash RAGAS faithfulness +5.4pp。meng2024 表面 faithfulness 下降是度量伪影 —— 完整诊断见 `docs/archive/v1_12_phase2_summary.md`。
+**v1.12 phase 2 闭环**：底层缺陷 —— empty `cited_quote` 绕过 verifier —— 在 v1.12 phase 2 通过 `structured.py:329-345` 的 anchor-aware 空 quote 分支最终修复（见 §5.5 verifier 表顶行）。同时配套在 `_STRUCTURED_SYSTEM`（s08 compose 系统 prompt）里加入 HARD RULE 约束。原计划的正交 reference-list 检查（引用作者必须出现在 `paper.references` KG 实体里）最终未实现；基于 anchor 的方案已证明足够。实测影响：meng2024 的 `cited_quote` 空率从 32% 降到 0%；ali2025_flash RAGAS faithfulness +5.4pp。
 
 ### 11.2 figure-retry pass (cut)
 
@@ -971,10 +971,5 @@ CHANGELOG v1.10 "Deferred to v1.11" 还有未完工的：
 
 - 用户指南: [`docs_zh/USER_GUIDE.md`](USER_GUIDE.md)
 - Agent / AI 协作: [`docs_zh/AGENT_GUIDE.md`](AGENT_GUIDE.md)
-- 维护者交接: [`docs_zh/INTERNAL/HANDOFF.md`](INTERNAL/HANDOFF.md)
-- v1.10 variant 对比报告: [`docs/archive/v1_10_variant_comparison.md`](../docs/archive/v1_10_variant_comparison.md)
-- v1.10 外部参考 (6 个 OSS 系统): [`docs/archive/v1_10_external_reference.md`](../docs/archive/v1_10_external_reference.md)
-- 历史版本验证报告 (v1.4–v1.9): [`docs/archive/`](archive/)
-- 测试框架细节（英文）: [`docs/TEST_FRAMEWORK.md`](../docs/TEST_FRAMEWORK.md)
 - 全量 changelog: [`CHANGELOG.md`](../CHANGELOG.md)
 - 第三方代码归属: [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)

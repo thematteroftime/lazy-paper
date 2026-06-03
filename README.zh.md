@@ -453,11 +453,8 @@ uv run pytest -m live     # 真 LLM 烟测（需要真实 key）
 | [`docs_zh/USER_GUIDE.md`](docs_zh/USER_GUIDE.md) | 终端用户 —— 安装、快速开始、迭代、排障 |
 | [`docs_zh/ARCHITECTURE.md`](docs_zh/ARCHITECTURE.md) | 维护者 —— 9 阶段契约 + Strategy KL 详解 + 数据流图 |
 | [`docs_zh/AGENT_GUIDE.md`](docs_zh/AGENT_GUIDE.md) | AI 编程 agent —— 工作流与反模式 |
-| [`docs/STYLE_SPEC.md`](docs/STYLE_SPEC.md) | HTML / PDF / DOCX 输出的设计语言（v1.13，英文） |
-| [`docs_zh/INTERNAL/HANDOFF.md`](docs_zh/INTERNAL/HANDOFF.md) | 下一任维护者 —— 验证态 + 改动入口 |
-| [`docs/TEST_FRAMEWORK.md`](docs/TEST_FRAMEWORK.md) | 评测 harness 与 TestCase 编写（英文） |
 | [`templates/`](templates/) | 4 份现成 outline 模板（CV-IMRaD、Relaxor AFE、ATEC-B2w） |
-| [`docs/`](docs/) | 英文版同结构文档（含历史设计文档归档） |
+| [`docs/`](docs/) | 英文版同结构文档 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本差异 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 外部贡献者约定（英文） |
 
