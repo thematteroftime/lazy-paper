@@ -32,6 +32,11 @@ mypaper/
 .worktrees/
 # Public outline-template examples ARE committed; they're a load-bearing input
 !templates/*.docx
+# Shipped reference outputs ("here's what lazy-paper produces on real papers")
+!examples/**/*.docx
+!examples/**/*.html
+!examples/**/*.pdf
+!examples/**/*.pptx
 
 .claude/
 .coverage
