@@ -304,15 +304,15 @@ Output lands at `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`.
   </tr>
   <tr>
     <td><code>docx</code></td>
-    <td>Self-contained Word file; Times New Roman + Song Ti for Chinese</td>
+    <td>Self-contained Word file; Times New Roman + Song Ti for Chinese; v1.13 picks up the shared design tokens (accent <code>#D97757</code> chapter numbers + left border, secondary-gray captions, italic accent-bordered deep-observation aside)</td>
   </tr>
   <tr>
     <td><code>pdf</code></td>
-    <td>Same content rendered through WeasyPrint from a shared HTML template</td>
+    <td>WeasyPrint renders the HTML output; the print CSS suppresses topbar / TOC / controls and keeps formulas as italic serif inline (Unicode fallback)</td>
   </tr>
   <tr>
     <td><code>html</code></td>
-    <td>Single file with base64-embedded images — emailable, viewable anywhere</td>
+    <td>Single file with base64-embedded images. v1.13 adds a sticky topbar, right-rail TOC with scroll highlight, three accent themes, copy-on-click LaTeX, and KaTeX math rendering. Default links the jsdelivr CDN; set <code>LAZY_PAPER_INLINE_KATEX=1</code> for a fully offline single file (~1.08 MB).</td>
   </tr>
   <tr>
     <td><code>pptx</code></td>

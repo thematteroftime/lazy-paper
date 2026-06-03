@@ -7,6 +7,160 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.13-render] — 2026-06-03 (default ON)
+
+End-to-end pass on the rendering layer driven by a `lazy-paper Demo.html`
+style spec from Claude Design. **One visual language across DOCX / HTML /
+PDF**; PPTX unchanged in this slice. No changes to s01–s08 semantics
+beyond two surgical OCR / chapter detector fixes.
+
+#### Added — KaTeX-based math rendering in HTML / PDF
+
+`Paragraph` now carries both `text` (Unicode-normalized, the existing
+DOCX/PPTX path) and `raw_text` (the original LLM output with `\(...\)` /
+`\[...\]` / `**bold**` preserved). The HTML renderer walks `raw_text`
+through a new `iter_html_runs(...)` splitter and emits:
+
+```html
+<span class="math-inline" data-tex="R_{\text{en}}">R_en</span>
+<span class="math-auto"   data-tex="R_{en}=\exp(-\sum|τ||q̇|/…)">…</span>
+<figure class="formula-block" data-tex="…">…</figure>
+```
+
+A small inline JS calls KaTeX on `data-tex`; the Unicode fallback inside
+each span is what WeasyPrint (no JS) and a raw "view source" save will
+show. The selector `math-auto` (auto-promoted to a display block in
+browser) fires when the LaTeX contains `\frac` / `\sum` / `\int` / `\big`
+or exceeds 40 chars.
+
+#### Added — `LAZY_PAPER_INLINE_KATEX` (opt-in offline single-file)
+
+Default (off): preview.html links the jsdelivr CDN for KaTeX (~440 KB
+HTML, needs network on first open). `LAZY_PAPER_INLINE_KATEX=1` inlines
+katex.min.css + katex.min.js + all 20 woff2 fonts as base64 data URIs
+(~1.08 MB HTML, no external requests). Provision the vendor dir with
+`uv run python scripts/fetch_katex.py`; idempotent.
+
+#### Added — DOCX adopts the design system
+
+The DOCX renderer was a plain Times/Songti / `Heading 1` setup. It now
+mirrors the HTML accent palette (#D97757), serif title, monospace
+chapter-number prefix in accent (`01  Chapter Title`), accent-colored
+left border on headings and on the deep-observation block, secondary-
+gray captions. Implemented via OOXML `<w:pBdr>` / `<w:rFonts>` for the
+parts python-docx doesn't expose. Same data model as before — no
+template work needed by the user.
+
+#### Added — `STYLE_SPEC.md` + `lazy-paper Demo.html`
+
+`docs/STYLE_SPEC.md` captures the design tokens (color, type, spacing)
+and the element-level rules (formula block, deep-observation aside,
+figure layout, sources footer). `lazy-paper Demo.html` is the Claude
+Design hand-off — single file, three themes (orange / teal / indigo),
+copy-on-click formula chip, lightbox, IntersectionObserver-driven
+right-side TOC.
+
+#### Changed — body reading width 720 → 920 px (`--measure`)
+
+Chinese line length goes from ~22 to ~40-44 chars/line — the academic
+reading comfort range. TOC display breakpoint raised 1180 → 1280 px so
+the sidebar stops fighting the column at common laptop widths.
+
+#### Fixed — MinerU `chart`-type items are figures too
+
+MinerU's content_list classifies scientific plots as `type: chart` (with
+`chart_caption`) and only the realistic photos / diagrams as `type:
+image`. The prior `_content_list_to_docs` walked only `image`, so a
+text-PDF whose figures are mostly vector plots (e.g. arXiv:2403.20001v2)
+lost 10/12 figures and labeled the surviving two as the wrong fig
+number. Fix: handle both types; fall back to `chart_caption` when
+`image_caption` is empty.
+
+#### Fixed — sub-panel caption no longer steals a fake fig number
+
+`_ensure_figure_number` used to inject `"Figure {counter}. ..."` ahead
+of every empty-or-non-standard caption. For chart sub-panels like
+`"(a) Straight Line Walking"` that meant each panel got promoted to a
+top-level fig — `Fig. 3a/3b/3c/3d` showed up as `Fig. 3 / Fig. 4 / Fig.
+5 / Fig. 6` and the real `"Fig. 3: Ablation study…"` caption then paired
+nothing. Detection regex `_SUBPANEL_RE` short-circuits the injection;
+s04's nearest-caption pairing now correctly groups all four panels under
+the real `Fig. 3`.
+
+#### Fixed — fragmented Unicode subscripts (`R_{motion}` → `Rm_ot_ion`)
+
+The `_SUB_MAP` only covers a handful of Latin subscriptable letters
+(`a, e, i, o, u, v, x, h`). For `_{motion}` the per-char translation
+produced `mₒtᵢₒn` (only `o, i` translated); `_collapse_unicode_subscripts`
+then re-collapsed the surviving Unicode runs and emitted the visually
+fragmented `m_ot_ion`. New behavior: when a `_{…}` content has any
+unsupported ASCII letter, keep the entire subscript in ASCII form
+`_motion` so the renderer shows one coherent token.
+
+#### Fixed — extra LaTeX commands are unwrapped before Unicode lookup
+
+`normalize_math` was emitting `\text{en}` as `\ₜₑₓₜ{ₑₙ}` (the `\` and
+`{` survived; the inner letters were partially mapped). Now we
+explicitly strip / convert in a fixed order:
+
+```
+\text{en}        →  en        # text-mode commands unwrap braces
+\big \Big \left  →  ''         # spacing macros drop
+\dot{q}          →  q̇         # accents → combining marks
+\exp \sin \log…  →  exp …      # math functions: drop leading backslash
+\alpha …         →  α …        # Greek letters (existing)
+^{…} _{…}        →  Unicode    # superscript / subscript (existing)
+\frac{a}{b}      →  (a)/(b)    # fractions: after sub/super so inner
+                                 braces are gone
+```
+
+#### Fixed — s03 chapter detector recognizes Roman numerals
+
+`detect_science_anchor` accepted arabic prefixes (`1.`, `2.3.`) but not
+roman (`I.`, `II.`, …), so IEEE / conference papers whose top-level
+sections are roman-numbered collapsed into one big `Preface` chapter.
+Regex extended; section-anchor set also extended with `related work /
+background / problem statement / approach / system overview /
+evaluation / ablation / limitations / future work` plus their Chinese
+equivalents.
+
+#### Added — `MINERU_FORCE_OCR` / `MINERU_ENABLE_TABLE` / `MINERU_ENABLE_FORMULA` / `MINERU_KEEP_RAW` / `MINERU_MODEL_VERSION`
+
+Defaults: force-OCR ON, table ON, formula ON, keep-raw OFF, model
+version unset (cloud picks). The previous hard-coded `is_ocr: false`
+made figure-rich text-PDFs return very few image regions; flipping the
+default to ON closes a recall gap with no measured regression on
+text-heavy papers.
+
+#### Changed — caption uses longest `image_caption | chart_caption` available
+
+s04 caption fallback already favored `image_caption`; it now also
+accepts `chart_caption` (MinerU's `chart` items expose only the latter).
+
+#### Changed — HTML template
+
+- Sticky top bar (brand · doc title · live locator · controls)
+- Right-rail TOC with IntersectionObserver scroll highlight
+- Theme switcher (orange / teal / indigo) via `data-theme`
+- Long-formula auto-upgrade toggle
+- Lightbox for figure images
+- Sources footer counter pill
+
+The PDF path (WeasyPrint) inherits all of the above except JS-driven
+behaviour; `@media print` rules suppress topbar / TOC / controls and
+preserve the math fallback as italic serif inline text.
+
+#### Migration
+
+No public CLI flag or config change is required. Existing runs simply
+re-render with `--only s09_render`. Fresh runs benefit from the OCR
+fix automatically. To opt into the offline single-file HTML:
+
+```bash
+uv run python scripts/fetch_katex.py     # one-time, ~548 KB vendor dir
+LAZY_PAPER_INLINE_KATEX=1 uv run python -m cli run …
+```
+
 ### [v1.12-phase4] — 2026-05-26 (opt-in, flip default ON in a follow-up)
 
 #### Added — two-stage prompt tailoring (opt-in)

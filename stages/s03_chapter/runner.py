@@ -19,17 +19,27 @@ SECTION_ANCHORS = {
     "conclusion", "conclusions", "summary",
     "acknowledgements", "acknowledgments",
     "references", "supplementary", "appendix",
+    # Common conference-paper variants (IEEE / robotics / RL):
+    "related work", "related works", "background",
+    "problem formulation", "problem statement",
+    "approach", "method", "system overview", "system design",
+    "evaluation", "evaluations", "ablation", "ablations",
+    "discussion and conclusion", "discussions and conclusions",
+    "limitations", "future work",
     # Chinese equivalents
     "摘要", "引言", "前言", "绪论", "实验", "实验方法",
     "材料与方法", "材料和方法", "方法", "结果", "结果与讨论",
     "结果和讨论", "讨论", "结论", "总结", "致谢", "参考文献",
-    "补充材料", "附录",
+    "补充材料", "附录", "相关工作", "背景", "问题描述",
+    "方法概述", "系统设计", "评估", "消融",
 }
 
 # Heading regex: number prefix optional; title starts with [A-Z一-鿿]
 # (latin capital OR CJK), continues with mixed alphanumeric + CJK + spaces.
+# Number prefix accepts either arabic ("1.", "2.3.") or Roman ("I.", "II.")
+# — IEEE/conference papers often use Roman numerals for top-level sections.
 _ANCHOR_LINE_RE = re.compile(
-    r"^\s*(#{0,4}\s*)?(\d+(?:\.\d+){0,2}\.?\s+)?"
+    r"^\s*(#{0,4}\s*)?(\d+(?:\.\d+){0,2}\.?\s+|[IVX]{1,5}\.\s+)?"
     r"(?P<title>[A-Z一-鿿][A-Za-z一-鿿 &/-]{1,60})\s*$"
 )
 

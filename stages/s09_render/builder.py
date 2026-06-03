@@ -70,7 +70,13 @@ class DocumentBuilder:
             if self._looks_like_md_table(text):
                 yield self._parse_md_table(text)
             else:
-                yield Paragraph(text=normalize_math(text))
+                # text   = Unicode-normalized for DOCX/PPTX & PDF print fallback;
+                # raw_text = the original LLM output (LaTeX preserved) so the
+                # HTML renderer can hand inline / display math to KaTeX.
+                yield Paragraph(
+                    text=normalize_math(text, mark_inline=True),
+                    raw_text=text,
+                )
 
     @staticmethod
     def _looks_like_md_table(text: str) -> bool:
