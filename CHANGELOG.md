@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.14.1] — 2026-06-11 — retriever zero-score BM25 fix
+
+- **`llm/retriever.py`**: drop zero-score BM25 hits from RRF fusion — pure-CJK
+  (or any no-token-overlap) queries previously granted full rank credit to k
+  arbitrary chunks, polluting in-run retrieval. Same fix as `llm/library.py`
+  shipped in v1.14-library. Tests: +1.
+
 ### [v1.14-library] — 2026-06-11 — cross-paper knowledge library
 
 Foundation of the knowledge-base loop (v1.14 → v1.16 roadmap).
