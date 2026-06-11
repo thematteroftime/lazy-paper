@@ -216,3 +216,28 @@ def test_cli_template_use_library(tmp_path: Path, monkeypatch):
     assert rc == 0
     assert "Other Paper" in seen["user"]
     assert "relevant excerpt" in seen["user"]
+
+
+def test_draft_retries_once_then_succeeds(tmp_path: Path):
+    from llm.template_author import draft
+    with patch("llm.template_author.LLM") as MockLLM:
+        MockLLM.return_value.chat.side_effect = [
+            _FakeResp("not: [valid"), _FakeResp(_CANNED_YAML)]
+        sections, resp = draft(idea="x", paper_digest="d", library_context="",
+                               lang="zh", n_sections=2)
+    assert len(sections) == 2
+    assert MockLLM.return_value.chat.call_count == 2
+    second_user = MockLLM.return_value.chat.call_args.kwargs["user"]
+    assert "valid YAML" in second_user
+
+
+def test_draft_failure_writes_audit_sidecars(tmp_path: Path):
+    from llm.template_author import draft
+    base = tmp_path / "tpl" / "auto-x.docx"
+    with patch("llm.template_author.LLM") as MockLLM:
+        MockLLM.return_value.chat.return_value = _FakeResp("garbage: [")
+        with pytest.raises(SystemExit, match="template draft"):
+            draft(idea="x", paper_digest="d", library_context="",
+                  lang="zh", n_sections=2, audit_base=base)
+    assert Path(str(base) + ".response.json").exists()
+    assert Path(str(base) + ".prompt.md").exists()

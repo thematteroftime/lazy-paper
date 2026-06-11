@@ -126,10 +126,13 @@ def _validate(data) -> list[dict]:
 
 
 def draft(*, idea: str, paper_digest: str, library_context: str = "",
-          lang: str = "zh", n_sections: int = 6):
-    """One text-LLM call -> validated, sanitized [{title, questions}] outline.
+          lang: str = "zh", n_sections: int = 6,
+          audit_base: Path | None = None):
+    """Text-LLM call (1 retry) -> validated [{title, questions}] outline.
 
-    Returns (sections, LLMResponse) so the caller can persist the audit trail.
+    Returns (sections, LLMResponse). When `audit_base` is given, the prompt
+    and raw response are persisted BEFORE validation, so a rejected response
+    is always inspectable at <audit_base>.response.json.
     """
     system_tpl, user_tpl = _split_prompt(PROMPT_PATH.read_text(encoding="utf-8"))
     system = system_tpl.format(
@@ -138,11 +141,31 @@ def draft(*, idea: str, paper_digest: str, library_context: str = "",
     )
     user = user_tpl.format(idea=idea, paper_digest=paper_digest,
                            library_context=library_context or "(empty)")
-    resp = LLM(role="text").chat(system=system, user=user,
-                                 temperature=0.4, max_tokens=3000)
-    cleaned = _FENCE_RE.sub("", resp.content.strip())
-    sections = _validate(safe_parse_yaml(cleaned))
-    return sections, resp
+    llm = LLM(role="text")
+    last_err: SystemExit | None = None
+    for attempt in range(2):
+        attempt_user = user if attempt == 0 else (
+            user + "\n\nYour previous output was not valid YAML for the "
+                   "required schema. Output ONLY the YAML — no fence, "
+                   "no preamble, no commentary.")
+        resp = llm.chat(system=system, user=attempt_user,
+                        temperature=0.4, max_tokens=4096)
+        if audit_base is not None:
+            base = Path(audit_base)
+            base.parent.mkdir(parents=True, exist_ok=True)
+            Path(str(base) + ".prompt.md").write_text(
+                f"SYSTEM:\n{system}\n\nUSER:\n{attempt_user}", encoding="utf-8")
+            Path(str(base) + ".response.json").write_text(
+                json.dumps({"model": resp.model, "usage": resp.usage,
+                            "content": resp.content},
+                           ensure_ascii=False, indent=2),
+                encoding="utf-8")
+        cleaned = _FENCE_RE.sub("", resp.content.strip())
+        try:
+            return _validate(safe_parse_yaml(cleaned)), resp
+        except SystemExit as e:
+            last_err = e
+    raise last_err
 
 
 def write_docx(sections: list[dict], out_path: Path, *, idea: str) -> None:

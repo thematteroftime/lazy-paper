@@ -269,23 +269,15 @@ def _cmd_template(args) -> int:
         from llm.library import Library
         lib_ctx = ta.library_context(Library(args.library_dir), args.idea)
 
-    sections, resp = ta.draft(idea=args.idea, paper_digest=digest,
-                              library_context=lib_ctx, lang=args.lang,
-                              n_sections=args.sections)
-
     out = Path(args.out) if args.out else (
         Path("templates") / f"auto-{slugify(args.idea, maxlen=40)}.docx")
+    # draft() persists <out>.prompt.md / <out>.response.json BEFORE validating,
+    # so a rejected LLM response is always inspectable.
+    sections, resp = ta.draft(idea=args.idea, paper_digest=digest,
+                              library_context=lib_ctx, lang=args.lang,
+                              n_sections=args.sections, audit_base=out)
     ta.write_docx(sections, out, idea=args.idea)
     nodes = ta.roundtrip_check(out, sections)
-
-    # Audit trail, same shape as pipeline stages
-    Path(str(out) + ".prompt.md").write_text(
-        f"IDEA: {args.idea}\n\nDIGEST:\n{digest}\n\nLIBRARY:\n{lib_ctx}",
-        encoding="utf-8")
-    Path(str(out) + ".response.json").write_text(
-        json.dumps({"model": resp.model, "usage": resp.usage,
-                    "content": resp.content}, ensure_ascii=False, indent=2),
-        encoding="utf-8")
 
     print(f"[template] wrote {out} ({len(nodes)} sections, "
           f"{sum(len(s['questions']) for s in sections)} questions)")
