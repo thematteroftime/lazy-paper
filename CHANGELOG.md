@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.14-library] — 2026-06-11 — cross-paper knowledge library
+
+Foundation of the knowledge-base loop (v1.14 → v1.16 roadmap).
+
+- **`llm/library.py`**: persistent `library/` store (LanceDB + bm25s + manifest).
+  `ingest` lifts chunks/embeddings/KG from a finished run — zero LLM calls —
+  and archives context/fig_notes/sections/imgs so they survive `runs/` cleanup.
+- **CLI**: `ingest` / `query` / `papers` subcommands; `run --ingest` opt-in
+  auto-ingest. `query --json` for agent consumption.
+- **Cross-paper hybrid retrieval**: same dense + BM25 + RRF fusion as the
+  in-run retriever; `--papers` scope filter; one-embeddings-model-per-library
+  enforced via dimension check.
+- **Manifest cost aggregation**: per-paper `total_tokens` summed from stage
+  `done.yaml`s (first project-level cost visibility).
+- **Reserved**: `ingest --kind experiment` for the v1.17 experiment loop.
+- Tests: +11 (`tests/test_library.py`). Docs: `KNOWLEDGE_BASE.md` (en+zh).
+
 ### [v1.13-render] — 2026-06-03 (default ON)
 
 End-to-end pass on the rendering layer driven by a `lazy-paper Demo.html`

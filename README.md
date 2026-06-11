@@ -139,6 +139,7 @@ For a new domain copy the closest match and rewrite the section headings. There 
 | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) · [`docs_zh/`](docs_zh/USER_GUIDE.md) | End user — setup, iteration, troubleshooting |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`docs_zh/`](docs_zh/ARCHITECTURE.md) | Maintainer — per-stage contracts, retrieval, verifier |
 | [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) · [`docs_zh/`](docs_zh/AGENT_GUIDE.md) | AI coding agent — workflow + anti-patterns |
+| [`docs/KNOWLEDGE_BASE.md`](docs/KNOWLEDGE_BASE.md) · [`docs_zh/`](docs_zh/KNOWLEDGE_BASE.md) | Cross-paper knowledge library — ingest & query |
 | [`templates/`](templates/) | Four ready-to-use outline templates |
 | [`examples/`](examples/) | Three reference outputs (energy-RL · MUJICA · PRX nonreciprocal MD) — open any folder's `preview.html` to see what lazy-paper produces |
 | [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes · contribution norms |
