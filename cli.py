@@ -302,6 +302,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="v1.12: enable PDFFigures 2 sidecar for caption-anchored figure "
                         "renumbering (requires PDFFIGURES2_JAR=docker + a built "
                         "lazy-paper/pdffigures2:0.1.0 image). Off by default — opt-in until v1.13.")
+    r.add_argument("--ingest", action="store_true",
+                   help="v1.14: after the run, ingest results into the knowledge "
+                        "library (see `lazy-paper ingest --help`). Opt-in.")
 
     li = sub.add_parser("ingest", help="Ingest a finished run into the knowledge library")
     li.add_argument("paper_id", help="Run name under --runs-dir (same as run --paper-id)")
@@ -360,6 +363,10 @@ def main(argv: list[str] | None = None) -> int:
         "lang": args.lang,
     }
     dump_yaml(run_root / paper_id / "meta.yaml", meta)
+    if args.ingest:
+        from llm.library import Library
+        entry = Library().ingest(run_root / paper_id)
+        print(f"[library] ingested {paper_id} ({entry['n_chunks']} chunks)")
     _print_done_summary(paper_id, meta["duration_s"], run_root / paper_id / "s09_render")
     return 0
 

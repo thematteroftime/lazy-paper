@@ -203,3 +203,27 @@ def test_readonly_papers_creates_no_dirs(tmp_path: Path):
     lib = Library(root)
     assert lib.papers() == {}
     assert not root.exists()
+
+
+def test_run_ingest_flag_calls_library(tmp_path: Path, monkeypatch):
+    import cli
+
+    monkeypatch.setattr(cli, "_run_one", lambda *a, **k: None)
+    called = {}
+
+    class FakeLib:
+        def __init__(self, *a, **k):
+            pass
+
+        def ingest(self, run_dir, **k):
+            called["run_dir"] = Path(run_dir)
+            return {"n_chunks": 1, "n_entities": 0}
+
+    monkeypatch.setattr("llm.library.Library", FakeLib)
+    # _run_one is stubbed, so nothing creates runs/x/ — meta.yaml needs it.
+    (tmp_path / "runs" / "x").mkdir(parents=True)
+    rc = cli.main(["run", "--pdf", "a.pdf", "--template", "t.docx",
+                   "--runs-dir", str(tmp_path / "runs"),
+                   "--paper-id", "x", "--ingest"])
+    assert rc == 0
+    assert called["run_dir"].name == "x"
