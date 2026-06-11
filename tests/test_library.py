@@ -188,3 +188,18 @@ def test_cli_ingest_papers_query_json(tmp_path: Path, capsys, monkeypatch):
     assert rc == 0
     hits = _json.loads(capsys.readouterr().out)
     assert hits and hits[0]["paper_id"] == "alpha-paper"
+
+
+def test_query_survives_missing_bm25_ids(tmp_path: Path):
+    lib = Library(tmp_path / "library")
+    lib.ingest(_make_run(tmp_path, "alpha-paper", "alpha"))
+    (lib.root / "bm25_ids.json").unlink()
+    hits = lib.query("alpha dynamics")  # must not raise; no embed call needed
+    assert hits == []
+
+
+def test_readonly_papers_creates_no_dirs(tmp_path: Path):
+    root = tmp_path / "fresh-library"
+    lib = Library(root)
+    assert lib.papers() == {}
+    assert not root.exists()

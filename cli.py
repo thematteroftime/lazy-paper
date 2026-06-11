@@ -227,8 +227,8 @@ def _cmd_ingest(args) -> int:
 def _cmd_query(args) -> int:
     from llm.library import Library
     lib = Library(args.library_dir)
-    papers = ([p.strip() for p in args.papers.split(",") if p.strip()]
-              if args.papers else None)
+    raw = _parse_formats(args.papers)
+    papers = [slugify(p) for p in raw] if raw else None
     hits = lib.query(args.text, top_k=args.top_k, papers=papers)
     if args.json:
         print(json.dumps(hits, ensure_ascii=False, indent=2))

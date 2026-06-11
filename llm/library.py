@@ -39,8 +39,16 @@ _ARCHIVE = [
 class Library:
     def __init__(self, root: Path | str | None = None) -> None:
         self.root = Path(root or os.environ.get("LAZY_PAPER_LIBRARY_DIR", "library"))
-        self.root.mkdir(parents=True, exist_ok=True)
-        self._db = lancedb.connect(str(self.root / "lancedb"))
+        self._db_handle: "lancedb.db.LanceDBConnection | None" = None
+
+    @property
+    def _db(self) -> "lancedb.db.LanceDBConnection":
+        # Lazy: read-only commands (papers, query on a fresh system) must not
+        # create library/ as a side effect.
+        if self._db_handle is None:
+            self.root.mkdir(parents=True, exist_ok=True)
+            self._db_handle = lancedb.connect(str(self.root / "lancedb"))
+        return self._db_handle
 
     # -- manifest ----------------------------------------------------------
     @property
@@ -60,7 +68,8 @@ class Library:
         Same fusion as llm.retriever.Retriever.retrieve (1/(60+rank)), minus
         the entity-span boost (no section context at library-query time).
         """
-        if "chunks" not in self._db.table_names():
+        ids_path = self.root / "bm25_ids.json"
+        if not ids_path.exists() or "chunks" not in self._db.table_names():
             return []
         qvec = _embed_texts([text])[0]
 
@@ -72,7 +81,7 @@ class Library:
         dense = (tbl.search(qvec.tolist()).metric("cosine")
                  .where(where, prefilter=True).limit(top_k * 2).to_list())
 
-        ids = json.loads((self.root / "bm25_ids.json").read_text(encoding="utf-8"))
+        ids = json.loads(ids_path.read_text(encoding="utf-8"))
         bm = bm25s.BM25.load(str(self.root / "bm25"), mmap=True)
         k = len(ids) if papers else min(top_k * 2, len(ids))
         sparse_gids: list[str] = []
