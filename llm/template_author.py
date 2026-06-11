@@ -71,3 +71,68 @@ def prescan_run(run_dir: Path, *, max_chars: int = 6000) -> str:
             f"(need any of s06 context.yaml / s03 chapter_index.yaml / "
             f"s04 figures.yaml / s02 doc_*.md)")
     return digest[:max_chars]
+
+
+_LANG_INSTRUCTIONS = {
+    "zh": "All titles and questions in Chinese (keep established English technical terms as-is).",
+    "en": "All titles and questions in English.",
+}
+
+
+def _split_prompt(template_text: str) -> tuple[str, str]:
+    system_marker, user_marker = "SYSTEM:", "USER:"
+    sys_start = template_text.index(system_marker) + len(system_marker)
+    user_start = template_text.index(user_marker)
+    return (template_text[sys_start:user_start].strip(),
+            template_text[user_start + len(user_marker):].strip())
+
+
+def _clean_title(t: str) -> str:
+    t = _LEADING_NUM_RE.sub("", str(t).strip())
+    t = t.rstrip("?？ 。.").strip()
+    return t[:80] or "Untitled"
+
+
+def _clean_question(q: str) -> str:
+    q = str(q).strip()
+    # A question starting like "3 个指标…" would match s05's numbered-heading
+    # regex; the "- " guidance prefix makes it un-promotable by construction.
+    if _NUMBERED_RE.match(q):
+        q = "- " + q
+    return q
+
+
+def _validate(data) -> list[dict]:
+    secs = data.get("sections") if isinstance(data, dict) else None
+    out: list[dict] = []
+    for s in secs or []:
+        if not isinstance(s, dict) or not s.get("title"):
+            continue
+        qs = [_clean_question(q) for q in (s.get("questions") or []) if str(q).strip()]
+        if qs:
+            out.append({"title": _clean_title(s["title"]), "questions": qs})
+    if not out:
+        raise SystemExit(
+            "template draft: LLM returned no usable sections "
+            "(see the saved .response.json next to the output path)")
+    return out
+
+
+def draft(*, idea: str, paper_digest: str, library_context: str = "",
+          lang: str = "zh", n_sections: int = 6):
+    """One text-LLM call -> validated, sanitized [{title, questions}] outline.
+
+    Returns (sections, LLMResponse) so the caller can persist the audit trail.
+    """
+    system_tpl, user_tpl = _split_prompt(PROMPT_PATH.read_text(encoding="utf-8"))
+    system = system_tpl.format(
+        n_sections=n_sections,
+        lang_instruction=_LANG_INSTRUCTIONS.get(lang, _LANG_INSTRUCTIONS["en"]),
+    )
+    user = user_tpl.format(idea=idea, paper_digest=paper_digest,
+                           library_context=library_context or "(empty)")
+    resp = LLM(role="text").chat(system=system, user=user,
+                                 temperature=0.4, max_tokens=3000)
+    cleaned = _FENCE_RE.sub("", resp.content.strip())
+    sections = _validate(safe_parse_yaml(cleaned))
+    return sections, resp

@@ -65,3 +65,61 @@ def test_prescan_pdf_reads_first_pages(tmp_path: Path):
     with patch("pdfplumber.open", return_value=FakePDF()):
         digest = prescan_pdf(Path("whatever.pdf"))
     assert "Page one title" in digest and "Page two" in digest
+
+
+_CANNED_YAML = """\
+sections:
+  - title: "1. 研究背景与能量正则化动机?"
+    questions:
+      - 论文中 E_t 项的数学形式是什么，单位是什么?
+      - 3 个速度区间各自的步态是什么?
+  - title: 方法核心
+    questions:
+      - Fig. 1 中转换速度点的数值是多少?
+"""
+
+
+class _FakeResp:
+    def __init__(self, content):
+        self.content = content
+        self.model = "fake"
+        self.usage = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+
+def test_draft_parses_and_sanitizes(tmp_path: Path):
+    from llm.template_author import draft
+    with patch("llm.template_author.LLM") as MockLLM:
+        MockLLM.return_value.chat.return_value = _FakeResp(
+            "```yaml\n" + _CANNED_YAML + "```")
+        sections, resp = draft(idea="迁移到双足", paper_digest="digest",
+                               library_context="", lang="zh", n_sections=2)
+    assert len(sections) == 2
+    # title sanitized: leading numbering stripped, trailing '?' stripped
+    assert sections[0]["title"] == "研究背景与能量正则化动机"
+    # question that starts with a digit got a guidance prefix so s05 can
+    # never promote it to a heading
+    qs = sections[0]["questions"]
+    assert any(q.startswith("- 3 个速度区间") for q in qs)
+    assert any(q.endswith("?") for q in qs)
+
+
+def test_draft_invalid_yaml_raises(tmp_path: Path):
+    from llm.template_author import draft
+    with patch("llm.template_author.LLM") as MockLLM:
+        MockLLM.return_value.chat.return_value = _FakeResp("not: [valid")
+        with pytest.raises(SystemExit, match="template draft"):
+            draft(idea="x", paper_digest="d", library_context="",
+                  lang="zh", n_sections=2)
+
+
+def test_draft_prompt_contains_inputs():
+    from llm.template_author import draft
+    with patch("llm.template_author.LLM") as MockLLM:
+        MockLLM.return_value.chat.return_value = _FakeResp(_CANNED_YAML)
+        draft(idea="MY-IDEA", paper_digest="MY-DIGEST",
+              library_context="MY-LIB", lang="en", n_sections=3)
+        kwargs = MockLLM.return_value.chat.call_args.kwargs
+    assert "MY-IDEA" in kwargs["user"]
+    assert "MY-DIGEST" in kwargs["user"]
+    assert "MY-LIB" in kwargs["user"]
+    assert "3" in kwargs["system"]
