@@ -72,6 +72,49 @@ def test_entity_boost_reranks(tmp_path: Path):
         assert boosted[0].id == target.id
 
 
+def test_cjk_query_dense_winner_not_displaced(tmp_path: Path):
+    """Zero-score BM25 hits from a pure-CJK query must not displace the dense winner.
+
+    bm25s returns k arbitrary indices with score 0.0 when the query shares no
+    tokens with the corpus (always true for CJK queries against English text).
+    Before the fix, those indices received full RRF rank credit, pushing the
+    genuine dense winner out of the top-k results.
+    """
+    cdir = tmp_path / "chapters"
+    cdir.mkdir()
+    # 10 chapters → 10 chunks.  Only chapter_000 matches the dense query vector.
+    for i in range(10):
+        (cdir / f"chapter_{i:03d}_section.md").write_text(
+            f"Section {i} discusses materials and properties of mechanical systems. " * 30,
+            encoding="utf-8",
+        )
+
+    def fake_vecs(texts: list[str]) -> np.ndarray:
+        # Query vector and chunk-0 vector both point to [1,1,...]; all others → [0.1,...]
+        return np.array(
+            [[1.0 if ("Section 0" in t or t == "能量正则化如何影响步态切换") else 0.1] * 8
+             for t in texts],
+            dtype=np.float32,
+        )
+
+    out = tmp_path / "r.parquet"
+    with patch("llm.retriever._embed_texts", side_effect=fake_vecs):
+        r = Retriever()
+        r.build(chapters_dir=cdir, out_path=out)
+        # Sanity: chunk 0 is the dense winner
+        assert r.chunks[0].id == "c0000"
+        assert "Section 0" in r.chunks[0].text
+
+        result = r.retrieve("能量正则化如何影响步态切换", top_k=2)
+
+    # The dense winner must be ranked first.  With the bug, bm25s returns
+    # k=4 zero-score indices that flood RRF and push c0000 out of the top-2.
+    assert len(result) == 2
+    assert result[0].id == "c0000", (
+        f"Expected dense winner c0000 at rank 0, got {[c.id for c in result]}"
+    )
+
+
 def test_check_claim_numeric(tmp_path: Path):
     cdir = tmp_path / "chapters"
     cdir.mkdir()

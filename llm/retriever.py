@@ -198,9 +198,9 @@ class Retriever:
         tokenized = bm25s.tokenize([query])
         bm25_k = min(top_k * 2, len(self.chunks))
         sparse_results, sparse_scores = self.bm25.retrieve(tokenized, k=bm25_k)
-        sparse_idx = list(sparse_results[0])
+        sparse_idx = [int(i) for i, s in zip(sparse_results[0], sparse_scores[0]) if s > 0]
         sparse_score_map = {idx: float(sparse_scores[0][i])
-                            for i, idx in enumerate(sparse_idx)}
+                            for i, idx in enumerate(sparse_results[0])}  # unused; kept for symmetry
 
         # RRF fusion: each rank contributes 1 / (60 + rank)
         dense_ranks = np.argsort(-dense_scores)[:top_k * 2]
