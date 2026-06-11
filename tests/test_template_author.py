@@ -123,3 +123,44 @@ def test_draft_prompt_contains_inputs():
     assert "MY-DIGEST" in kwargs["user"]
     assert "MY-LIB" in kwargs["user"]
     assert "3" in kwargs["system"]
+
+
+def test_write_docx_roundtrips_through_s05(tmp_path: Path):
+    from llm.template_author import write_docx
+    from stages.s05_template.runner import parse_template
+
+    sections = [
+        {"title": "研究背景与动机",
+         "questions": ["论文要解决的核心矛盾是什么?",
+                       "- 3 个基线各自的缺陷是什么?"]},
+        {"title": "方法核心",
+         "questions": ["Fig. 1 的转换速度数值是多少?"]},
+    ]
+    out = tmp_path / "auto-test.docx"
+    write_docx(sections, out, idea="迁移到双足")
+
+    nodes = parse_template(out)
+    assert len(nodes) == 2
+    assert nodes[0]["title"] == "研究背景与动机"
+    assert nodes[0]["level"] == 1 and nodes[0]["number"] == "1"
+    # every question landed in guidance, none was promoted to a heading
+    assert "核心矛盾" in nodes[0]["guidance"]
+    assert "3 个基线" in nodes[0]["guidance"]
+    assert "转换速度" in nodes[1]["guidance"]
+
+
+def test_write_docx_adversarial_titles_still_roundtrip(tmp_path: Path):
+    from llm.template_author import write_docx, _clean_title
+    from stages.s05_template.runner import parse_template
+
+    # titles that would trip s05's guidance heuristics if unsanitized
+    sections = [
+        {"title": _clean_title("2.1 Why does it work?"),
+         "questions": ["Q one?"]},
+        {"title": _clean_title("(draft) comparison"),
+         "questions": ["Q two?"]},
+    ]
+    out = tmp_path / "adv.docx"
+    write_docx(sections, out, idea="x")
+    nodes = parse_template(out)
+    assert len(nodes) == 2
