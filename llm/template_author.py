@@ -50,8 +50,12 @@ def prescan_run(run_dir: Path, *, max_chars: int = 6000) -> str:
         parts.append(yaml.safe_dump(ctx, allow_unicode=True, sort_keys=False))
     idx_path = run_dir / "s03_chapter" / "chapter_index.yaml"
     if idx_path.exists():
-        chapters = (load_yaml(idx_path) or {}).get("chapters") or []
-        titles = [str(c.get("title", "")) for c in chapters if c.get("title")]
+        # s03 writes a top-level LIST of {chapter_no, title, file, ...};
+        # tolerate a {chapters: [...]} wrapper for forward compatibility.
+        idx = load_yaml(idx_path) or []
+        chapters = (idx.get("chapters") or []) if isinstance(idx, dict) else idx
+        titles = [str(c.get("title", "")) for c in chapters
+                  if isinstance(c, dict) and c.get("title")]
         if titles:
             parts.append("Chapter titles: " + " | ".join(titles))
     figs_path = run_dir / "s04_figures" / "figures.yaml"

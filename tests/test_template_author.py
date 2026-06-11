@@ -14,9 +14,12 @@ def _make_run(tmp_path: Path) -> Path:
         "Adaptive Energy Regularization\n\nAbstract — We propose an adaptive "
         "energy term E_t that scales with velocity.", encoding="utf-8")
     (run / "s03_chapter").mkdir()
+    # Real s03 schema: top-level LIST of {chapter_no, title, file, sources, chars}
     dump_yaml(run / "s03_chapter" / "chapter_index.yaml",
-              {"chapters": [{"num": 0, "slug": "intro", "title": "INTRODUCTION"},
-                            {"num": 1, "slug": "method", "title": "ENERGY REGULARIZATION"}]})
+              [{"chapter_no": 0, "title": "INTRODUCTION",
+                "file": "chapter_000_INTRODUCTION.md", "sources": [], "chars": 100},
+               {"chapter_no": 1, "title": "ENERGY REGULARIZATION",
+                "file": "chapter_001_ENERGY.md", "sources": [], "chars": 200}])
     (run / "s04_figures").mkdir()
     dump_yaml(run / "s04_figures" / "figures.yaml",
               [{"fig_id": "Fig. 1", "caption": "Gait transition vs commanded velocity."}])
