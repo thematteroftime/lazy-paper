@@ -164,3 +164,52 @@ def test_write_docx_adversarial_titles_still_roundtrip(tmp_path: Path):
     write_docx(sections, out, idea="x")
     nodes = parse_template(out)
     assert len(nodes) == 2
+
+
+def test_cli_template_from_run(tmp_path: Path, capsys, monkeypatch):
+    import cli
+
+    run = _make_run(tmp_path)
+    out = tmp_path / "templates" / "auto-demo.docx"
+    with patch("llm.template_author.LLM") as MockLLM:
+        MockLLM.return_value.chat.return_value = _FakeResp(_CANNED_YAML)
+        rc = cli.main(["template", "--idea", "迁移到双足",
+                       "--run", "demo-paper",
+                       "--runs-dir", str(tmp_path / "runs"),
+                       "--out", str(out)])
+    assert rc == 0
+    assert out.exists()
+    assert Path(str(out) + ".prompt.md").exists()
+    assert Path(str(out) + ".response.json").exists()
+    captured = capsys.readouterr().out
+    assert "研究背景与能量正则化动机" in captured
+    assert "--template" in captured  # next-step hint
+
+
+def test_cli_template_use_library(tmp_path: Path, monkeypatch):
+    import cli
+
+    run = _make_run(tmp_path)
+    seen = {}
+
+    class FakeLib:
+        def __init__(self, *a, **k): pass
+        def papers(self):
+            return {"other-paper": {"title": "Other Paper", "keywords": ["foo"]}}
+        def query(self, idea, top_k=5):
+            return [{"paper_id": "other-paper", "text": "relevant excerpt",
+                     "doc_name": "d", "char_start": 0, "char_end": 10,
+                     "score": 0.1, "gid": "other-paper::c0001"}]
+
+    monkeypatch.setattr("llm.library.Library", FakeLib)
+    with patch("llm.template_author.LLM") as MockLLM:
+        MockLLM.return_value.chat.return_value = _FakeResp(_CANNED_YAML)
+        rc = cli.main(["template", "--idea", "compare-me",
+                       "--run", "demo-paper",
+                       "--runs-dir", str(tmp_path / "runs"),
+                       "--out", str(tmp_path / "t.docx"),
+                       "--use-library"])
+        seen["user"] = MockLLM.return_value.chat.call_args.kwargs["user"]
+    assert rc == 0
+    assert "Other Paper" in seen["user"]
+    assert "relevant excerpt" in seen["user"]

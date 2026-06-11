@@ -170,3 +170,22 @@ def roundtrip_check(out_path: Path, sections: list[dict]) -> list[dict]:
             f"template self-check failed: wrote {len(sections)} sections but "
             f"s05 parsed {len(nodes)} — please report this as a bug")
     return nodes
+
+
+def library_context(lib, idea: str, *, top_k: int = 5) -> str:
+    """Manifest summary + idea-relevant excerpts for the drafting prompt."""
+    manifest = lib.papers()
+    if not manifest:
+        return ""
+    lines = ["Library papers:"]
+    for pid, e in manifest.items():
+        kw = ", ".join((e.get("keywords") or [])[:5])
+        lines.append(f"- {pid}: {e.get('title', '')} (keywords: {kw})")
+    hits = lib.query(idea, top_k=top_k)
+    if hits:
+        lines.append("")
+        lines.append("Idea-relevant excerpts:")
+        for h in hits:
+            snippet = " ".join(h["text"].split())[:300]
+            lines.append(f"- [{h['paper_id']}] {snippet}")
+    return "\n".join(lines)
