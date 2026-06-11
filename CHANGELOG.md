@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.15-template-author] — 2026-06-11 — idea-driven template generation
+
+Closes the template-paper mismatch gap (the 0.81→0.10 faithfulness swing class).
+
+- **`lazy-paper template`**: user idea + paper prescan (pdfplumber text layer
+  or existing run artifacts) + optional `--use-library` grounding → one text-LLM
+  call → s05-compatible question-outline `.docx` with audit sidecars.
+- **Deterministic round-trip**: generated docx is re-parsed by the real s05
+  parser immediately (`roundtrip_check`); titles/questions sanitized so s05's
+  heading heuristics can never misclassify them.
+- **Cross-paper questions**: with `--use-library`, ≥2 comparison questions
+  naming library papers are required by the prompt contract.
+- Tests: +11 (`tests/test_template_author.py`). Docs: `TEMPLATE_AUTHORING.md` (en+zh).
+
 ### [v1.14.1] — 2026-06-11 — retriever zero-score BM25 fix
 
 - **`llm/retriever.py`**: drop zero-score BM25 hits from RRF fusion — pure-CJK

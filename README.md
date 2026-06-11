@@ -123,6 +123,8 @@ All four are OpenAI-compatible; point `LLM_*_BASE_URL` + `LLM_*_MODEL` elsewhere
 
 For a new domain copy the closest match and rewrite the section headings. There is **no "good enough generic"** — the wrong template quietly degrades every downstream stage.
 
+Or skip picking entirely: `lazy-paper template --idea "..." --pdf <paper>` drafts a matched question template for you (see `docs/TEMPLATE_AUTHORING.md`).
+
 ## Output formats at a glance
 
 | Format | Highlights |
@@ -140,6 +142,7 @@ For a new domain copy the closest match and rewrite the section headings. There 
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`docs_zh/`](docs_zh/ARCHITECTURE.md) | Maintainer — per-stage contracts, retrieval, verifier |
 | [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) · [`docs_zh/`](docs_zh/AGENT_GUIDE.md) | AI coding agent — workflow + anti-patterns |
 | [`docs/KNOWLEDGE_BASE.md`](docs/KNOWLEDGE_BASE.md) · [`docs_zh/`](docs_zh/KNOWLEDGE_BASE.md) | Cross-paper knowledge library — ingest & query |
+| [`docs/TEMPLATE_AUTHORING.md`](docs/TEMPLATE_AUTHORING.md) · [`docs_zh/`](docs_zh/TEMPLATE_AUTHORING.md) | Generate a question template from your idea |
 | [`templates/`](templates/) | Four ready-to-use outline templates |
 | [`examples/`](examples/) | Three reference outputs (energy-RL · MUJICA · PRX nonreciprocal MD) — open any folder's `preview.html` to see what lazy-paper produces |
 | [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes · contribution norms |
