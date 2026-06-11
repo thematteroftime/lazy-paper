@@ -52,6 +52,73 @@ class Library:
             return load_yaml(self.manifest_path) or {}
         return {}
 
+    # -- query ---------------------------------------------------------------
+    def query(self, text: str, *, top_k: int = 8,
+              papers: list[str] | None = None) -> list[dict]:
+        """Hybrid dense + BM25 via RRF across all ingested papers.
+
+        Same fusion as llm.retriever.Retriever.retrieve (1/(60+rank)), minus
+        the entity-span boost (no section context at library-query time).
+        """
+        if "chunks" not in self._db.table_names():
+            return []
+        qvec = _embed_texts([text])[0]
+
+        tbl = self._db.open_table("chunks")
+        where = "is_parent = false"
+        if papers:
+            quoted = ", ".join(f"'{p}'" for p in papers)
+            where += f" AND paper_id IN ({quoted})"
+        dense = (tbl.search(qvec.tolist()).metric("cosine")
+                 .where(where, prefilter=True).limit(top_k * 2).to_list())
+
+        ids = json.loads((self.root / "bm25_ids.json").read_text(encoding="utf-8"))
+        bm = bm25s.BM25.load(str(self.root / "bm25"), mmap=True)
+        k = min(top_k * 2, len(ids))
+        sparse_gids: list[str] = []
+        if k > 0:
+            res, _scores = bm.retrieve(bm25s.tokenize([text]), k=k)
+            sparse_gids = [ids[i] for i in res[0]]
+            if papers:
+                allowed = set(papers)
+                sparse_gids = [g for g in sparse_gids
+                               if g.split("::", 1)[0] in allowed]
+
+        rrf: dict[str, float] = {}
+        for rank, row in enumerate(dense):
+            rrf[row["gid"]] = rrf.get(row["gid"], 0.0) + 1.0 / (60 + rank + 1)
+        for rank, gid in enumerate(sparse_gids):
+            rrf[gid] = rrf.get(gid, 0.0) + 1.0 / (60 + rank + 1)
+
+        by_gid = {row["gid"]: row for row in dense}
+        missing = {g for g in rrf if g not in by_gid}
+        if missing:
+            # Filter-only lookups vary across lancedb versions; a projected
+            # full scan is fine at personal-library scale.
+            scan = (tbl.to_arrow()
+                    .select(["gid", "paper_id", "doc_name",
+                             "char_start", "char_end", "text"])
+                    .to_pylist())
+            for row in scan:
+                if row["gid"] in missing:
+                    by_gid[row["gid"]] = row
+
+        out = []
+        for gid, score in sorted(rrf.items(), key=lambda kv: -kv[1])[:top_k]:
+            row = by_gid.get(gid)
+            if row is None:
+                continue
+            out.append({
+                "gid": gid,
+                "paper_id": row["paper_id"],
+                "doc_name": row["doc_name"],
+                "char_start": row["char_start"],
+                "char_end": row["char_end"],
+                "score": round(score, 6),
+                "text": row["text"],
+            })
+        return out
+
     # -- ingest --------------------------------------------------------------
     def ingest(self, run_dir: Path | str, *, kind: str = "paper") -> dict:
         run_dir = Path(run_dir)

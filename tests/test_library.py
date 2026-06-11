@@ -123,3 +123,31 @@ def test_reingest_without_kg_clears_stale_entities(tmp_path: Path):
     ents = [e for e in lib._db.open_table("entities").to_arrow().to_pylist()
             if e["paper_id"] == "alpha-paper"]
     assert ents == []
+
+
+def test_query_ranks_matching_paper_first(tmp_path: Path):
+    lib = Library(tmp_path / "library")
+    lib.ingest(_make_run(tmp_path, "alpha-paper", "alpha"))
+    lib.ingest(_make_run(tmp_path, "beta-paper", "beta"))
+    with patch("llm.library._embed_texts", side_effect=_fake_embed):
+        hits = lib.query("alpha dynamics", top_k=4)
+    assert hits
+    assert hits[0]["paper_id"] == "alpha-paper"
+    assert {"gid", "paper_id", "doc_name", "char_start", "char_end",
+            "score", "text"} <= set(hits[0])
+
+
+def test_query_papers_filter(tmp_path: Path):
+    lib = Library(tmp_path / "library")
+    lib.ingest(_make_run(tmp_path, "alpha-paper", "alpha"))
+    lib.ingest(_make_run(tmp_path, "beta-paper", "beta"))
+    with patch("llm.library._embed_texts", side_effect=_fake_embed):
+        hits = lib.query("alpha dynamics", top_k=4, papers=["beta-paper"])
+    assert hits
+    assert all(h["paper_id"] == "beta-paper" for h in hits)
+
+
+def test_query_empty_library_returns_empty(tmp_path: Path):
+    lib = Library(tmp_path / "library")
+    hits = lib.query("anything")
+    assert hits == []
