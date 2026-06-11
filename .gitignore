@@ -44,3 +44,4 @@ mypaper/
 # v1.12 phase1 eval harness outputs
 tests/eval/_ragas_out/
 vendor/*.jar
+library/
