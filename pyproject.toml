@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lazy-paper"
-version = "1.11.5"
+version = "1.14.0"
 description = "Turn a PDF research paper into a structured, multi-format (DOCX/PDF/HTML/PPTX) bilingual deep analysis."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -43,6 +43,8 @@ dependencies = [
     "pydantic-ai-slim[openai]>=1.0,<2",
     "pyarrow>=15",
     "numpy>=1.26",
+    # v1.14: cross-paper knowledge library
+    "lancedb>=0.15",
 ]
 
 [project.urls]

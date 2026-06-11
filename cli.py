@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -213,6 +214,48 @@ def _run_one(args, name: str, run_root: Path, paper_id: str) -> None:
         )
 
 
+def _cmd_ingest(args) -> int:
+    from llm.library import Library
+    lib = Library(args.library_dir)
+    run_dir = Path(args.runs_dir) / slugify(args.paper_id)
+    entry = lib.ingest(run_dir, kind=args.kind)
+    print(f"[library] ingested {run_dir.name}: {entry['n_chunks']} chunks, "
+          f"{entry['n_entities']} entities → {lib.root}")
+    return 0
+
+
+def _cmd_query(args) -> int:
+    from llm.library import Library
+    lib = Library(args.library_dir)
+    raw = _parse_formats(args.papers)
+    papers = [slugify(p) for p in raw] if raw else None
+    hits = lib.query(args.text, top_k=args.top_k, papers=papers)
+    if args.json:
+        print(json.dumps(hits, ensure_ascii=False, indent=2))
+        return 0
+    if not hits:
+        print("[library] no results (is anything ingested?)")
+        return 0
+    for h in hits:
+        snippet = " ".join(h["text"].split())[:160]
+        print(f"[{h['paper_id']}] {h['doc_name']} "
+              f"chars {h['char_start']}-{h['char_end']} (score {h['score']})\n"
+              f"    {snippet}")
+    return 0
+
+
+def _cmd_papers(args) -> int:
+    from llm.library import Library
+    manifest = Library(args.library_dir).papers()
+    if not manifest:
+        print("[library] empty")
+        return 0
+    for pid, e in manifest.items():
+        print(f"{pid:32s} {e.get('kind', 'paper'):10s} "
+              f"{e.get('n_chunks', 0):5d} chunks  {e.get('title', '')}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="lazy-paper")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -259,13 +302,39 @@ def main(argv: list[str] | None = None) -> int:
                    help="v1.12: enable PDFFigures 2 sidecar for caption-anchored figure "
                         "renumbering (requires PDFFIGURES2_JAR=docker + a built "
                         "lazy-paper/pdffigures2:0.1.0 image). Off by default — opt-in until v1.13.")
+    r.add_argument("--ingest", action="store_true",
+                   help="v1.14: after the run, ingest results into the knowledge "
+                        "library (see `lazy-paper ingest --help`). Opt-in.")
+
+    li = sub.add_parser("ingest", help="Ingest a finished run into the knowledge library")
+    li.add_argument("paper_id", help="Run name under --runs-dir (same as run --paper-id)")
+    li.add_argument("--runs-dir", default="runs")
+    li.add_argument("--kind", choices=("paper", "experiment"), default="paper",
+                    help="'experiment' reserved for the v1.17 experiment loop")
+    li.add_argument("--library-dir", default=None,
+                    help="Library root (default: $LAZY_PAPER_LIBRARY_DIR or ./library)")
+
+    lq = sub.add_parser("query", help="Hybrid search across all ingested papers")
+    lq.add_argument("text")
+    lq.add_argument("--top-k", type=int, default=8)
+    lq.add_argument("--papers", default=None,
+                    help="Comma-separated paper_id filter")
+    lq.add_argument("--json", action="store_true",
+                    help="Machine-readable output (for agents)")
+    lq.add_argument("--library-dir", default=None)
+
+    lp = sub.add_parser("papers", help="List ingested papers")
+    lp.add_argument("--library-dir", default=None)
+
     args = ap.parse_args(argv)
 
-    if args.cmd != "run":
-        ap.print_help()
-        return 1
-
     load_dotenv(Path.cwd() / ".env", override=False)
+    if args.cmd == "ingest":
+        return _cmd_ingest(args)
+    if args.cmd == "query":
+        return _cmd_query(args)
+    if args.cmd == "papers":
+        return _cmd_papers(args)
     # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
     # would otherwise let outputs land outside runs/.
     paper_id = slugify(args.paper_id) if args.paper_id else slugify(Path(args.pdf).stem)
@@ -294,6 +363,10 @@ def main(argv: list[str] | None = None) -> int:
         "lang": args.lang,
     }
     dump_yaml(run_root / paper_id / "meta.yaml", meta)
+    if args.ingest:
+        from llm.library import Library
+        entry = Library().ingest(run_root / paper_id)
+        print(f"[library] ingested {paper_id} ({entry['n_chunks']} chunks)")
     _print_done_summary(paper_id, meta["duration_s"], run_root / paper_id / "s09_render")
     return 0
 
