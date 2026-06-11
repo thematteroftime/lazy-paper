@@ -1,14 +1,15 @@
 # 知识库（v1.14）
 
 library 是一个持久化的跨论文存储层，由你已有的 run 产物直接构建。入库**零 LLM
-调用**——chunk 向量与知识图谱原样取自 `runs/<paper-id>/s06_context/`。入库后，
-论文数据不再依赖 `runs/` 目录（清理 runs 也不丢），并且可以和库内所有其他论文
-一起被检索。
+调用**——知识图谱取自 `runs/<paper-id>/s06_context/`，chunk 索引（含向量）取自
+`runs/<paper-id>/s08_section_compose/retrieval.parquet`；若 run 未跑到 s08，
+入库时会构建一次索引（仅 embeddings 调用，无 LLM 调用）。入库后，论文数据不再
+依赖 `runs/` 目录（清理 runs 也不丢），并且可以和库内所有其他论文一起被检索。
 
 ## 快速上手
 
 ```bash
-# 对任何跑到 s06 的 run（新跑的或历史的）：
+# 对任何跑到 s08 的 run（新跑的或历史的；只跑到 s03 时入库会构建一次索引）：
 uv run python -m cli ingest mypaper
 
 # 或一条命令带入库：

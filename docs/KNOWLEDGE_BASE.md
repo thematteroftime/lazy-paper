@@ -1,15 +1,17 @@
 # Knowledge Library (v1.14)
 
 The library is a persistent, cross-paper store built from artifacts your runs
-already produced. Ingesting costs **zero LLM calls** — chunk embeddings and the
-knowledge graph are lifted from `runs/<paper-id>/s06_context/` as-is. Once
-ingested, a paper survives `runs/` cleanup and becomes searchable alongside
-every other paper you have processed.
+already produced. Ingesting costs **zero LLM calls** — the knowledge graph is
+lifted from `runs/<paper-id>/s06_context/` and the chunk index (embeddings
+included) from `runs/<paper-id>/s08_section_compose/retrieval.parquet`; if the
+run never reached s08, ingest builds the index once (embeddings API only, no
+LLM calls). Once ingested, a paper survives `runs/` cleanup and becomes
+searchable alongside every other paper you have processed.
 
 ## Quickstart
 
 ```bash
-# After a normal run (or on any past run that reached s06):
+# After a normal run (or on any past run that reached s08; with only s03 done, ingest builds the index once):
 uv run python -m cli ingest mypaper
 
 # Or in one shot:

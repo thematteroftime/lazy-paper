@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Foundation of the knowledge-base loop (v1.14 → v1.16 roadmap).
 
 - **`llm/library.py`**: persistent `library/` store (LanceDB + bm25s + manifest).
-  `ingest` lifts chunks/embeddings/KG from a finished run — zero LLM calls —
-  and archives context/fig_notes/sections/imgs so they survive `runs/` cleanup.
+  `ingest` reuses the s08 retrieval index + s06 KG from a finished run (builds
+  the index once via embeddings API if absent; never any LLM calls) and archives
+  context/fig_notes/sections/imgs so they survive `runs/` cleanup.
 - **CLI**: `ingest` / `query` / `papers` subcommands; `run --ingest` opt-in
   auto-ingest. `query --json` for agent consumption.
 - **Cross-paper hybrid retrieval**: same dense + BM25 + RRF fusion as the

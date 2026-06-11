@@ -1,9 +1,11 @@
 """Cross-paper knowledge library: persistent store over per-run artifacts.
 
 v1.14 foundation for the knowledge-base loop. `ingest` re-uses the retrieval
-assets a finished run already produced (chunks + embeddings + KG) — zero LLM
-calls — so the data survives runs/ cleanup and becomes searchable across
-papers. `kind` reserves "experiment" for the v1.17 experiment loop.
+assets a finished run already produced (chunk index from s08_section_compose +
+KG from s06_context) — zero LLM calls — so the data survives runs/ cleanup and
+becomes searchable across papers. If the run never reached s08, ingest builds
+the index once (embeddings API only, no LLM calls).
+`kind` reserves "experiment" for the v1.17 experiment loop.
 
 Layout (under LAZY_PAPER_LIBRARY_DIR, default ./library):
     manifest.yaml      one entry per paper: title, kind, keywords, tokens, ...
@@ -25,7 +27,7 @@ import lancedb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from llm.retriever import _embed_texts
+from llm.retriever import Retriever, _embed_texts
 from stages._common import dump_yaml, load_yaml
 
 # (run-relative source, archive name) — small YAMLs copied verbatim
@@ -134,10 +136,20 @@ class Library:
     def ingest(self, run_dir: Path | str, *, kind: str = "paper") -> dict:
         run_dir = Path(run_dir)
         paper_id = run_dir.name
-        rp = run_dir / "s06_context" / "retriever.parquet"
+        rp = run_dir / "s08_section_compose" / "retrieval.parquet"
         if not rp.exists():
-            raise SystemExit(
-                f"{rp} not found — run the pipeline through s06_context first")
+            chapters = run_dir / "s03_chapter" / "chapters"
+            if chapters.is_dir():
+                # Same build + cache location s08 uses, so a later s08 run
+                # reuses the index instead of re-embedding.
+                print(f"[library] no retrieval index at {rp} — building once "
+                      f"(embeddings API)", flush=True)
+                rp.parent.mkdir(parents=True, exist_ok=True)
+                Retriever().build(chapters_dir=chapters, out_path=rp)
+            else:
+                raise SystemExit(
+                    f"{rp} not found and no chapters at {chapters} — "
+                    f"run the pipeline through s03_chapter (or s08) first")
 
         rows = pq.read_table(rp).to_pylist()
         children = [r for r in rows if not r.get("is_parent")]

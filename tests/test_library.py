@@ -34,9 +34,11 @@ def _make_run(tmp_path: Path, paper_id: str, marker: str,
         encoding="utf-8")
     s06 = run / "s06_context"
     s06.mkdir()
+    s08 = run / "s08_section_compose"
+    s08.mkdir()
     with patch("llm.retriever._embed_texts", side_effect=embed):
         Retriever().build(chapters_dir=chapters,
-                          out_path=s06 / "retriever.parquet")
+                          out_path=s08 / "retrieval.parquet")
     kg = PaperKG(
         entities=[Entity(id="e1", type="method", text=marker,
                          source_span=("chapter_000_intro.md", 0, 10))],
@@ -47,8 +49,6 @@ def _make_run(tmp_path: Path, paper_id: str, marker: str,
               {"title": f"{marker} paper", "keywords": [marker]})
     dump_yaml(s06 / "done.yaml", {"tokens": 100})
     dump_yaml(run / "meta.yaml", {"paper_id": paper_id, "lang": "zh"})
-    s08 = run / "s08_section_compose"
-    s08.mkdir()
     (s08 / "01-intro.md").write_text("composed section", encoding="utf-8")
     (s08 / "01-intro.prompt.md").write_text("audit prompt", encoding="utf-8")
     return run
@@ -103,10 +103,10 @@ def test_ingest_rejects_embedding_dim_mismatch(tmp_path: Path):
         lib.ingest(run4)
 
 
-def test_ingest_requires_s06(tmp_path: Path):
+def test_ingest_requires_retrieval_index_or_chapters(tmp_path: Path):
     bare = tmp_path / "runs" / "empty-run"
     bare.mkdir(parents=True)
-    with pytest.raises(SystemExit, match="s06_context"):
+    with pytest.raises(SystemExit, match="retrieval.parquet"):
         Library(tmp_path / "library").ingest(bare)
 
 
@@ -227,3 +227,13 @@ def test_run_ingest_flag_calls_library(tmp_path: Path, monkeypatch):
                    "--paper-id", "x", "--ingest"])
     assert rc == 0
     assert called["run_dir"].name == "x"
+
+
+def test_ingest_builds_index_when_missing(tmp_path: Path):
+    run = _make_run(tmp_path, "alpha-paper", "alpha")
+    (run / "s08_section_compose" / "retrieval.parquet").unlink()
+    lib = Library(tmp_path / "library")
+    with patch("llm.retriever._embed_texts", side_effect=_fake_embed):
+        entry = lib.ingest(run)
+    assert entry["n_chunks"] > 0
+    assert (run / "s08_section_compose" / "retrieval.parquet").exists()
