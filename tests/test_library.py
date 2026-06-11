@@ -151,3 +151,17 @@ def test_query_empty_library_returns_empty(tmp_path: Path):
     lib = Library(tmp_path / "library")
     hits = lib.query("anything")
     assert hits == []
+
+
+def _const_embed(texts):
+    return np.asarray([[0.5] * 8 for _ in texts], dtype=np.float32)
+
+
+def test_query_sparse_leg_ranks_keyword_paper_first(tmp_path: Path):
+    lib = Library(tmp_path / "library")
+    lib.ingest(_make_run(tmp_path, "alpha-paper", "alpha", embed=_const_embed))
+    lib.ingest(_make_run(tmp_path, "beta-paper", "beta", embed=_const_embed))
+    with patch("llm.library._embed_texts", side_effect=_const_embed):
+        hits = lib.query("alpha", top_k=8)
+    assert hits
+    assert hits[0]["paper_id"] == "alpha-paper"

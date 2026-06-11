@@ -74,15 +74,15 @@ class Library:
 
         ids = json.loads((self.root / "bm25_ids.json").read_text(encoding="utf-8"))
         bm = bm25s.BM25.load(str(self.root / "bm25"), mmap=True)
-        k = min(top_k * 2, len(ids))
+        k = len(ids) if papers else min(top_k * 2, len(ids))
         sparse_gids: list[str] = []
         if k > 0:
-            res, _scores = bm.retrieve(bm25s.tokenize([text]), k=k)
-            sparse_gids = [ids[i] for i in res[0]]
+            res, scores = bm.retrieve(bm25s.tokenize([text]), k=k)
+            sparse_gids = [ids[i] for i, s in zip(res[0], scores[0]) if s > 0]
             if papers:
                 allowed = set(papers)
                 sparse_gids = [g for g in sparse_gids
-                               if g.split("::", 1)[0] in allowed]
+                               if g.split("::", 1)[0] in allowed][:top_k * 2]
 
         rrf: dict[str, float] = {}
         for rank, row in enumerate(dense):
@@ -104,7 +104,7 @@ class Library:
                     by_gid[row["gid"]] = row
 
         out = []
-        for gid, score in sorted(rrf.items(), key=lambda kv: -kv[1])[:top_k]:
+        for gid, score in sorted(rrf.items(), key=lambda kv: -kv[1]):
             row = by_gid.get(gid)
             if row is None:
                 continue
@@ -117,6 +117,8 @@ class Library:
                 "score": round(score, 6),
                 "text": row["text"],
             })
+            if len(out) >= top_k:
+                break
         return out
 
     # -- ingest --------------------------------------------------------------
