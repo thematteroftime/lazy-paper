@@ -165,3 +165,26 @@ def test_query_sparse_leg_ranks_keyword_paper_first(tmp_path: Path):
         hits = lib.query("alpha", top_k=8)
     assert hits
     assert hits[0]["paper_id"] == "alpha-paper"
+
+
+def test_cli_ingest_papers_query_json(tmp_path: Path, capsys, monkeypatch):
+    import json as _json
+    import cli
+
+    _make_run(tmp_path, "alpha-paper", "alpha")
+    monkeypatch.setenv("LAZY_PAPER_LIBRARY_DIR", str(tmp_path / "library"))
+
+    rc = cli.main(["ingest", "alpha-paper",
+                   "--runs-dir", str(tmp_path / "runs")])
+    assert rc == 0
+    assert "ingested" in capsys.readouterr().out
+
+    rc = cli.main(["papers"])
+    assert rc == 0
+    assert "alpha-paper" in capsys.readouterr().out
+
+    with patch("llm.library._embed_texts", side_effect=_fake_embed):
+        rc = cli.main(["query", "alpha dynamics", "--json", "--top-k", "3"])
+    assert rc == 0
+    hits = _json.loads(capsys.readouterr().out)
+    assert hits and hits[0]["paper_id"] == "alpha-paper"
