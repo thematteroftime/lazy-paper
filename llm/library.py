@@ -212,7 +212,8 @@ class Library:
                 f"fresh directory.")
 
     def _upsert(self, name: str, paper_id: str, data: pa.Table) -> None:
-        # paper_id comes from slugify() so it can't contain quotes.
+        # CLI entry points slugify paper_id (no quotes); Python callers must
+        # pass filesystem-derived ids (run_dir.name), which share that property.
         if name in self._db.table_names():
             tbl = self._db.open_table(name)
             tbl.delete(f"paper_id = '{paper_id}'")

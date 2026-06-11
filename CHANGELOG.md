@@ -23,7 +23,7 @@ Foundation of the knowledge-base loop (v1.14 → v1.16 roadmap).
 - **Manifest cost aggregation**: per-paper `total_tokens` summed from stage
   `done.yaml`s (first project-level cost visibility).
 - **Reserved**: `ingest --kind experiment` for the v1.17 experiment loop.
-- Tests: +11 (`tests/test_library.py`). Docs: `KNOWLEDGE_BASE.md` (en+zh).
+- Tests: +15 (`tests/test_library.py`). Docs: `KNOWLEDGE_BASE.md` (en+zh).
 
 ### [v1.13-render] — 2026-06-03 (default ON)
 
