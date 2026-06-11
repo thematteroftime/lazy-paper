@@ -262,7 +262,10 @@ def _cmd_template(args) -> int:
     if args.run:
         digest = ta.prescan_run(Path(args.runs_dir) / slugify(args.run))
     else:
-        digest = ta.prescan_pdf(Path(args.pdf))
+        pdf = Path(args.pdf)
+        if not pdf.exists():
+            raise SystemExit(f"--pdf {pdf} not found")
+        digest = ta.prescan_pdf(pdf)
 
     lib_ctx = ""
     if args.use_library:
@@ -271,6 +274,8 @@ def _cmd_template(args) -> int:
 
     out = Path(args.out) if args.out else (
         Path("templates") / f"auto-{slugify(args.idea, maxlen=40)}.docx")
+    if out.exists():
+        print(f"[template] overwriting existing {out}", flush=True)
     # draft() persists <out>.prompt.md / <out>.response.json BEFORE validating,
     # so a rejected LLM response is always inspectable.
     sections, resp = ta.draft(idea=args.idea, paper_digest=digest,

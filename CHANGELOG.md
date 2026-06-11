@@ -15,11 +15,14 @@ Closes the template-paper mismatch gap (the 0.81→0.10 faithfulness swing class
   or existing run artifacts) + optional `--use-library` grounding → one text-LLM
   call → s05-compatible question-outline `.docx` with audit sidecars.
 - **Deterministic round-trip**: generated docx is re-parsed by the real s05
-  parser immediately (`roundtrip_check`); titles/questions sanitized so s05's
-  heading heuristics can never misclassify them.
+  parser immediately (`roundtrip_check`); titles/questions are sanitized and
+  repaired against s05's heading heuristics (arrow strip, short-title padding,
+  numbered-question guard), with the real-parser self-check as backstop.
 - **Cross-paper questions**: with `--use-library`, ≥2 comparison questions
   naming library papers are required by the prompt contract.
-- Tests: +11 (`tests/test_template_author.py`). Docs: `TEMPLATE_AUTHORING.md` (en+zh).
+- **Robustness** (from live acceptance): real s03 `chapter_index.yaml` list
+  schema; draft retry + audit sidecars persisted before validation.
+- Tests: +15 (`tests/test_template_author.py`). Docs: `TEMPLATE_AUTHORING.md` (en+zh).
 
 ### [v1.14.1] — 2026-06-11 — retriever zero-score BM25 fix
 

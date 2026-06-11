@@ -241,3 +241,28 @@ def test_draft_failure_writes_audit_sidecars(tmp_path: Path):
                   lang="zh", n_sections=2, audit_base=base)
     assert Path(str(base) + ".response.json").exists()
     assert Path(str(base) + ".prompt.md").exists()
+
+
+def test_write_docx_repairs_demotable_titles(tmp_path: Path):
+    from llm.template_author import write_docx
+    from stages.s05_template.runner import parse_template
+
+    sections = [
+        {"title": "结论", "questions": ["Q one?"]},                      # ≤5 char heading line
+        {"title": "Context -> Method 的转换", "questions": ["Q two?"]},  # arrow notation
+        {"title": "Consider the tradeoffs", "questions": ["Q three?"]},  # action-verb starter
+    ]
+    out = tmp_path / "repair.docx"
+    write_docx(sections, out, idea="x")
+    nodes = parse_template(out)
+    assert len(nodes) == 3
+    # the numbered prefix defuses s05's action-verb heuristic — promoted as-is
+    assert nodes[2]["title"] == "Consider the tradeoffs"
+    # arrow notation stripped so the heading survives
+    assert "->" not in nodes[1]["title"] and "→" not in nodes[1]["title"]
+
+
+def test_cli_template_pdf_not_found(tmp_path: Path):
+    import cli
+    with pytest.raises(SystemExit, match="not found"):
+        cli.main(["template", "--idea", "x", "--pdf", str(tmp_path / "nope.pdf")])
