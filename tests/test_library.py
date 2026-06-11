@@ -108,3 +108,18 @@ def test_ingest_requires_s06(tmp_path: Path):
     bare.mkdir(parents=True)
     with pytest.raises(SystemExit, match="s06_context"):
         Library(tmp_path / "library").ingest(bare)
+
+
+def test_reingest_without_kg_clears_stale_entities(tmp_path: Path):
+    run = _make_run(tmp_path, "alpha-paper", "alpha")
+    lib = Library(tmp_path / "library")
+    lib.ingest(run)
+    assert len(lib._db.open_table("entities").to_arrow().to_pylist()) == 1
+
+    (run / "s06_context" / "paper_kg.parquet").unlink()
+    (run / "s06_context" / "paper_kg.rel.parquet").unlink()
+    entry = lib.ingest(run)
+    assert entry["n_entities"] == 0
+    ents = [e for e in lib._db.open_table("entities").to_arrow().to_pylist()
+            if e["paper_id"] == "alpha-paper"]
+    assert ents == []

@@ -131,6 +131,12 @@ class Library:
             self._db.create_table(name, data=data)
 
     def _ingest_kg(self, run_dir: Path, paper_id: str) -> int:
+        # Unconditionally clear stale rows so a re-ingest with no/empty KG
+        # doesn't leave old entities/relations behind.
+        for name in ("entities", "relations"):
+            if name in self._db.table_names():
+                self._db.open_table(name).delete(f"paper_id = '{paper_id}'")
+
         kg_path = run_dir / "s06_context" / "paper_kg.parquet"
         if not kg_path.exists():
             return 0
@@ -177,7 +183,8 @@ class Library:
             shutil.copytree(imgs, dest / "imgs", dirs_exist_ok=True)
 
     def _rebuild_bm25(self) -> None:
-        rows = self._db.open_table("chunks").to_arrow().to_pylist()
+        rows = (self._db.open_table("chunks").to_arrow()
+                .select(["gid", "text", "is_parent"]).to_pylist())
         children = [r for r in rows if not r["is_parent"]]
         bm = bm25s.BM25()
         bm.index(bm25s.tokenize([r["text"] for r in children]))
