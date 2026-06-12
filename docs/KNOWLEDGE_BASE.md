@@ -1,4 +1,4 @@
-# Knowledge Library (v1.14)
+# Knowledge Library
 
 The library is a persistent, cross-paper store built from artifacts your runs
 already produced. Ingesting costs **zero LLM calls** — the knowledge graph is
@@ -46,3 +46,329 @@ Default root is `./library` (override with `LAZY_PAPER_LIBRARY_DIR` or
   like the ranking you already trust inside a run.
 - **`kind: experiment`** is accepted by `ingest --kind` but reserved — the
   experiment-loop features land in a later release.
+
+## Synthesize
+
+`lazy-paper synthesize` answers research-direction questions across your whole
+library (or a subset of papers) by gathering evidence from multiple sources and
+composing a grounded markdown report with a single text-LLM call.
+
+### Purpose
+
+Given a topic ("energy regularization vs. multi-skill architectures on legged
+robots"), the command collects evidence from the library (manifest
+metadata, archived `context.yaml` / `fig_notes.yaml`, and hybrid-retrieved
+excerpts) and composes a five-section research-direction report. Every claim
+drawn from the evidence must carry a `[src: paper_id]` marker; a deterministic
+post-check warns on any marker that doesn't resolve to a library paper.
+
+### Quickstart
+
+```bash
+uv run python -m cli synthesize --topic "energy regularization vs gait switching"
+uv run python -m cli synthesize --topic "..." --papers paper-a,paper-b   # restrict scope
+uv run python -m cli synthesize --topic "..." --lang en                  # English output (default: zh)
+```
+
+Output lands at `<library>/synth/<topic-slug>/report.md`, with audit sidecars:
+`.prompt.md` and `.response.json` (written before the citation check, so a
+rejected report is always inspectable).
+
+### Report structure
+
+The report has exactly five `##` sections in this order:
+
+| Section | Contents |
+|---|---|
+| `## 主题综述` | Topic overview and framing across papers |
+| `## 方法对比` | Markdown table — one row per paper: approach, key quantitative results, limitations |
+| `## 证据与分歧` | Agreements and contradictions in the evidence |
+| `## 研究空白与新问题` | Open gaps + >=3 NEW anchored questions sparked by the cross-analysis (divergent by design) |
+| `## 下一步建议` | 3–5 concrete, falsifiable next steps, each citing at least one `[src: ...]`; speculation is marked `(推测)` |
+
+### Grounding contract
+
+- Every factual claim drawn from the evidence carries `[src: paper_id]` using
+  the exact paper ids in the library. Multiple sources: `[src: id1][src: id2]`.
+- After composition, `check_citations` performs a deterministic scan and prints
+  a `WARNING: [src:] markers not in library: ...` line for any id that does not
+  appear in the library manifest.
+- Anything beyond the evidence must be marked `(推测)`.
+- Audit sidecars (`.prompt.md` / `.response.json`) are persisted before the
+  marker check; a corrective retry runs once if the first attempt contains no
+  `[src:]` markers at all.
+
+### Evidence sources
+
+`gather()` builds the evidence block from three layers:
+
+1. **Manifest** — title and keywords for every paper in scope.
+2. **Archived context/fig_notes** — up to 3 `critical_questions`, 4
+   `headline_metrics` from `context.yaml`; up to 4 `deep_observation` /
+   `visual_summary` entries from `fig_notes.yaml` per paper.
+3. **Hybrid-retrieved excerpts** — the same dense + BM25 + RRF retriever used
+   by the in-run pipeline, queried with the topic string (`--top-k 18` by
+   default).
+
+### Design note: s08 in-run context is deferred
+
+`synthesize` deliberately does NOT inject s08 in-run library context. The
+anchored-quote verifier treats author-named external citations as anchored
+claims that require a local `cited_quote`; external citations from a synthesis
+report would interact with those rules in ways that need their own grounding
+design. s08 has a 5-reversal audit history and is not touched lightly. This
+deferral is explicit and documented — it is not a gap to fill with a quick
+patch.
+
+## Experiments
+
+Experiments become first-class library citizens — validated, deep-read, and
+searchable alongside papers. After ingest, a single `query` call spans both
+papers and experiments with no extra flags.
+
+### Purpose
+
+`exp-ingest` gives experiment bundles (curve images, metrics CSVs, lab notes,
+`exp.yaml` manifest) the same treatment as papers: vision deep-read per curve
+(cached in `exp_notes.yaml`), deterministic metrics digest, corpus
+chunk+embedded into the **shared** `chunks` table (`kind="experiment"`). The
+manifest records env/software/hyperparams/linked papers so the advisor
+can reason across the paper↔experiment data layer.
+
+### Bundle contract
+
+An experiment bundle is a directory with the following layout:
+
+| File / Dir | Required? | Description |
+|---|---|---|
+| `exp.yaml` | **REQUIRED** | Manifest: `title`, `env`, `software`, `hyperparams: {...}`, `papers: [paper_id...]`, `date` |
+| `*.md` (e.g. `notes.md`) | optional | Free-form lab notes (any `*.md`) |
+| `*.csv` (e.g. `metrics.csv`) | optional | Any CSV with a header row and numeric columns |
+| `*.png` / `*.jpg` at top level or `curves/` | optional | Experiment curve images |
+
+### Quickstart
+
+```bash
+uv run python -m cli exp-ingest my-exp-01/
+uv run python -m cli exp-ingest my-exp-01/ --id custom-id   # override experiment id
+uv run python -m cli exp-ingest my-exp-01/ --skip-vision    # skip vision LLM calls
+uv run python -m cli exp-ingest my-exp-01/ --lang en        # English curve analysis (default: zh)
+
+# After ingest, query spans papers AND experiments:
+uv run python -m cli query "CoT convergence"
+```
+
+### What happens
+
+1. **Validate** — `exp.yaml` is loaded; missing file or missing `title` exits with a clear message.
+2. **Vision deep-read** — one vision LLM call per curve image → strict YAML
+   (`visual_summary`, `deep_observation`, `anomalies`). Results cached in
+   `exp_notes.yaml` inside the bundle; re-running is a no-op. Audit sidecars
+   written beside it: `exp_notes.<stem>.prompt.md` and
+   `exp_notes.<stem>.response.json`.
+3. **Metrics digest** — deterministic, no LLM: per numeric column `min/max/last`
+   and row count for every `*.csv`.
+4. **Corpus** — `exp.yaml` dump + lab notes + metrics digest + curve analyses
+   flattened into one document, then chunked (SentenceSplitter 400/80) and
+   embedded into the **shared** `chunks` table with `kind="experiment"`.
+5. **Archive** — bundle artifacts copied to `<library>/experiments/<id>/`
+   (survives bundle deletion): `exp.yaml`, `exp_notes.yaml`, `*.md`, `*.csv`,
+   curve images under `curves/`.
+6. **Manifest** — entry added with `kind: experiment`, `env`, `software`,
+   `hyperparams` keys, `papers` (linked paper ids), `n_chunks`,
+   `embedding_dim`, `ingested_at`, `source_bundle`.
+
+### Video deferral note
+
+Video artifacts are not yet supported. Planned path: ffmpeg keyframe sampling
+via Docker; extracted frames will reuse the curve vision pipeline exactly.
+
+## Advise
+
+`lazy-paper advise` closes the AI-scientist loop: experiment evidence + linked
+papers + iteration memory → grounded next-iteration plan. Each advise round
+produces a four-section markdown report where every recommendation cites a
+concrete change, a falsifiable numeric expectation, and a `[src: id]` marker
+validated against the library manifest (paper ids AND experiment ids both
+count). Prior rounds — including user-recorded outcomes — accumulate under
+`<library>/experiments/<id>/advice/round_NN/`, so advice hit-rate becomes
+auditable over time.
+
+### Purpose
+
+Given an ingested experiment and a current question (`--idea`), the command
+collects evidence from four layers: the experiment's archived bundle
+(`exp.yaml`, `exp_notes.yaml`, `notes.md`, metrics digest), its linked papers'
+archived context (`context.yaml` headline metrics and critical questions),
+idea-relevant library excerpts (hybrid dense + BM25 + RRF, `--top-k 12` by
+default), and ALL prior advise rounds with user-recorded outcomes. One
+text-LLM call (retry + audit sidecars, house pattern) then composes a grounded
+plan. The next round automatically reads that plan and the outcome you recorded
+— and must not repeat failed advice.
+
+### Quickstart
+
+```bash
+# Round 1 — ask for a plan
+uv run python -m cli advise --exp my-exp-01 --idea "push stable speed to 2.2 m/s"
+
+# ... run the suggested iteration in your lab ...
+
+# Record what actually happened (writes outcome.md to round_01/)
+uv run python -m cli advise --exp my-exp-01 --outcome "alpha_en=0.8 held to 2.1 m/s, CoT +6%"
+
+# Round 2 — idea feeds evidence that now includes round 1 report + outcome
+uv run python -m cli advise --exp my-exp-01 --idea "now reclaim the CoT regression"
+```
+
+Other flags:
+
+```bash
+uv run python -m cli advise --exp my-exp-01 --idea "..." --lang en   # English output (default: zh)
+uv run python -m cli advise --exp my-exp-01 --idea "..." --top-k 20  # more library excerpts
+```
+
+Report lands at `<library>/experiments/<id>/advice/round_NN/report.md`, with
+audit sidecars: `report.md.prompt.md` and `report.md.response.json` (written
+before the citation check, so a rejected report is always inspectable).
+
+### Report structure
+
+The report has exactly four `##` sections in this order:
+
+| Section | Contents |
+|---|---|
+| `## 现状诊断` | Diagnosis of the current experiment state, grounded in archived metrics and curve analyses |
+| `## 下一轮迭代方案` | 3–5 numbered iteration changes; each must state (a) 改什么 — the concrete change, (b) 预期 — a falsifiable numeric expectation with a range, (c) 依据 — at least one `[src: id]` marker |
+| `## 深度观察` | Cross-paper and cross-experiment observations that contextualize the current state |
+| `## 风险与备选` | Risks and alternatives; speculation beyond the evidence is marked `(推测)` |
+
+### Grounding contract
+
+- Every factual claim drawn from the evidence carries `[src: id]` using the
+  exact ids in the library manifest. Both paper ids and experiment ids are
+  valid — they are all manifest entries.
+- After composition, `check_citations` performs a deterministic scan and prints
+  a `WARNING: [src:] markers not in library: ...` line for any id that does not
+  appear in the manifest.
+- Anything beyond the evidence must be marked `(推测)`.
+- Audit sidecars (`.prompt.md` / `.response.json`) are persisted before the
+  marker check; a corrective retry runs once if the first attempt contains no
+  `[src:]` markers at all.
+
+### Round memory
+
+Rounds accumulate at `<library>/experiments/<id>/advice/`:
+
+```
+advice/
+  round_01/
+    report.md          # the four-section plan
+    report.md.prompt.md
+    report.md.response.json
+    outcome.md         # written by --outcome (user-recorded result)
+  round_02/
+    report.md          # must reference round_01 outcome; must not repeat failed advice
+    ...
+```
+
+`--outcome "..."` writes `outcome.md` into the most recent round directory.
+Later rounds receive all prior reports and outcomes as evidence, making
+advice hit-rate auditable: if a recommendation failed, the next plan must
+acknowledge it and propose a different direction.
+
+### Evidence sources
+
+`gather_evidence()` builds the evidence block from four layers, in order:
+
+1. **Experiment archive** — `exp.yaml` (title, hyperparams, env, linked papers),
+   `exp_notes.yaml` curve analyses (visual_summary / deep_observation per image),
+   `*.md` lab notes, deterministic metrics digest (min/max/last per CSV column).
+2. **Linked paper context** — for each paper id in `exp.yaml.papers`: title from
+   manifest, up to 3 `critical_questions` and 4 `headline_metrics` from the
+   paper's archived `context.yaml`.
+3. **Library excerpts** — hybrid dense + BM25 + RRF retrieval over the full
+   library, queried with `<idea> <exp title>` (`--top-k 12` by default).
+4. **Prior advise rounds** — all `round_NN/report.md` and `round_NN/outcome.md`
+   files, prepended with `## PRIOR ROUND round_NN` / `## OUTCOME of round_NN`.
+
+### Deferral notes
+
+- **`--template-guided advise`**: template-constrained advice (where the
+  iteration plan is shaped by a structured question template) is deferred. The
+  `--idea` string is the lens for now.
+- **Video evidence**: video artifacts in the experiment bundle are not yet
+  processed. The curve vision pipeline handles static images; video support
+  follows the ffmpeg keyframe path planned for exp-ingest.
+
+## Garden
+
+### Purpose
+
+`lazy-paper garden` builds a static star-map of the entire library. Papers
+**and** experiments both render as stars, so the growth of your knowledge base
+is made visible at a glance. There are no server processes and no dynamic data
+fetches — the HTML file is fully self-contained and can be shared or archived
+like any other document.
+
+### Quickstart
+
+```bash
+uv run python -m cli garden            # writes <library>/garden/garden.html
+uv run python -m cli garden --open     # same, then opens in the default browser
+uv run python -m cli garden --out DIR  # custom output directory
+```
+
+Double-click `garden.html` to open it directly in a browser — no server needed.
+
+### How it works
+
+At build time `llm/garden.py`:
+
+1. Reads the library manifest and per-paper archives (`context.yaml`,
+   `figures.yaml`) to assemble `GARDEN_EXPORT`.
+2. Copies all assets from `frontend/garden/` (excluding `DATA_ADAPTER.md`) into
+   the output directory verbatim — the assets are **never modified**.
+3. Injects `window.GARDEN_EXPORT = {...};` as an inline `<script>` block
+   directly into `garden.html` before the `<script src="garden-data.js">`
+   marker. Inline injection is required because `file://` URLs are blocked by
+   the browser's CORS policy, so a runtime `fetch('garden-export.json')` would
+   not work when the page is opened from the filesystem.
+4. Writes `garden-export.json` alongside the HTML for anyone serving the files
+   over HTTP.
+
+The frontend (`frontend/garden/`) computes **all** layout, star positions,
+constellation links, and indexes itself — the exporter provides no layout data.
+Frontend assets are vendored pristine; they are wholesale-replaceable by
+dropping a new `frontend/garden/` directory without touching any Python code.
+
+### Offline note
+
+The main canvas is plain JavaScript and works fully offline. The tweaks panel
+loads React and Babel from CDN and requires a network connection; without it
+the main star-map still renders normally.
+
+### Data mapping
+
+| `GARDEN_EXPORT` field | Source |
+|---|---|
+| `manifest.papers[*]` | `manifest.yaml` — one entry per paper/experiment |
+| `manifest.papers[*].kind` | `"paper"` or `"experiment"` (from manifest) |
+| `manifest.papers[*].questions` | `papers/<id>/context.yaml` → `critical_questions` (papers only) |
+| `manifest.papers[*].figures` | `papers/<id>/figures.yaml` → `fig_id` + `caption` (papers only, first 20) |
+| `entities` | LanceDB `entities` table, grouped by `paper_id` |
+| `relations` | LanceDB `relations` table, grouped by `paper_id` |
+
+### Known gaps
+
+The following limitations are documented in `frontend/garden/DATA_ADAPTER.md`
+and are tracked for a future release:
+
+- **Simulate-ingest button** still generates fake papers in real-data mode;
+  it should either re-fetch the export or be hidden (`data.fromExport === true`
+  can be used to detect real-data mode).
+- **preview.html button** is a placeholder; it should navigate to the paper's
+  composed output or a garden-built lite reading page.
+- **Clusters** default to random assignment until frontend-side entity-affinity
+  clustering lands; the exporter can also supply an explicit `clusters` array
+  to override this.

@@ -237,3 +237,46 @@ def test_ingest_builds_index_when_missing(tmp_path: Path):
         entry = lib.ingest(run)
     assert entry["n_chunks"] > 0
     assert (run / "s08_section_compose" / "retrieval.parquet").exists()
+
+
+def _exp_bundle(tmp_path: Path, name: str = "exp-01") -> Path:
+    b = tmp_path / name
+    b.mkdir()
+    dump_yaml(b / "exp.yaml", {"title": "alpha gait sweep",
+                               "hyperparams": {"alpha_en": 1.0},
+                               "papers": []})
+    (b / "notes.md").write_text(
+        "alpha experiment notes: run converged. " * 20, encoding="utf-8")
+    return b
+
+
+def test_query_papers_filter_isolates_experiment(tmp_path: Path):
+    # Ingest one paper + one experiment; querying with papers=[exp_id] must
+    # return only the experiment's chunks.
+    lib = Library(tmp_path / "library")
+    lib.ingest(_make_run(tmp_path, "alpha-paper", "alpha", embed=_const_embed))
+    b = _exp_bundle(tmp_path)
+    with patch("llm.library._embed_texts", side_effect=_const_embed):
+        lib.ingest_experiment(b)
+        hits = lib.query("alpha", top_k=8, papers=["exp-01"])
+    assert hits
+    assert all(h["paper_id"] == "exp-01" for h in hits)
+
+
+def test_ingest_preserves_cjk_title_roundtrip(tmp_path: Path):
+    # A CJK title survives manifest write/read exactly.
+    run = _make_run(tmp_path, "alpha-paper", "alpha")
+    dump_yaml(run / "s06_context" / "context.yaml",
+              {"title": "能量正则化与四足步态", "keywords": ["alpha"]})
+    lib = Library(tmp_path / "library")
+    entry = lib.ingest(run)
+    assert entry["title"] == "能量正则化与四足步态"
+    assert lib.papers()["alpha-paper"]["title"] == "能量正则化与四足步态"
+
+
+def test_cli_ingest_missing_run_names_path(tmp_path: Path, monkeypatch):
+    import cli
+
+    monkeypatch.setenv("LAZY_PAPER_LIBRARY_DIR", str(tmp_path / "library"))
+    with pytest.raises(SystemExit, match="no-such-run"):
+        cli.main(["ingest", "no-such-run", "--runs-dir", str(tmp_path / "runs")])

@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-06-12 — the knowledge-base loop
+
+One arc, v1.14 → v1.19, released together as 2.0: lazy-paper grows from a
+single-paper deep-read pipeline into a personal research knowledge base with
+an AI-scientist loop — READ → ASK → GROW → CROSS-ANALYZE → EXPERIMENT+ITERATE.
+Entries below document each step of the arc.
+
+### [v1.19-garden] — 2026-06-12 — knowledge garden + idea-incubator prompts
+
+Frontend handoff integrated; generation quality contracts upgraded per the
+"expand ideas, not just structure" direction.
+
+- **`lazy-paper garden`**: static star-map (`<library>/garden/garden.html`) —
+  papers and experiments render as stars from a build-time-inlined
+  `GARDEN_EXPORT`; frontend assets vendored pristine (`frontend/garden/`),
+  zero JS modifications.
+- **Idea-incubator prompts**: template sections each end with a mandatory
+  [发散]/[Open] beyond-the-paper question (schema-embedded after rule-list
+  placement was ignored 0/6 → 6/6); synthesize gained 研究空白与新问题
+  (≥3 anchored new questions) + bidirectional cross-analysis; advise 深度观察
+  requires ≥2 what-if hypotheses.
+- **Quality guard** (RAGAS runs unavailable; s08 path untouched by design):
+  same-input A/B on templates; full-pipeline run over a fresh arXiv paper with
+  a divergent template — s08 answered [发散] questions with evidence-anchored
+  cross-paper reasoning, zero fabrication; 6-entry synthesize produced 5 new
+  cross-paper questions with figure-level anchors.
+- Library now spans 5 papers + 1 experiment incl. two fresh arXiv ingests
+  (2606.13169 policy smoothing, 2606.08102 semantic skill discovery).
+- Tests: +6 (`tests/test_garden.py`). Docs: Garden section (en+zh), README
+  narrative rewrite with image annotations.
+
+### [v1.18-advise] — 2026-06-12 — grounded next-iteration advisor
+
+The AI-scientist closing loop: experiment ↔ papers ↔ iteration memory.
+
+- **`lazy-paper advise --exp <id> --idea "..."`**: experiment archive + linked
+  papers + library excerpts + ALL prior rounds → four-section plan (现状诊断 /
+  下一轮迭代方案 / 深度观察 / 风险与备选); every recommendation = concrete
+  change + falsifiable numeric expectation + `[src: id]` (paper and experiment
+  ids both validate against the manifest).
+- **Round memory**: `advice/round_NN/` accumulates reports; `--outcome "..."`
+  records what actually happened — later rounds must reference outcomes and
+  not repeat failed advice, making hit-rate auditable.
+- Audit sidecars before validation + one corrective retry (house pattern).
+- Tests: +7 (`tests/test_advise.py`). Docs: Advise section (en+zh).
+
+### [v1.17-experiment] — 2026-06-12 — experiments as first-class library citizens
+
+The paper↔experiment data layer for the v1.18 advisor.
+
+- **`lazy-paper exp-ingest <bundle>`**: validate `exp.yaml` manifest → vision
+  deep-read per curve (cached `exp_notes.yaml` + audit sidecars) → deterministic
+  metrics-CSV digest → corpus chunked+embedded into the SHARED chunks table
+  (`kind: experiment`) — one `query` now spans papers and experiments.
+- **Archive**: bundle artifacts copied to `<library>/experiments/<id>/`; manifest
+  entry records env/software/hyperparams keys/linked papers.
+- **Deferred**: video artifacts (ffmpeg keyframe sampling via Docker planned;
+  frames will reuse the curve pipeline). TensorBoard parsing (CSV only).
+- Tests: +12 (`tests/test_experiment.py`). Docs: Experiments section in
+  `KNOWLEDGE_BASE.md` (en+zh).
+
+### [v1.16-synthesize] — 2026-06-12 — cross-paper synthesis
+
+Closes the knowledge-base loop: the library now answers research-direction
+questions across papers, not just retrieval queries.
+
+- **`lazy-paper synthesize --topic "..."`**: evidence gather (manifest +
+  archived context/fig_notes + hybrid-retrieved excerpts) → one text-LLM call
+  → five-section markdown report (综述 / 方法对比表 / 证据与分歧 / 研究空白 /
+  下一步建议) at `<library>/synth/<topic-slug>/report.md`.
+- **Grounding contract**: every evidence-drawn claim carries `[src: paper_id]`;
+  deterministic post-check warns on markers not in the library; speculation
+  must be marked (推测). Audit sidecars persisted before validation; one
+  corrective retry.
+- **Deferred by design**: s08 in-run library context — external citations
+  interact with the anchored-quote verifier and get their own design later.
+- Tests: +7 (`tests/test_synthesize.py`). Docs: Synthesize section in
+  `KNOWLEDGE_BASE.md` (en+zh).
+
 ### [v1.15-template-author] — 2026-06-11 — idea-driven template generation
 
 Closes the template-paper mismatch gap (the 0.81→0.10 faithfulness swing class).

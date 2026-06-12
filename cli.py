@@ -224,6 +224,79 @@ def _cmd_ingest(args) -> int:
     return 0
 
 
+def _cmd_garden(args) -> int:
+    from llm import garden
+    from llm.library import Library
+
+    lib = Library(args.library_dir)
+    out_dir = Path(args.out) if args.out else lib.root / "garden"
+    page = garden.build(lib, out_dir)
+    manifest = lib.papers()
+    n_papers = sum(1 for e in manifest.values() if e.get("kind", "paper") == "paper")
+    n_exp = sum(1 for e in manifest.values() if e.get("kind") == "experiment")
+    print(f"[garden] built {page} ({n_papers} papers, {n_exp} experiments)")
+    if args.open:
+        import webbrowser
+        webbrowser.open(page.resolve().as_uri())
+    return 0
+
+
+def _cmd_advise(args) -> int:
+    from llm import advise as adv
+    from llm.library import Library
+    from llm.synthesize import check_citations
+
+    lib = Library(args.library_dir)
+    if args.outcome:
+        out = adv.record_outcome(lib, args.exp, args.outcome)
+        print(f"[advise] outcome recorded → {out}")
+        if not args.idea:
+            return 0
+    if not args.idea:
+        raise SystemExit("advise: --idea is required (or use --outcome alone "
+                         "to record a result)")
+    evidence = adv.gather_evidence(lib, args.exp, idea=args.idea,
+                                   top_k=args.top_k)
+    round_dir = adv.next_round_dir(lib, args.exp)
+    report_path = round_dir / "report.md"
+    report, resp = adv.compose(idea=args.idea, evidence=evidence,
+                               lang=args.lang, audit_base=report_path)
+    # round_NN references are legitimate grounding alongside manifest ids
+    known = set(lib.papers()) | {p.name for p in adv._rounds(lib, args.exp)}
+    unknown = check_citations(report, known)
+    round_dir.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report, encoding="utf-8")
+    print(f"[advise] {args.exp} {round_dir.name} → {report_path} "
+          f"(model {resp.model})")
+    if unknown:
+        print(f"[advise] WARNING: [src:] markers not in library: "
+              f"{', '.join(unknown)}")
+    print()
+    print(report)
+    return 0
+
+
+def _cmd_exp_ingest(args) -> int:
+    from llm.experiment import analyze_curves, load_bundle
+    from llm.library import Library
+
+    bundle = Path(args.bundle)
+    load_bundle(bundle)  # fail fast with a clear message
+    if args.skip_vision:
+        notes = []
+        print("[exp] --skip-vision: curves not analyzed")
+    else:
+        notes = analyze_curves(bundle, lang=args.lang)
+        print(f"[exp] analyzed {len(notes)} curve(s) "
+              f"(cached in {bundle / 'exp_notes.yaml'})")
+    lib = Library(args.library_dir)
+    entry = lib.ingest_experiment(bundle, exp_id=args.id)
+    print(f"[exp] ingested {args.id or bundle.name}: {entry['n_chunks']} chunks, "
+          f"kind=experiment, linked papers: {', '.join(entry['papers']) or '—'} "
+          f"→ {lib.root}")
+    return 0
+
+
 def _cmd_query(args) -> int:
     from llm.library import Library
     lib = Library(args.library_dir)
@@ -253,6 +326,36 @@ def _cmd_papers(args) -> int:
     for pid, e in manifest.items():
         print(f"{pid:32s} {e.get('kind', 'paper'):10s} "
               f"{e.get('n_chunks', 0):5d} chunks  {e.get('title', '')}")
+    return 0
+
+
+def _cmd_synthesize(args) -> int:
+    from llm import synthesize as syn
+    from llm.library import Library
+
+    lib = Library(args.library_dir)
+    raw = _parse_formats(args.papers)
+    papers = [slugify(p) for p in raw] if raw else None
+    evidence = syn.gather(lib, args.topic, papers=papers, top_k=args.top_k)
+
+    out_dir = Path(args.out_dir) if args.out_dir else (
+        lib.root / "synth" / slugify(args.topic, maxlen=40))
+    report_path = out_dir / "report.md"
+    if report_path.exists():
+        print(f"[synthesize] overwriting existing {report_path}", flush=True)
+    report, resp = syn.compose(topic=args.topic, evidence=evidence,
+                               lang=args.lang, audit_base=report_path)
+    unknown = syn.check_citations(report, set(lib.papers()))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report, encoding="utf-8")
+
+    print(f"[synthesize] wrote {report_path} "
+          f"({len(report)} chars, model {resp.model})")
+    if unknown:
+        print(f"[synthesize] WARNING: [src:] markers not in library: "
+              f"{', '.join(unknown)}")
+    print()
+    print(report)
     return 0
 
 
@@ -339,18 +442,18 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--debug-citations", action="store_true",
                    help="Keep [span:doc:start-end] citation markers in rendered output (default: strip)")
     r.add_argument("--pdffigures2", action="store_true",
-                   help="v1.12: enable PDFFigures 2 sidecar for caption-anchored figure "
+                   help="enable PDFFigures 2 sidecar for caption-anchored figure "
                         "renumbering (requires PDFFIGURES2_JAR=docker + a built "
-                        "lazy-paper/pdffigures2:0.1.0 image). Off by default — opt-in until v1.13.")
+                        "lazy-paper/pdffigures2:0.1.0 image). Off by default.")
     r.add_argument("--ingest", action="store_true",
-                   help="v1.14: after the run, ingest results into the knowledge "
+                   help="after the run, ingest results into the knowledge "
                         "library (see `lazy-paper ingest --help`). Opt-in.")
 
     li = sub.add_parser("ingest", help="Ingest a finished run into the knowledge library")
     li.add_argument("paper_id", help="Run name under --runs-dir (same as run --paper-id)")
     li.add_argument("--runs-dir", default="runs")
     li.add_argument("--kind", choices=("paper", "experiment"), default="paper",
-                    help="'experiment' reserved for the v1.17 experiment loop")
+                    help="Entry kind in the manifest (use exp-ingest for the full experiment flow)")
     li.add_argument("--library-dir", default=None,
                     help="Library root (default: $LAZY_PAPER_LIBRARY_DIR or ./library)")
 
@@ -380,11 +483,56 @@ def main(argv: list[str] | None = None) -> int:
     lt.add_argument("--out", default=None,
                     help="Output docx (default templates/auto-<idea-slug>.docx)")
     lt.add_argument("--use-library", action="store_true",
-                    help="Ground questions in the v1.14 knowledge library "
+                    help="Ground questions in the knowledge library "
                          "(adds cross-paper comparison questions)")
     lt.add_argument("--library-dir", default=None)
     lt.add_argument("--lang", choices=("en", "zh"), default="zh")
     lt.add_argument("--sections", type=int, default=6)
+
+    ls = sub.add_parser("synthesize",
+                        help="Cross-paper synthesis: topic -> grounded "
+                             "research-direction report from the library")
+    ls.add_argument("--topic", required=True)
+    ls.add_argument("--papers", default=None,
+                    help="Comma-separated paper_id scope (default: whole library)")
+    ls.add_argument("--top-k", type=int, default=18,
+                    help="Topic-relevant excerpts pulled from the library")
+    ls.add_argument("--out-dir", default=None,
+                    help="Default <library>/synth/<topic-slug>/")
+    ls.add_argument("--lang", choices=("en", "zh"), default="zh")
+    ls.add_argument("--library-dir", default=None)
+
+    le = sub.add_parser("exp-ingest",
+                        help="analyze + ingest an experiment bundle "
+                             "(exp.yaml + curves + metrics + notes)")
+    le.add_argument("bundle", help="Bundle directory (see docs: exp.yaml contract)")
+    le.add_argument("--id", default=None, help="Override exp id (default: dir name)")
+    le.add_argument("--lang", choices=("en", "zh"), default="zh")
+    le.add_argument("--skip-vision", action="store_true",
+                    help="Skip curve analysis (no vision LLM calls)")
+    le.add_argument("--library-dir", default=None)
+
+    la = sub.add_parser("advise",
+                        help="grounded next-iteration plan for an "
+                             "ingested experiment (+ round memory)")
+    la.add_argument("--exp", required=True, metavar="EXP_ID")
+    la.add_argument("--idea", default=None,
+                    help="Your current question / direction for this round")
+    la.add_argument("--outcome", default=None,
+                    help="Record what happened after the LAST round's advice "
+                         "(stored as outcome.md; informs future rounds)")
+    la.add_argument("--top-k", type=int, default=12)
+    la.add_argument("--lang", choices=("en", "zh"), default="zh")
+    la.add_argument("--library-dir", default=None)
+
+    lg = sub.add_parser("garden",
+                        help="build the star-map knowledge garden "
+                             "(static garden.html from the library)")
+    lg.add_argument("--out", default=None,
+                    help="Output dir (default <library>/garden/)")
+    lg.add_argument("--open", action="store_true",
+                    help="Open the built garden.html in the default browser")
+    lg.add_argument("--library-dir", default=None)
 
     args = ap.parse_args(argv)
 
@@ -397,6 +545,14 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_papers(args)
     if args.cmd == "template":
         return _cmd_template(args)
+    if args.cmd == "synthesize":
+        return _cmd_synthesize(args)
+    if args.cmd == "exp-ingest":
+        return _cmd_exp_ingest(args)
+    if args.cmd == "advise":
+        return _cmd_advise(args)
+    if args.cmd == "garden":
+        return _cmd_garden(args)
     # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
     # would otherwise let outputs land outside runs/.
     paper_id = slugify(args.paper_id) if args.paper_id else slugify(Path(args.pdf).stem)
