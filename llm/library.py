@@ -279,6 +279,23 @@ class Library:
         dump_yaml(self.manifest_path, manifest)
         return entry
 
+    def remove(self, paper_id: str) -> None:
+        """Delete an entry (paper or experiment) everywhere: tables, archive,
+        manifest, sparse index."""
+        manifest = self.papers()
+        if paper_id not in manifest:
+            raise SystemExit(f"'{paper_id}' is not in the library (see `papers`)")
+        for name in ("chunks", "entities", "relations"):
+            if name in self._db.table_names():
+                self._db.open_table(name).delete(f"paper_id = '{paper_id}'")
+        for sub in ("papers", "experiments"):
+            d = self.root / sub / paper_id
+            if d.is_dir():
+                shutil.rmtree(d)
+        del manifest[paper_id]
+        dump_yaml(self.manifest_path, manifest)
+        self._rebuild_bm25()
+
     def _check_dim(self, dim: int) -> None:
         if "chunks" not in self._db.table_names():
             return
@@ -357,6 +374,12 @@ class Library:
         rows = (self._db.open_table("chunks").to_arrow()
                 .select(["gid", "text", "is_parent"]).to_pylist())
         children = [r for r in rows if not r["is_parent"]]
+        if not children:
+            # Empty library: drop the sparse index; query()'s ids-file guard
+            # then short-circuits to [].
+            shutil.rmtree(self.root / "bm25", ignore_errors=True)
+            (self.root / "bm25_ids.json").unlink(missing_ok=True)
+            return
         bm = bm25s.BM25()
         bm.index(bm25s.tokenize([r["text"] for r in children]))
         bm.save(str(self.root / "bm25"))

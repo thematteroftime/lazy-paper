@@ -342,3 +342,34 @@ def test_build_injection_position(tmp_path: Path):
     export_idx = html.index("window.GARDEN_EXPORT")
     data_js_idx = html.index('<script src="garden-data.js"></script>')
     assert export_idx < data_js_idx
+
+
+def test_export_figures_src_and_preview(tmp_path: Path, monkeypatch):
+    from llm.garden import export_data, build
+    from llm.library import Library
+
+    run = _make_run(tmp_path, "alpha-paper", "alpha")
+    # fake the s09 preview + an archived figure image
+    (run / "s09_render").mkdir()
+    (run / "s09_render" / "preview.html").write_text("<html>", encoding="utf-8")
+    lib = Library(tmp_path / "library")
+    lib.ingest(run)
+    imgs = lib.root / "papers" / "alpha-paper" / "imgs"
+    imgs.mkdir(parents=True, exist_ok=True)
+    (imgs / "img_001.jpg").write_bytes(b"\xff\xd8 fake")
+    dump_yaml(lib.root / "papers" / "alpha-paper" / "figures.yaml",
+              [{"fig_id": "Fig. 1", "image_rel_path": "imgs/img_001.jpg",
+                "caption": "gait curve"},
+               {"fig_id": "Fig. 2", "caption": "no image archived"}])
+
+    export = export_data(lib)
+    paper = next(p for p in export["manifest"]["papers"]
+                 if p["id"] == "alpha-paper")
+    figs = {f["id"]: f for f in paper["figures"]}
+    assert figs["Fig. 1"]["src"] == "imgs/alpha-paper/img_001.jpg"
+    assert "src" not in figs["Fig. 2"]
+    assert paper["preview"].startswith("file://")
+    assert paper["preview"].endswith("s09_render/preview.html")
+
+    out = build(lib, tmp_path / "out")
+    assert (tmp_path / "out" / "imgs" / "alpha-paper" / "img_001.jpg").exists()

@@ -175,7 +175,7 @@ function openPanel(app, p, T){
   <ul class="pn-q">${p.questions.map(q=>'<li>'+esc(q)+'</li>').join('')}</ul>
   <div class="pn-sect">FIGURES</div>
   <div class="pn-figs">${p.figures.map(f=>`
-    <figure class="pn-fig"><div class="pn-fig-ph"></div><figcaption>${esc(f.id)} · ${esc(f.caption)}</figcaption></figure>`).join('')}
+    <figure class="pn-fig" title="点击展开/收起图注">${f.src?`<img class="pn-fig-im" src="${esc(f.src)}" alt="${esc(f.id)}" loading="lazy">`:`<div class="pn-fig-ph"></div>`}<figcaption>${esc(f.id)} · ${esc(f.caption)}</figcaption></figure>`).join('')}
   </div>
   ${shared.length?`<div class="pn-sect">SHARED ENTITIES — 从概念走到别的论文</div>
   <div class="pn-shared">${shared.map(e=>{
@@ -185,16 +185,22 @@ function openPanel(app, p, T){
   }).join('')}</div>`:''}
   <div class="pn-actions">
     <button class="pn-btn" id="pn-open">打开 preview.html ↗</button>
-    <div class="pn-hint" id="pn-open-hint" hidden>demo:无 source_run。实际产物中将打开该论文的 preview.html,或 garden 构建的 lite 阅读页。</div>
+    <div class="pn-hint" id="pn-open-hint" hidden>该条目没有可打开的 preview.html(实验条目,或来源 run 已被清理)。</div>
   </div>
-  <div class="pn-cli">$ lazy-paper template --from ${esc(p.id)} <span># v1.15 槽位</span></div>`;
+  <div class="pn-cli">$ lazy-paper template --run ${esc(p.id)} --idea "..." <span># 由这篇论文孵化问题模板</span></div>`;
  $('panel-body').querySelectorAll('.pn-sec').forEach(b=>{
   b.addEventListener('click', ()=>GardenApp.drillSection(Number(b.dataset.k)));
  });
  $('panel-body').querySelectorAll('.pn-ent').forEach(b=>{
   b.addEventListener('click', ()=>GardenApp.locateEntity(b.dataset.key));
  });
- $('pn-open').addEventListener('click', ()=>{ $('pn-open-hint').hidden = false; });
+ $('pn-open').addEventListener('click', ()=>{
+  if(p.preview){ window.open(p.preview, '_blank'); }
+  else { $('pn-open-hint').hidden = false; }
+ });
+ $('panel-body').querySelectorAll('.pn-fig').forEach(fg=>{
+  fg.addEventListener('click', ()=>fg.classList.toggle('expanded'));
+ });
  $('panel').classList.add('open');
 }
 function closePanel(){ $('panel').classList.remove('open'); }

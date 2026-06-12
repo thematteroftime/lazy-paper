@@ -280,3 +280,31 @@ def test_cli_ingest_missing_run_names_path(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("LAZY_PAPER_LIBRARY_DIR", str(tmp_path / "library"))
     with pytest.raises(SystemExit, match="no-such-run"):
         cli.main(["ingest", "no-such-run", "--runs-dir", str(tmp_path / "runs")])
+
+
+def test_remove_paper_cleans_everything(tmp_path: Path):
+    lib = Library(tmp_path / "library")
+    lib.ingest(_make_run(tmp_path, "alpha-paper", "alpha"))
+    lib.ingest(_make_run(tmp_path, "beta-paper", "beta"))
+    lib.remove("alpha-paper")
+    assert "alpha-paper" not in lib.papers()
+    rows = lib._db.open_table("chunks").to_arrow().to_pylist()
+    assert all(r["paper_id"] != "alpha-paper" for r in rows)
+    assert not (lib.root / "papers" / "alpha-paper").exists()
+    with patch("llm.library._embed_texts", side_effect=_fake_embed):
+        hits = lib.query("alpha dynamics")
+    assert all(h["paper_id"] != "alpha-paper" for h in hits)
+
+
+def test_remove_last_entry_empties_index(tmp_path: Path):
+    lib = Library(tmp_path / "library")
+    lib.ingest(_make_run(tmp_path, "alpha-paper", "alpha"))
+    lib.remove("alpha-paper")
+    assert lib.papers() == {}
+    assert lib.query("anything") == []  # no crash, no stale bm25
+
+
+def test_remove_unknown_raises(tmp_path: Path):
+    lib = Library(tmp_path / "library")
+    with pytest.raises(SystemExit, match="not in the library"):
+        lib.remove("ghost")

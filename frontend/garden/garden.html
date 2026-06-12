@@ -235,8 +235,14 @@ body[data-view="focus"] #crumb-paper{display:inline}
 .pn-figs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .pn-fig-ph{height:74px;border:1px solid var(--line);
   background:repeating-linear-gradient(45deg,transparent 0 7px,var(--line) 7px 8px)}
+.pn-fig{cursor:pointer}
+.pn-fig-im{width:100%;height:74px;object-fit:cover;border:1px solid var(--line);display:block;
+  filter:saturate(.85)}
+.pn-fig.expanded .pn-fig-im{height:auto;object-fit:contain}
 .pn-fig figcaption{font-family:var(--mono);font-size:9.5px;color:var(--ink-faint);
-  margin-top:5px;line-height:1.4}
+  margin-top:5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+.pn-fig.expanded figcaption{display:block;-webkit-line-clamp:unset;overflow:visible}
 .pn-shared{display:flex;flex-direction:column;gap:5px}
 .pn-ent{display:flex;align-items:baseline;gap:8px;background:none;text-align:left;
   border:1px solid transparent;color:var(--ink);font-family:var(--serif);font-size:13px;

@@ -340,7 +340,8 @@ function adapt(exp){
    keywords:mp.keywords||[],n_chunks:mp.n_chunks||20,n_entities:mp.n_entities||ents.length,
    total_tokens:mp.total_tokens||((mp.n_chunks||20)*900),ingested_at:ing,
    entities:ents,relations:rels,questions:mp.questions||[],
-   figures:(mp.figures||[]).map((f,j)=>({id:f.id||('fig_'+(j+1)),caption:f.caption||''})),
+   figures:(mp.figures||[]).map((f,j)=>({id:f.id||('fig_'+(j+1)),caption:f.caption||'',src:f.src||null})),
+   preview:mp.preview||null,
    sections,seed:strHash(mp.id),x:0,y:0};
  });
  papers.forEach(p=>placePaper(rnd,p,clusters[p.cluster]));

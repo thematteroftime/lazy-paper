@@ -59,15 +59,25 @@ def export_data(lib) -> dict:
                 p["questions"] = []
 
             figs_path = lib.root / "papers" / pid / "figures.yaml"
+            p["figures"] = []
             if figs_path.exists():
-                raw_figs = load_yaml(figs_path) or []
-                p["figures"] = [
-                    {"id": f["fig_id"], "caption": f.get("caption", "")}
-                    for f in raw_figs
-                    if "fig_id" in f
-                ][:20]
-            else:
-                p["figures"] = []
+                for f in (load_yaml(figs_path) or [])[:20]:
+                    if "fig_id" not in f:
+                        continue
+                    fig = {"id": f["fig_id"], "caption": f.get("caption", "")}
+                    # archived image -> export-relative src (build() copies it)
+                    rel = f.get("image_rel_path")
+                    if rel:
+                        img = lib.root / "papers" / pid / "imgs" / Path(rel).name
+                        if img.exists():
+                            fig["src"] = f"imgs/{pid}/{img.name}"
+                    p["figures"].append(fig)
+
+            run_dir = entry.get("source_run")
+            if run_dir:
+                preview = Path(run_dir) / "s09_render" / "preview.html"
+                if preview.exists():
+                    p["preview"] = preview.resolve().as_uri()
         else:
             p["questions"] = []
             p["figures"] = []
@@ -139,5 +149,16 @@ def build(lib, out_dir: Path) -> Path:
     (out_dir / "garden-export.json").write_text(
         json.dumps(export, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+
+    # Copy referenced figure images next to the page (src = imgs/<pid>/<name>)
+    for paper in export["manifest"]["papers"]:
+        for fig in paper.get("figures", []):
+            src = fig.get("src")
+            if not src:
+                continue
+            target = out_dir / src
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(lib.root / "papers" / paper["id"] / "imgs" / Path(src).name,
+                         target)
 
     return html_src

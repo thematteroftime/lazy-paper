@@ -224,6 +224,14 @@ def _cmd_ingest(args) -> int:
     return 0
 
 
+def _cmd_remove(args) -> int:
+    from llm.library import Library
+    lib = Library(args.library_dir)
+    lib.remove(args.id)
+    print(f"[library] removed {args.id} (tables, archive, manifest, index)")
+    return 0
+
+
 def _cmd_garden(args) -> int:
     from llm import garden
     from llm.library import Library
@@ -525,6 +533,10 @@ def main(argv: list[str] | None = None) -> int:
     la.add_argument("--lang", choices=("en", "zh"), default="zh")
     la.add_argument("--library-dir", default=None)
 
+    lr = sub.add_parser("remove", help="Remove a paper or experiment from the library")
+    lr.add_argument("id", help="paper_id / exp_id as shown by `papers`")
+    lr.add_argument("--library-dir", default=None)
+
     lg = sub.add_parser("garden",
                         help="build the star-map knowledge garden "
                              "(static garden.html from the library)")
@@ -551,6 +563,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_exp_ingest(args)
     if args.cmd == "advise":
         return _cmd_advise(args)
+    if args.cmd == "remove":
+        return _cmd_remove(args)
     if args.cmd == "garden":
         return _cmd_garden(args)
     # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
