@@ -83,7 +83,7 @@ The report has exactly five `##` sections in this order:
 | `## 主题综述` | Topic overview and framing across papers |
 | `## 方法对比` | Markdown table — one row per paper: approach, key quantitative results, limitations |
 | `## 证据与分歧` | Agreements and contradictions in the evidence |
-| `## 研究空白` | Open questions not addressed by any paper in scope |
+| `## 研究空白与新问题` | Open gaps + >=3 NEW anchored questions sparked by the cross-analysis (divergent by design) |
 | `## 下一步建议` | 3–5 concrete, falsifiable next steps, each citing at least one `[src: ...]`; speculation is marked `(推测)` |
 
 ### Grounding contract
