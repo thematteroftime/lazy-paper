@@ -182,3 +182,121 @@ uv run python -m cli query "CoT convergence"
 
 Video artifacts are not yet supported. Planned path: ffmpeg keyframe sampling
 via Docker; extracted frames will reuse the curve vision pipeline exactly.
+
+## Advise (v1.18)
+
+`lazy-paper advise` closes the AI-scientist loop: experiment evidence + linked
+papers + iteration memory → grounded next-iteration plan. Each advise round
+produces a four-section markdown report where every recommendation cites a
+concrete change, a falsifiable numeric expectation, and a `[src: id]` marker
+validated against the library manifest (paper ids AND experiment ids both
+count). Prior rounds — including user-recorded outcomes — accumulate under
+`<library>/experiments/<id>/advice/round_NN/`, so advice hit-rate becomes
+auditable over time.
+
+### Purpose
+
+Given an ingested experiment and a current question (`--idea`), the command
+collects evidence from four layers: the experiment's archived bundle
+(`exp.yaml`, `exp_notes.yaml`, `notes.md`, metrics digest), its linked papers'
+archived context (`context.yaml` headline metrics and critical questions),
+idea-relevant library excerpts (hybrid dense + BM25 + RRF, `--top-k 12` by
+default), and ALL prior advise rounds with user-recorded outcomes. One
+text-LLM call (retry + audit sidecars, house pattern) then composes a grounded
+plan. The next round automatically reads that plan and the outcome you recorded
+— and must not repeat failed advice.
+
+### Quickstart
+
+```bash
+# Round 1 — ask for a plan
+uv run python -m cli advise --exp my-exp-01 --idea "push stable speed to 2.2 m/s"
+
+# ... run the suggested iteration in your lab ...
+
+# Record what actually happened (writes outcome.md to round_01/)
+uv run python -m cli advise --exp my-exp-01 --outcome "alpha_en=0.8 held to 2.1 m/s, CoT +6%"
+
+# Round 2 — idea feeds evidence that now includes round 1 report + outcome
+uv run python -m cli advise --exp my-exp-01 --idea "now reclaim the CoT regression"
+```
+
+Other flags:
+
+```bash
+uv run python -m cli advise --exp my-exp-01 --idea "..." --lang en   # English output (default: zh)
+uv run python -m cli advise --exp my-exp-01 --idea "..." --top-k 20  # more library excerpts
+```
+
+Report lands at `<library>/experiments/<id>/advice/round_NN/report.md`, with
+audit sidecars: `report.md.prompt.md` and `report.md.response.json` (written
+before the citation check, so a rejected report is always inspectable).
+
+### Report structure
+
+The report has exactly four `##` sections in this order:
+
+| Section | Contents |
+|---|---|
+| `## 现状诊断` | Diagnosis of the current experiment state, grounded in archived metrics and curve analyses |
+| `## 下一轮迭代方案` | 3–5 numbered iteration changes; each must state (a) 改什么 — the concrete change, (b) 预期 — a falsifiable numeric expectation with a range, (c) 依据 — at least one `[src: id]` marker |
+| `## 深度观察` | Cross-paper and cross-experiment observations that contextualize the current state |
+| `## 风险与备选` | Risks and alternatives; speculation beyond the evidence is marked `(推测)` |
+
+### Grounding contract
+
+- Every factual claim drawn from the evidence carries `[src: id]` using the
+  exact ids in the library manifest. Both paper ids and experiment ids are
+  valid — they are all manifest entries.
+- After composition, `check_citations` performs a deterministic scan and prints
+  a `WARNING: [src:] markers not in library: ...` line for any id that does not
+  appear in the manifest.
+- Anything beyond the evidence must be marked `(推测)`.
+- Audit sidecars (`.prompt.md` / `.response.json`) are persisted before the
+  marker check; a corrective retry runs once if the first attempt contains no
+  `[src:]` markers at all.
+
+### Round memory
+
+Rounds accumulate at `<library>/experiments/<id>/advice/`:
+
+```
+advice/
+  round_01/
+    report.md          # the four-section plan
+    report.md.prompt.md
+    report.md.response.json
+    outcome.md         # written by --outcome (user-recorded result)
+  round_02/
+    report.md          # must reference round_01 outcome; must not repeat failed advice
+    ...
+```
+
+`--outcome "..."` writes `outcome.md` into the most recent round directory.
+Later rounds receive all prior reports and outcomes as evidence, making
+advice hit-rate auditable: if a recommendation failed, the next plan must
+acknowledge it and propose a different direction.
+
+### Evidence sources
+
+`gather_evidence()` builds the evidence block from four layers, in order:
+
+1. **Experiment archive** — `exp.yaml` (title, hyperparams, env, linked papers),
+   `exp_notes.yaml` curve analyses (visual_summary / deep_observation per image),
+   `*.md` lab notes, deterministic metrics digest (min/max/last per CSV column).
+2. **Linked paper context** — for each paper id in `exp.yaml.papers`: title from
+   manifest, up to 3 `critical_questions` and 4 `headline_metrics` from the
+   paper's archived `context.yaml`.
+3. **Library excerpts** — hybrid dense + BM25 + RRF retrieval over the full
+   library, queried with `<idea> <exp title>` (`--top-k 12` by default).
+4. **Prior advise rounds** — all `round_NN/report.md` and `round_NN/outcome.md`
+   files, prepended with `## PRIOR ROUND round_NN` / `## OUTCOME of round_NN`.
+
+### Deferral notes
+
+- **`--template-guided advise`**: template-constrained advice (where the
+  iteration plan is shaped by a structured question template) is deferred. The
+  `--idea` string is the lens for now.
+- **Video evidence**: video artifacts in the experiment bundle are not yet
+  processed. The curve vision pipeline handles static images; video support
+  follows the ffmpeg keyframe path planned for exp-ingest.

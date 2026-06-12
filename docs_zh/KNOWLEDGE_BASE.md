@@ -164,3 +164,108 @@ uv run python -m cli query "CoT 收敛"
 
 视频产物暂不支持。规划路径：通过 Docker 调用 ffmpeg 提取关键帧；提取的帧将复用
 曲线视觉分析管线。
+
+## AI 科学家顾问（v1.18 Advise）
+
+`lazy-paper advise` 闭合 AI 科学家闭环：实验证据 + 关联论文 + 迭代记忆 → 有据可查
+的下一轮迭代方案。每轮 advise 生成一份四节式 Markdown 报告，每条建议均需注明具体
+改动、可证伪的量化预期，以及经 manifest 校验的 `[src: id]` 引用标记（论文 id 与实
+验 id 均有效）。历轮结果（含用户记录的实验结论）积累于
+`<library>/experiments/<id>/advice/round_NN/`，建议命中率因此可追溯审计。
+
+### 用途
+
+给定一个已入库的实验和当前问题（`--idea`），命令从四个层次收集证据：实验归档 bundle
+（`exp.yaml`、`exp_notes.yaml`、`notes.md`、指标摘要）、关联论文的归档上下文
+（`context.yaml` 中的核心指标与关键问题）、与 idea 相关的库检索片段（dense + BM25 +
+RRF 混合检索，默认 `--top-k 12`），以及所有历轮 advise 报告与用户记录的实验结论。
+随后以单次文本 LLM 调用（重试 + 审计附件，house 模式）生成有据可查的迭代方案。
+下一轮自动读取当轮报告与记录的结论——且不得重复已失败的建议。
+
+### 快速上手
+
+```bash
+# 第一轮——请求迭代方案
+uv run python -m cli advise --exp my-exp-01 --idea "push stable speed to 2.2 m/s"
+
+# ... 在实验室运行建议的迭代 ...
+
+# 记录实际发生的情况（写入 round_01/outcome.md）
+uv run python -m cli advise --exp my-exp-01 --outcome "alpha_en=0.8 held to 2.1 m/s, CoT +6%"
+
+# 第二轮——证据中已包含 round_01 报告与结论
+uv run python -m cli advise --exp my-exp-01 --idea "now reclaim the CoT regression"
+```
+
+其他参数：
+
+```bash
+uv run python -m cli advise --exp my-exp-01 --idea "..." --lang en   # 英文输出（默认：zh）
+uv run python -m cli advise --exp my-exp-01 --idea "..." --top-k 20  # 更多库检索片段
+```
+
+报告输出至 `<library>/experiments/<id>/advice/round_NN/report.md`，同目录保存审计
+附件：`report.md.prompt.md` 与 `report.md.response.json`（引用检查前写入，确保被
+拒报告可追溯）。
+
+### 报告结构
+
+报告包含以下四个 `##` 节，顺序固定：
+
+| 节 | 内容 |
+|---|---|
+| `## 现状诊断` | 基于归档指标与曲线分析对当前实验状态的诊断 |
+| `## 下一轮迭代方案` | 3–5 条编号迭代建议；每条须注明 (a) 改什么——具体改动，(b) 预期——带区间的可证伪量化预期，(c) 依据——至少一个 `[src: id]` |
+| `## 深度观察` | 跨论文、跨实验的观察，用于解读当前状态 |
+| `## 风险与备选` | 风险与替代方案；超出证据范围的推断标注 `(推测)` |
+
+### 溯源约定
+
+- 每条从证据得出的陈述必须带 `[src: id]`，使用 manifest 中的准确 id；论文 id 与
+  实验 id 均为合法来源——两者都是 manifest 条目。
+- 合成完成后，`check_citations` 做确定性扫描，对不在 manifest 中的 id 打印
+  `WARNING: [src:] markers not in library: ...`。
+- 超出证据范围的内容必须标注 `(推测)`。
+- 审计附件（`.prompt.md` / `.response.json`）在引用检查前写入；若首次结果完全
+  不含 `[src:]` 标记，则执行一次纠正重试。
+
+### 轮次记忆
+
+历轮结果积累于 `<library>/experiments/<id>/advice/`：
+
+```
+advice/
+  round_01/
+    report.md          # 四节式迭代方案
+    report.md.prompt.md
+    report.md.response.json
+    outcome.md         # 由 --outcome 写入（用户记录的实验结果）
+  round_02/
+    report.md          # 须引用 round_01 结论；不得重复已失败的建议
+    ...
+```
+
+`--outcome "..."` 将 `outcome.md` 写入最近一轮的目录。后续轮次将接收所有历轮报告
+与结论作为证据，建议命中率因此可被审计：若某建议失败，下一轮方案须予以说明并提
+出不同方向。
+
+### 证据来源
+
+`gather_evidence()` 从四个层次构建证据块，按以下顺序：
+
+1. **实验归档** — `exp.yaml`（标题、超参、环境、关联论文），`exp_notes.yaml` 曲线
+   分析（每张图的 visual_summary / deep_observation），`*.md` 实验记录，确定性指
+   标摘要（每个 CSV 列的 min/max/last）。
+2. **关联论文上下文** — 对 `exp.yaml.papers` 中每篇论文：来自 manifest 的标题，
+   归档 `context.yaml` 中最多 3 条 `critical_questions` 与 4 条 `headline_metrics`。
+3. **库检索片段** — 对整库执行 dense + BM25 + RRF 混合检索，查询串为
+   `<idea> <exp title>`（默认 `--top-k 12`）。
+4. **历轮 advise 记录** — 所有 `round_NN/report.md` 与 `round_NN/outcome.md`，
+   以 `## PRIOR ROUND round_NN` / `## OUTCOME of round_NN` 为前缀注入证据。
+
+### 延迟说明
+
+- **`--template-guided advise`**：模板约束式迭代建议（由结构化问题模板引导方案形
+  态）暂缓。当前以 `--idea` 字符串为透镜。
+- **视频证据**：实验 bundle 中的视频产物尚不处理。曲线视觉管线处理静态图像；视频
+  支持将沿 exp-ingest 规划的 ffmpeg 关键帧路径实现。

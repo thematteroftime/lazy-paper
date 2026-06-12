@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.18-advise] — 2026-06-12 — grounded next-iteration advisor
+
+The AI-scientist closing loop: experiment ↔ papers ↔ iteration memory.
+
+- **`lazy-paper advise --exp <id> --idea "..."`**: experiment archive + linked
+  papers + library excerpts + ALL prior rounds → four-section plan (现状诊断 /
+  下一轮迭代方案 / 深度观察 / 风险与备选); every recommendation = concrete
+  change + falsifiable numeric expectation + `[src: id]` (paper and experiment
+  ids both validate against the manifest).
+- **Round memory**: `advice/round_NN/` accumulates reports; `--outcome "..."`
+  records what actually happened — later rounds must reference outcomes and
+  not repeat failed advice, making hit-rate auditable.
+- Audit sidecars before validation + one corrective retry (house pattern).
+- Tests: +7 (`tests/test_advise.py`). Docs: Advise section (en+zh).
+
 ### [v1.17-experiment] — 2026-06-12 — experiments as first-class library citizens
 
 The paper↔experiment data layer for the v1.18 advisor.
