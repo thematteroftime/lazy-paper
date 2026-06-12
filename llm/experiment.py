@@ -77,14 +77,20 @@ def summarize_metrics(bundle_dir: Path) -> str:
 
 
 def analyze_curves(bundle_dir: Path, *, lang: str = "zh") -> list[dict]:
-    """Vision LLM per plot -> exp_notes.yaml (cache: skip if file exists)."""
+    """Vision LLM per plot -> exp_notes.yaml.
+
+    Incremental cache: already-analyzed images (by relative path) are kept;
+    only images missing from exp_notes.yaml trigger LLM calls — adding a
+    curve later and re-running analyzes just the delta.
+    """
     bundle_dir = Path(bundle_dir)
     notes_path = bundle_dir / "exp_notes.yaml"
-    if notes_path.exists():
-        return load_yaml(notes_path) or []
-    images = _images(bundle_dir)
+    notes: list[dict] = (load_yaml(notes_path) or []) if notes_path.exists() else []
+    done = {n.get("image") for n in notes if isinstance(n, dict)}
+    images = [p for p in _images(bundle_dir)
+              if str(p.relative_to(bundle_dir)) not in done]
     if not images:
-        return []
+        return notes
     meta = load_bundle(bundle_dir)
     exp_context = yaml.safe_dump(meta, allow_unicode=True, sort_keys=False)
     system_tpl, user_tpl = _split_prompt(PROMPT_PATH.read_text(encoding="utf-8"))
@@ -92,7 +98,6 @@ def analyze_curves(bundle_dir: Path, *, lang: str = "zh") -> list[dict]:
         lang_instruction=_LANG_INSTRUCTIONS.get(lang, _LANG_INSTRUCTIONS["en"]))
     user = user_tpl.format(exp_context=exp_context)
     llm = LLM(role="vision")
-    notes: list[dict] = []
     for img in images:
         resp = llm.chat(system=system, user=user, images=[img],
                         temperature=0.2, max_tokens=1500)

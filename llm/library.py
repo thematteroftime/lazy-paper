@@ -212,6 +212,11 @@ class Library:
 
         bundle_dir = Path(bundle_dir)
         exp_id = exp_id or bundle_dir.name
+        existing = self.papers().get(exp_id)
+        if existing and existing.get("kind", "paper") != "experiment":
+            raise SystemExit(
+                f"exp id '{exp_id}' would collide with an ingested paper — "
+                f"rename the bundle directory or pass --id")
         meta = load_bundle(bundle_dir)
         corpus = build_corpus(bundle_dir)
 

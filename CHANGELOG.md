@@ -19,7 +19,7 @@ The paper↔experiment data layer for the v1.18 advisor.
   entry records env/software/hyperparams keys/linked papers.
 - **Deferred**: video artifacts (ffmpeg keyframe sampling via Docker planned;
   frames will reuse the curve pipeline). TensorBoard parsing (CSV only).
-- Tests: +9 (`tests/test_experiment.py`). Docs: Experiments section in
+- Tests: +12 (`tests/test_experiment.py`). Docs: Experiments section in
   `KNOWLEDGE_BASE.md` (en+zh).
 
 ### [v1.16-synthesize] — 2026-06-12 — cross-paper synthesis

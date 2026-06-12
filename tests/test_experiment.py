@@ -166,3 +166,27 @@ def test_analyze_curves_strips_markdown_fence(tmp_path: Path):
             "```yaml\n" + _CURVE_YAML + "```")
         notes = analyze_curves(b, lang="zh")
     assert "CoT falls" in notes[0]["visual_summary"]
+
+
+def test_analyze_curves_analyzes_new_images_added_later(tmp_path: Path):
+    b = _bundle(tmp_path)
+    with patch("llm.experiment.LLM") as M:
+        M.return_value.chat.return_value = _FakeResp(_CURVE_YAML)
+        analyze_curves(b, lang="zh")
+        (b / "curves" / "reward.png").write_bytes(b"\x89PNG fake2")
+        notes = analyze_curves(b, lang="zh")
+        # only the newly added image triggers an LLM call
+        assert M.return_value.chat.call_count == 2
+    assert {n["image"] for n in notes} == {"curves/cot.png",
+                                           "curves/reward.png"}
+
+
+def test_ingest_experiment_refuses_paper_id_collision(tmp_path: Path):
+    from llm.library import Library
+
+    lib = Library(tmp_path / "library")
+    lib.root.mkdir(parents=True, exist_ok=True)
+    dump_yaml(lib.manifest_path, {"exp-01": {"kind": "paper", "title": "P"}})
+    b = _bundle(tmp_path)  # dir name is exp-01
+    with pytest.raises(SystemExit, match="collide"):
+        lib.ingest_experiment(b)
