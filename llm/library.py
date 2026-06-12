@@ -364,10 +364,15 @@ class Library:
 
 
 def _exp_images(bundle_dir: Path) -> list[Path]:
+    seen: set[Path] = set()
     out: list[Path] = []
     for g in ("*.png", "*.jpg", "*.jpeg", "curves/*.png", "curves/*.jpg",
               "curves/*.jpeg"):
-        out.extend(sorted(Path(bundle_dir).glob(g)))
+        for p in sorted(Path(bundle_dir).glob(g)):
+            rp = p.resolve()
+            if rp not in seen:
+                seen.add(rp)
+                out.append(p)
     return out
 
 

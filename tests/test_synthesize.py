@@ -172,3 +172,38 @@ def test_check_citations_artifact_suffix():
     known = {"exp-01"}
     assert check_citations("x [src: exp-01 notes.md] y", known) == []
     assert check_citations("x [src: ghost notes.md] y", known) == ["ghost"]
+
+
+def test_check_citations_fullwidth_brackets_ignored():
+    # KNOWN LIMITATION: the marker regex only matches ASCII [src: ...]; a
+    # full-width 【src: ...】 is silently NOT recognized as a citation. This
+    # characterization test pins that behavior: a full-width-bracketed ghost id
+    # produces no false unknowns (it is invisible to the checker, not flagged).
+    assert check_citations("正文 【src: ghost】 结束。", {"paper-a"}) == []
+    # an ASCII marker in the same text is still detected normally
+    assert check_citations("正文 【src: ghost】 [src: real]。",
+                           {"paper-a"}) == ["real"]
+
+
+def test_gather_paper_without_context_uses_manifest_title(tmp_path: Path):
+    # One paper has no archived context.yaml — it is still listed with its
+    # manifest title, no crash, no critical questions.
+    lib = _lib(tmp_path)
+    (lib.root / "papers" / "paper-b" / "context.yaml").unlink()
+    ev = gather(lib, "x")
+    assert "PAPER paper-b" in ev
+    assert "title: Paper B" in ev               # title from manifest entry
+    assert "What limits paper-b?" not in ev     # no archived questions
+
+
+def test_gather_fig_notes_dict_no_crash(tmp_path: Path):
+    # fig_notes.yaml is a dict instead of the expected list — iterating its
+    # keys yields non-dict items, so no figure lines, no crash.
+    lib = _lib(tmp_path)
+    dump_yaml(lib.root / "papers" / "paper-a" / "fig_notes.yaml",
+              {"fig_id": "Fig. 1", "deep_observation": "should be ignored"})
+    ev = gather(lib, "x")
+    assert "PAPER paper-a" in ev
+    # paper-a's dict-shaped fig_notes yields no figure line (its content is
+    # dropped); paper-b's valid list-shaped notes are unaffected.
+    assert "should be ignored" not in ev

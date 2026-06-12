@@ -44,10 +44,15 @@ def load_bundle(bundle_dir: Path) -> dict:
 
 
 def _images(bundle_dir: Path) -> list[Path]:
-    seen: list[Path] = []
+    seen: set[Path] = set()
+    out: list[Path] = []
     for g in _IMG_GLOBS:
-        seen.extend(sorted(Path(bundle_dir).glob(g)))
-    return seen
+        for p in sorted(Path(bundle_dir).glob(g)):
+            rp = p.resolve()
+            if rp not in seen:
+                seen.add(rp)
+                out.append(p)
+    return out
 
 
 def summarize_metrics(bundle_dir: Path) -> str:

@@ -190,3 +190,85 @@ def test_ingest_experiment_refuses_paper_id_collision(tmp_path: Path):
     b = _bundle(tmp_path)  # dir name is exp-01
     with pytest.raises(SystemExit, match="collide"):
         lib.ingest_experiment(b)
+
+
+# --- coverage: summarize_metrics edge cases ---------------------------------
+
+def test_summarize_metrics_utf8_bom(tmp_path: Path):
+    # A CSV exported by Excel carries a UTF-8 BOM; the digest must still parse.
+    b = tmp_path / "bom"
+    b.mkdir()
+    (b / "metrics.csv").write_text(
+        "step,reward\n0,0.1\n100,0.9\n", encoding="utf-8-sig")
+    digest = summarize_metrics(b)
+    assert "metrics.csv" in digest
+    assert "rows=2" in digest
+    assert "reward: min=0.1 max=0.9 last=0.9" in digest
+
+
+def test_summarize_metrics_empty_csv_skipped(tmp_path: Path):
+    # An empty CSV is silently skipped; another file's digest still appears.
+    b = tmp_path / "empty"
+    b.mkdir()
+    (b / "a_empty.csv").write_text("", encoding="utf-8")
+    (b / "b_real.csv").write_text("step,loss\n0,1.0\n1,0.5\n", encoding="utf-8")
+    digest = summarize_metrics(b)
+    assert "a_empty.csv" not in digest
+    assert "b_real.csv" in digest and "rows=2" in digest
+
+
+def test_summarize_metrics_non_numeric_csv(tmp_path: Path):
+    # All-string columns: file is mentioned with rows=N, no numeric stats.
+    b = tmp_path / "strs"
+    b.mkdir()
+    (b / "labels.csv").write_text(
+        "name,phase\nwarmup,early\ncruise,mid\n", encoding="utf-8")
+    digest = summarize_metrics(b)
+    assert "labels.csv: rows=2" in digest
+    assert "min=" not in digest and "max=" not in digest
+
+
+# --- coverage: _images dedup (KNOWN MINOR BUG) ------------------------------
+
+def test_images_dedup_by_resolved_path(tmp_path: Path):
+    # A file reachable through two globs (a symlink under curves/ pointing back
+    # at a top-level png) must be analyzed only once.
+    from llm.experiment import _images
+
+    b = tmp_path / "dup"
+    (b / "curves").mkdir(parents=True)
+    real = b / "cot.png"
+    real.write_bytes(b"\x89PNG")
+    (b / "curves" / "link.png").symlink_to(real)
+    # also a genuinely distinct same-named file at both levels
+    (b / "curves" / "reward.png").write_bytes(b"\x89PNG2")
+
+    imgs = _images(b)
+    resolved = [p.resolve() for p in imgs]
+    assert len(resolved) == len(set(resolved)), "each resolved path appears once"
+    assert real.resolve() in resolved
+    assert (b / "curves" / "reward.png").resolve() in resolved
+
+
+# --- coverage: load_bundle / build_corpus robustness ------------------------
+
+def test_load_bundle_list_yaml_exits(tmp_path: Path):
+    # exp.yaml that is a YAML list (not a dict) -> SystemExit about title.
+    b = tmp_path / "listy"
+    b.mkdir()
+    (b / "exp.yaml").write_text("- one\n- two\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="title"):
+        load_bundle(b)
+
+
+def test_build_corpus_skip_vision_style(tmp_path: Path):
+    # A --skip-vision bundle has no exp_notes.yaml; corpus still has the
+    # manifest + notes.md + metrics digest with no crash.
+    b = _bundle(tmp_path)
+    assert not (b / "exp_notes.yaml").exists()
+    corpus = build_corpus(b)
+    assert "EXPERIMENT MANIFEST" in corpus
+    assert "alpha gait sweep" in corpus
+    assert "diverged above 1.9" in corpus       # notes.md
+    assert "METRICS DIGEST" in corpus and "min=3.2" in corpus
+    assert "## CURVE" not in corpus             # no vision notes
