@@ -41,8 +41,16 @@ def _rounds(lib, exp_id: str) -> list[Path]:
 
 
 def next_round_dir(lib, exp_id: str) -> Path:
+    # Use max existing index + 1 (not a count) so a gap — e.g. a manually
+    # deleted round_02 — never re-issues an already-used round number.
     rounds = _rounds(lib, exp_id)
-    return _advice_root(lib, exp_id) / f"round_{len(rounds) + 1:02d}"
+    last = 0
+    for rd in rounds:
+        try:
+            last = max(last, int(rd.name.removeprefix("round_")))
+        except ValueError:
+            continue
+    return _advice_root(lib, exp_id) / f"round_{last + 1:02d}"
 
 
 def record_outcome(lib, exp_id: str, outcome: str) -> Path:

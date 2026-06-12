@@ -98,6 +98,37 @@ def test_record_outcome_requires_round(tmp_path: Path):
         record_outcome(lib, "exp-01", "x")
 
 
+def test_gather_evidence_minimal_archive(tmp_path: Path):
+    # Archive dir has only exp.yaml (no notes/metrics/exp_notes) — evidence is
+    # still produced from the manifest + exp.yaml, no crash.
+    lib = _lib(tmp_path)
+    ex = lib.root / "experiments" / "exp-01"
+    for extra in ("exp_notes.yaml", "notes.md", "metrics.csv"):
+        (ex / extra).unlink()
+    ev = gather_evidence(lib, "exp-01", idea="next step")
+    assert "## EXPERIMENT exp-01" in ev
+    assert "alpha sweep" in ev          # exp.yaml still present
+
+
+def test_next_round_dir_survives_gap(tmp_path: Path):
+    # round_01 and round_03 exist (round_02 was deleted) — the next round must
+    # be round_04 (max index + 1), never re-issuing round_03.
+    lib = _lib(tmp_path)
+    root = lib.root / "experiments" / "exp-01" / "advice"
+    (root / "round_01").mkdir(parents=True)
+    (root / "round_03").mkdir(parents=True)
+    assert next_round_dir(lib, "exp-01").name == "round_04"
+
+
+def test_record_outcome_overwrites(tmp_path: Path):
+    lib = _lib(tmp_path)
+    r1 = next_round_dir(lib, "exp-01")
+    r1.mkdir(parents=True)
+    record_outcome(lib, "exp-01", "first outcome")
+    out = record_outcome(lib, "exp-01", "second outcome")
+    assert out.read_text(encoding="utf-8") == "second outcome"
+
+
 _GOOD_ADVICE = """## 现状诊断
 CoT 已收敛到 3.2 [src: exp-01]，但 1.9 m/s 以上失稳 [src: exp-01]。
 上一轮结论仍然成立 [src: round_01 outcome]。
@@ -130,6 +161,15 @@ def test_compose_marker_contract_and_audit(tmp_path: Path):
     assert "[src: exp-01]" in report
     assert M.return_value.chat.call_count == 2
     assert Path(str(base) + ".response.json").exists()
+
+
+def test_compose_both_attempts_unmarked_exits(tmp_path: Path):
+    # Both attempts return text without [src: ...] markers -> SystemExit that
+    # points the user at the saved .response.json sidecar.
+    with patch("llm.advise.LLM") as M:
+        M.return_value.chat.return_value = _FakeResp("no markers at all")
+        with pytest.raises(SystemExit, match=r"\.response\.json"):
+            compose(idea="i", evidence="e", lang="zh")
 
 
 def test_cli_advise_e2e_and_outcome(tmp_path: Path, capsys, monkeypatch):
