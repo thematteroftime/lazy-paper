@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -20,6 +21,7 @@ from llm.template_author import _split_prompt  # same-package prompt helper
 from stages._common import dump_yaml, load_yaml, safe_parse_yaml
 
 PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "exp_curve.md"
+_FENCE_RE = re.compile(r"^\s*```[a-zA-Z]*\s*|\s*```\s*$")
 
 _LANG_INSTRUCTIONS = {
     "zh": "Respond in Chinese (keep axis labels / technical terms as-is).",
@@ -102,7 +104,7 @@ def analyze_curves(bundle_dir: Path, *, lang: str = "zh") -> list[dict]:
             json.dumps({"model": resp.model, "usage": resp.usage,
                         "content": resp.content}, ensure_ascii=False, indent=2),
             encoding="utf-8")
-        parsed = safe_parse_yaml(resp.content.strip()) or {}
+        parsed = safe_parse_yaml(_FENCE_RE.sub("", resp.content.strip())) or {}
         if not isinstance(parsed, dict):
             parsed = {}
         notes.append({

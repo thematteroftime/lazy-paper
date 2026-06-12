@@ -156,3 +156,13 @@ def test_cli_exp_ingest_e2e(tmp_path: Path, capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "[exp] analyzed 1 curve" in out
     assert "[exp] ingested exp-01" in out
+
+
+def test_analyze_curves_strips_markdown_fence(tmp_path: Path):
+    # Qwen-VL wraps YAML in ```yaml fences (observed live) — must be stripped.
+    b = _bundle(tmp_path)
+    with patch("llm.experiment.LLM") as M:
+        M.return_value.chat.return_value = _FakeResp(
+            "```yaml\n" + _CURVE_YAML + "```")
+        notes = analyze_curves(b, lang="zh")
+    assert "CoT falls" in notes[0]["visual_summary"]
