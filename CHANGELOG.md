@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.19-garden] — 2026-06-12 — knowledge garden + idea-incubator prompts
+
+Frontend handoff integrated; generation quality contracts upgraded per the
+"expand ideas, not just structure" direction.
+
+- **`lazy-paper garden`**: static star-map (`<library>/garden/garden.html`) —
+  papers and experiments render as stars from a build-time-inlined
+  `GARDEN_EXPORT`; frontend assets vendored pristine (`frontend/garden/`),
+  zero JS modifications.
+- **Idea-incubator prompts**: template sections each end with a mandatory
+  [发散]/[Open] beyond-the-paper question (schema-embedded after rule-list
+  placement was ignored 0/6 → 6/6); synthesize gained 研究空白与新问题
+  (≥3 anchored new questions) + bidirectional cross-analysis; advise 深度观察
+  requires ≥2 what-if hypotheses.
+- **Quality guard** (RAGAS runs unavailable; s08 path untouched by design):
+  same-input A/B on templates; full-pipeline run over a fresh arXiv paper with
+  a divergent template — s08 answered [发散] questions with evidence-anchored
+  cross-paper reasoning, zero fabrication; 6-entry synthesize produced 5 new
+  cross-paper questions with figure-level anchors.
+- Library now spans 5 papers + 1 experiment incl. two fresh arXiv ingests
+  (2606.13169 policy smoothing, 2606.08102 semantic skill discovery).
+- Tests: +6 (`tests/test_garden.py`). Docs: Garden section (en+zh), README
+  narrative rewrite with image annotations.
+
 ### [v1.18-advise] — 2026-06-12 — grounded next-iteration advisor
 
 The AI-scientist closing loop: experiment ↔ papers ↔ iteration memory.

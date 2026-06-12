@@ -269,3 +269,66 @@ advice/
   态）暂缓。当前以 `--idea` 字符串为透镜。
 - **视频证据**：实验 bundle 中的视频产物尚不处理。曲线视觉管线处理静态图像；视频
   支持将沿 exp-ingest 规划的 ffmpeg 关键帧路径实现。
+
+## 知识花园（v1.19 Garden）
+
+### 用途
+
+`lazy-paper garden` 为整个库构建一张静态星图。论文**与**实验均以星体形式呈现，
+让知识库的增长一目了然。无需服务进程，无需动态数据拉取——HTML 文件完全自包含，
+可像普通文档一样分享或归档。
+
+### 快速上手
+
+```bash
+uv run python -m cli garden            # 输出至 <library>/garden/garden.html
+uv run python -m cli garden --open     # 同上，构建后用默认浏览器打开
+uv run python -m cli garden --out DIR  # 自定义输出目录
+```
+
+直接双击 `garden.html` 即可在浏览器中打开——无需服务器。
+
+### 工作原理
+
+构建时 `llm/garden.py` 执行以下步骤：
+
+1. 读取库 manifest 及逐篇归档（`context.yaml`、`figures.yaml`），组装
+   `GARDEN_EXPORT`。
+2. 将 `frontend/garden/` 下的所有资源（`DATA_ADAPTER.md` 除外）原封不动地复制
+   到输出目录——**资源文件从不被修改**。
+3. 将 `window.GARDEN_EXPORT = {...};` 作为内联 `<script>` 块注入 `garden.html`，
+   位置在 `<script src="garden-data.js">` 标记之前。内联注入是必须的：因为浏览器
+   的 CORS 策略会阻止 `file://` URL 下的 `fetch('garden-export.json')` 请求，
+   所以运行时拉取在本地文件打开场景下无法使用。
+4. 在 HTML 旁同时写出 `garden-export.json`，供 HTTP 服务场景使用。
+
+前端（`frontend/garden/`）自行计算**所有**布局、星体坐标、星座连线和索引——导出
+器无需提供任何布局数据。前端资源以原始状态入库，可通过直接替换整个 `frontend/garden/`
+目录来升级，无需改动任何 Python 代码。
+
+### 离线说明
+
+主画布为纯 JavaScript 实现，完全支持离线使用。调节面板（Tweaks Panel）从 CDN
+加载 React 和 Babel，需要网络连接；离线时主星图仍可正常渲染。
+
+### 数据映射
+
+| `GARDEN_EXPORT` 字段 | 来源 |
+|---|---|
+| `manifest.papers[*]` | `manifest.yaml` — 每篇论文/实验一条 |
+| `manifest.papers[*].kind` | `"paper"` 或 `"experiment"`（来自 manifest） |
+| `manifest.papers[*].questions` | `papers/<id>/context.yaml` → `critical_questions`（仅论文） |
+| `manifest.papers[*].figures` | `papers/<id>/figures.yaml` → `fig_id` + `caption`（仅论文，最多 20 条） |
+| `entities` | LanceDB `entities` 表，按 `paper_id` 分组 |
+| `relations` | LanceDB `relations` 表，按 `paper_id` 分组 |
+
+### 已知缺口
+
+以下限制记录于 `frontend/garden/DATA_ADAPTER.md`，将在后续版本中跟进：
+
+- **模拟 ingest 按钮**：在真实数据模式下仍生成假论文；应改为重新拉取导出数据
+  或隐藏该按钮（可通过 `data.fromExport === true` 判断真实数据模式）。
+- **打开 preview.html 按钮**：目前为占位提示；真实产物应跳转到论文的合成输出
+  页面或 garden 构建的轻量阅读页。
+- **聚类**：在前端实体亲和度聚类功能落地之前，默认随机分配；导出器也可直接
+  提供 `clusters` 数组来覆盖默认行为。

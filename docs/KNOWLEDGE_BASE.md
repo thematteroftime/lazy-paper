@@ -300,3 +300,75 @@ acknowledge it and propose a different direction.
 - **Video evidence**: video artifacts in the experiment bundle are not yet
   processed. The curve vision pipeline handles static images; video support
   follows the ffmpeg keyframe path planned for exp-ingest.
+
+## Garden (v1.19)
+
+### Purpose
+
+`lazy-paper garden` builds a static star-map of the entire library. Papers
+**and** experiments both render as stars, so the growth of your knowledge base
+is made visible at a glance. There are no server processes and no dynamic data
+fetches — the HTML file is fully self-contained and can be shared or archived
+like any other document.
+
+### Quickstart
+
+```bash
+uv run python -m cli garden            # writes <library>/garden/garden.html
+uv run python -m cli garden --open     # same, then opens in the default browser
+uv run python -m cli garden --out DIR  # custom output directory
+```
+
+Double-click `garden.html` to open it directly in a browser — no server needed.
+
+### How it works
+
+At build time `llm/garden.py`:
+
+1. Reads the library manifest and per-paper archives (`context.yaml`,
+   `figures.yaml`) to assemble `GARDEN_EXPORT`.
+2. Copies all assets from `frontend/garden/` (excluding `DATA_ADAPTER.md`) into
+   the output directory verbatim — the assets are **never modified**.
+3. Injects `window.GARDEN_EXPORT = {...};` as an inline `<script>` block
+   directly into `garden.html` before the `<script src="garden-data.js">`
+   marker. Inline injection is required because `file://` URLs are blocked by
+   the browser's CORS policy, so a runtime `fetch('garden-export.json')` would
+   not work when the page is opened from the filesystem.
+4. Writes `garden-export.json` alongside the HTML for anyone serving the files
+   over HTTP.
+
+The frontend (`frontend/garden/`) computes **all** layout, star positions,
+constellation links, and indexes itself — the exporter provides no layout data.
+Frontend assets are vendored pristine; they are wholesale-replaceable by
+dropping a new `frontend/garden/` directory without touching any Python code.
+
+### Offline note
+
+The main canvas is plain JavaScript and works fully offline. The tweaks panel
+loads React and Babel from CDN and requires a network connection; without it
+the main star-map still renders normally.
+
+### Data mapping
+
+| `GARDEN_EXPORT` field | Source |
+|---|---|
+| `manifest.papers[*]` | `manifest.yaml` — one entry per paper/experiment |
+| `manifest.papers[*].kind` | `"paper"` or `"experiment"` (from manifest) |
+| `manifest.papers[*].questions` | `papers/<id>/context.yaml` → `critical_questions` (papers only) |
+| `manifest.papers[*].figures` | `papers/<id>/figures.yaml` → `fig_id` + `caption` (papers only, first 20) |
+| `entities` | LanceDB `entities` table, grouped by `paper_id` |
+| `relations` | LanceDB `relations` table, grouped by `paper_id` |
+
+### Known gaps
+
+The following limitations are documented in `frontend/garden/DATA_ADAPTER.md`
+and are tracked for a future release:
+
+- **Simulate-ingest button** still generates fake papers in real-data mode;
+  it should either re-fetch the export or be hidden (`data.fromExport === true`
+  can be used to detect real-data mode).
+- **preview.html button** is a placeholder; it should navigate to the paper's
+  composed output or a garden-built lite reading page.
+- **Clusters** default to random assignment until frontend-side entity-affinity
+  clustering lands; the exporter can also supply an explicit `clusters` array
+  to override this.
