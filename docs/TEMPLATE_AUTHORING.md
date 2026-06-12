@@ -1,4 +1,4 @@
-# Template Authoring (v1.15)
+# Template Authoring
 
 `lazy-paper template` turns YOUR research question into the outline the
 pipeline runs on — instead of picking the closest hand-written template (the

@@ -1,4 +1,4 @@
-# Knowledge Library (v1.14)
+# Knowledge Library
 
 The library is a persistent, cross-paper store built from artifacts your runs
 already produced. Ingesting costs **zero LLM calls** — the knowledge graph is
@@ -47,7 +47,7 @@ Default root is `./library` (override with `LAZY_PAPER_LIBRARY_DIR` or
 - **`kind: experiment`** is accepted by `ingest --kind` but reserved — the
   experiment-loop features land in a later release.
 
-## Synthesize (v1.16)
+## Synthesize
 
 `lazy-paper synthesize` answers research-direction questions across your whole
 library (or a subset of papers) by gathering evidence from multiple sources and
@@ -56,7 +56,7 @@ composing a grounded markdown report with a single text-LLM call.
 ### Purpose
 
 Given a topic ("energy regularization vs. multi-skill architectures on legged
-robots"), the command collects evidence from the v1.14 library (manifest
+robots"), the command collects evidence from the library (manifest
 metadata, archived `context.yaml` / `fig_notes.yaml`, and hybrid-retrieved
 excerpts) and composes a five-section research-direction report. Every claim
 drawn from the evidence must carry a `[src: paper_id]` marker; a deterministic
@@ -120,7 +120,7 @@ design. s08 has a 5-reversal audit history and is not touched lightly. This
 deferral is explicit and documented — it is not a gap to fill with a quick
 patch.
 
-## Experiments (v1.17)
+## Experiments
 
 Experiments become first-class library citizens — validated, deep-read, and
 searchable alongside papers. After ingest, a single `query` call spans both
@@ -132,7 +132,7 @@ papers and experiments with no extra flags.
 `exp.yaml` manifest) the same treatment as papers: vision deep-read per curve
 (cached in `exp_notes.yaml`), deterministic metrics digest, corpus
 chunk+embedded into the **shared** `chunks` table (`kind="experiment"`). The
-manifest records env/software/hyperparams/linked papers so the advisor (v1.18)
+manifest records env/software/hyperparams/linked papers so the advisor
 can reason across the paper↔experiment data layer.
 
 ### Bundle contract
@@ -183,7 +183,7 @@ uv run python -m cli query "CoT convergence"
 Video artifacts are not yet supported. Planned path: ffmpeg keyframe sampling
 via Docker; extracted frames will reuse the curve vision pipeline exactly.
 
-## Advise (v1.18)
+## Advise
 
 `lazy-paper advise` closes the AI-scientist loop: experiment evidence + linked
 papers + iteration memory → grounded next-iteration plan. Each advise round
@@ -301,7 +301,7 @@ acknowledge it and propose a different direction.
   processed. The curve vision pipeline handles static images; video support
   follows the ffmpeg keyframe path planned for exp-ingest.
 
-## Garden (v1.19)
+## Garden
 
 ### Purpose
 

@@ -1,4 +1,4 @@
-# 知识库（v1.14）
+# 知识库
 
 library 是一个持久化的跨论文存储层，由你已有的 run 产物直接构建。入库**零 LLM
 调用**——知识图谱取自 `runs/<paper-id>/s06_context/`，chunk 索引（含向量）取自
@@ -44,14 +44,14 @@ uv run python -m cli papers                                  # 查看库内容
 - **`kind: experiment`**：`ingest --kind` 已接受该值但属预留——实验闭环功能在
   后续版本落地。
 
-## 跨论文综合（v1.16 Synthesize）
+## 跨论文综合
 
 `lazy-paper synthesize` 针对一个研究方向问题，从整个库（或指定论文子集）中收集证据，
 通过单次文本 LLM 调用生成一份有据可查的 Markdown 报告。
 
 ### 用途
 
-给定一个主题（如"能量正则化与多技能架构在腿式机器人上的结合路径"），命令从 v1.14
+给定一个主题（如"能量正则化与多技能架构在腿式机器人上的结合路径"），命令从
 库中收集证据（manifest 元数据、归档的 `context.yaml` / `fig_notes.yaml`、混合检索
 的文本片段），然后合成一份五节式研究方向报告。每条从证据中得出的陈述都必须带有
 `[src: paper_id]` 标记；确定性后检查会对任何不在库中的标记打印 WARNING。
@@ -107,7 +107,7 @@ verifier）将带作者名的外部引用视为需要本地 `cited_quote` 的锚
 的外部引用与这些规则的交互需要独立的溯源设计。s08 有 5 次反转审计历史，改动须
 谨慎。此延迟属有意为之，已明确记录，不应以快速补丁绕过。
 
-## 实验数据（v1.17 Experiments）
+## 实验数据
 
 实验数据成为库的一等公民——经过验证、视觉深度解读，并与论文一起可被检索。入库后，
 单次 `query` 调用即可同时跨论文与实验结果搜索，无需额外参数。
@@ -117,7 +117,7 @@ verifier）将带作者名的外部引用视为需要本地 `cited_quote` 的锚
 `exp-ingest` 对实验 bundle（曲线图、指标 CSV、实验记录、`exp.yaml` 清单）施以与论文
 相同的处理：每张曲线图进行视觉深度解读（缓存至 `exp_notes.yaml`），确定性指标摘要，
 将语料 chunk+向量化后写入**共享** `chunks` 表（`kind="experiment"`）。manifest 记录
-env/software/hyperparams/关联论文，以便 v1.18 顾问跨论文↔实验数据层进行推理。
+env/software/hyperparams/关联论文，以便 advise 顾问跨论文↔实验数据层进行推理。
 
 ### Bundle 约定
 
@@ -165,7 +165,7 @@ uv run python -m cli query "CoT 收敛"
 视频产物暂不支持。规划路径：通过 Docker 调用 ffmpeg 提取关键帧；提取的帧将复用
 曲线视觉分析管线。
 
-## AI 科学家顾问（v1.18 Advise）
+## AI 科学家顾问
 
 `lazy-paper advise` 闭合 AI 科学家闭环：实验证据 + 关联论文 + 迭代记忆 → 有据可查
 的下一轮迭代方案。每轮 advise 生成一份四节式 Markdown 报告，每条建议均需注明具体
@@ -270,7 +270,7 @@ advice/
 - **视频证据**：实验 bundle 中的视频产物尚不处理。曲线视觉管线处理静态图像；视频
   支持将沿 exp-ingest 规划的 ffmpeg 关键帧路径实现。
 
-## 知识花园（v1.19 Garden）
+## 知识花园
 
 ### 用途
 

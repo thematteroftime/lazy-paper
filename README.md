@@ -77,7 +77,7 @@ flowchart LR
 
 ### 2 · ASK — turn your idea into a question template
 
-`lazy-paper template --idea "..."` drafts a question template matched to your research lens and the paper at hand — your idea drives at least half of the questions. Since v1.19, every section of the template also enforces a `[发散]` (divergent) question: anchored in this paper's evidence, deliberately reaching past its boundary.
+`lazy-paper template --idea "..."` drafts a question template matched to your research lens and the paper at hand — your idea drives at least half of the questions. Every section of the template also enforces a `[发散]` (divergent) question: anchored in this paper's evidence, deliberately reaching past its boundary.
 
 <p align="center">
   <img src="docs/assets/v119-divergent-questions.png" alt="Divergent questions at the end of each section" width="720">
@@ -245,7 +245,7 @@ For a new domain copy the closest match and rewrite the section headings. There 
 
 | Format | Highlights |
 |---|---|
-| `docx` | Word file, Songti + Times New Roman. v1.13 design tokens: accent `#D97757` chapter numbers + left border, gray captions, accent-bordered `深度观察` aside |
+| `docx` | Word file, Songti + Times New Roman. design tokens: accent `#D97757` chapter numbers + left border, gray captions, accent-bordered `深度观察` aside |
 | `pdf` | WeasyPrint over the same HTML; `@media print` strips topbar / TOC; math as italic-serif Unicode fallback |
 | `html` | Single file with base64 images. Sticky topbar + right-rail TOC + 3 accent themes + KaTeX math + copy-on-click LaTeX. Set `LAZY_PAPER_INLINE_KATEX=1` for fully offline single-file (~1.08 MB) |
 | `pptx` | Academic-defense styled: cream / charcoal, LLM-grouped 4–5 section outline, bullets + figure pairs, quantitative closing |
