@@ -256,6 +256,46 @@ def _cmd_papers(args) -> int:
     return 0
 
 
+def _cmd_template(args) -> int:
+    from llm import template_author as ta
+
+    if args.run:
+        digest = ta.prescan_run(Path(args.runs_dir) / slugify(args.run))
+    else:
+        pdf = Path(args.pdf)
+        if not pdf.exists():
+            raise SystemExit(f"--pdf {pdf} not found")
+        digest = ta.prescan_pdf(pdf)
+
+    lib_ctx = ""
+    if args.use_library:
+        from llm.library import Library
+        lib_ctx = ta.library_context(Library(args.library_dir), args.idea)
+
+    out = Path(args.out) if args.out else (
+        Path("templates") / f"auto-{slugify(args.idea, maxlen=40)}.docx")
+    if out.exists():
+        print(f"[template] overwriting existing {out}", flush=True)
+    # draft() persists <out>.prompt.md / <out>.response.json BEFORE validating,
+    # so a rejected LLM response is always inspectable.
+    sections, resp = ta.draft(idea=args.idea, paper_digest=digest,
+                              library_context=lib_ctx, lang=args.lang,
+                              n_sections=args.sections, audit_base=out)
+    ta.write_docx(sections, out, idea=args.idea)
+    nodes = ta.roundtrip_check(out, sections)
+
+    print(f"[template] wrote {out} ({len(nodes)} sections, "
+          f"{sum(len(s['questions']) for s in sections)} questions)")
+    for i, sec in enumerate(sections, 1):
+        print(f"  {i} {sec['title']}")
+        for q in sec["questions"]:
+            print(f"      · {q}")
+    print(f"\n[template] review/edit the docx, then run:\n"
+          f"  uv run python -m cli run --pdf <paper.pdf> --template \"{out}\" "
+          f"--paper-id <id> --lang {args.lang}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="lazy-paper")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -326,6 +366,26 @@ def main(argv: list[str] | None = None) -> int:
     lp = sub.add_parser("papers", help="List ingested papers")
     lp.add_argument("--library-dir", default=None)
 
+    lt = sub.add_parser("template",
+                        help="Draft a question-template docx from your idea "
+                             "(+ paper prescan, + optional library grounding)")
+    lt.add_argument("--idea", required=True,
+                    help="Your research lens — drives at least half the questions")
+    src = lt.add_mutually_exclusive_group(required=True)
+    src.add_argument("--pdf", default=None,
+                     help="New paper: cheap text-layer prescan (no OCR API)")
+    src.add_argument("--run", default=None, metavar="PAPER_ID",
+                     help="Existing run: reuse s02/s03/s04/s06 artifacts (richer)")
+    lt.add_argument("--runs-dir", default="runs")
+    lt.add_argument("--out", default=None,
+                    help="Output docx (default templates/auto-<idea-slug>.docx)")
+    lt.add_argument("--use-library", action="store_true",
+                    help="Ground questions in the v1.14 knowledge library "
+                         "(adds cross-paper comparison questions)")
+    lt.add_argument("--library-dir", default=None)
+    lt.add_argument("--lang", choices=("en", "zh"), default="zh")
+    lt.add_argument("--sections", type=int, default=6)
+
     args = ap.parse_args(argv)
 
     load_dotenv(Path.cwd() / ".env", override=False)
@@ -335,6 +395,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_query(args)
     if args.cmd == "papers":
         return _cmd_papers(args)
+    if args.cmd == "template":
+        return _cmd_template(args)
     # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
     # would otherwise let outputs land outside runs/.
     paper_id = slugify(args.paper_id) if args.paper_id else slugify(Path(args.pdf).stem)
