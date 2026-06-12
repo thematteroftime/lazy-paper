@@ -224,6 +224,23 @@ def _cmd_ingest(args) -> int:
     return 0
 
 
+def _cmd_garden(args) -> int:
+    from llm import garden
+    from llm.library import Library
+
+    lib = Library(args.library_dir)
+    out_dir = Path(args.out) if args.out else lib.root / "garden"
+    page = garden.build(lib, out_dir)
+    manifest = lib.papers()
+    n_papers = sum(1 for e in manifest.values() if e.get("kind", "paper") == "paper")
+    n_exp = sum(1 for e in manifest.values() if e.get("kind") == "experiment")
+    print(f"[garden] built {page} ({n_papers} papers, {n_exp} experiments)")
+    if args.open:
+        import webbrowser
+        webbrowser.open(page.resolve().as_uri())
+    return 0
+
+
 def _cmd_advise(args) -> int:
     from llm import advise as adv
     from llm.library import Library
@@ -508,6 +525,15 @@ def main(argv: list[str] | None = None) -> int:
     la.add_argument("--lang", choices=("en", "zh"), default="zh")
     la.add_argument("--library-dir", default=None)
 
+    lg = sub.add_parser("garden",
+                        help="v1.19: build the star-map knowledge garden "
+                             "(static garden.html from the library)")
+    lg.add_argument("--out", default=None,
+                    help="Output dir (default <library>/garden/)")
+    lg.add_argument("--open", action="store_true",
+                    help="Open the built garden.html in the default browser")
+    lg.add_argument("--library-dir", default=None)
+
     args = ap.parse_args(argv)
 
     load_dotenv(Path.cwd() / ".env", override=False)
@@ -525,6 +551,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_exp_ingest(args)
     if args.cmd == "advise":
         return _cmd_advise(args)
+    if args.cmd == "garden":
+        return _cmd_garden(args)
     # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
     # would otherwise let outputs land outside runs/.
     paper_id = slugify(args.paper_id) if args.paper_id else slugify(Path(args.pdf).stem)
