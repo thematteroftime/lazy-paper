@@ -1,22 +1,22 @@
 <h1 align="center">lazy-paper</h1>
 
 <p align="center">
-  <em>Turn a PDF research paper into a structured, multi-format deep analysis — in one command.</em>
+  <em>A personal research knowledge base with an AI-scientist loop — reading the paper is only the entry point.</em>
 </p>
 
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
-  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.13--render-blue"></a>
+  <a href="CHANGELOG.md"><img alt="Release" src="https://img.shields.io/badge/release-v1.19--garden-blue"></a>
   <a href="docs/AGENT_GUIDE.md"><img alt="Agent-friendly" src="https://img.shields.io/badge/agent--friendly-yes-7c3aed"></a>
 </p>
 
 <p align="center"><strong><a href="README.md">English</a> · <a href="README.zh.md">简体中文</a></strong></p>
 
 <p align="center">
-  <strong>Latest · <a href="CHANGELOG.md">v1.13-render</a></strong> (2026-06-03)
+  <strong>Latest · <a href="CHANGELOG.md">v1.19-garden</a></strong> (2026-06-12)
   <br>
-  <sub>KaTeX HTML · accent-palette DOCX · MinerU chart-type fix · roman-numeral chapter detection</sub>
+  <sub>knowledge garden · idea incubator · advise loop</sub>
 </p>
 
 <p align="center">
@@ -27,9 +27,22 @@
 
 ## What is lazy-paper?
 
-**lazy-paper turns one scientific PDF into a critical reading of it — DOCX · PDF · HTML · PPTX, bilingual, figures and tables embedded, every claim grounded to source — in one command.** No prompt engineering, no manual reformatting, no copy-paste between tools.
+**lazy-paper grows a personal research knowledge base around the papers you read and the experiments you run.** Each deep read is designed to *expand* your ideas rather than merely extract structure: every paper sparks new questions, questions drive cross-paper analysis, analyses connect to your own experiments, and experiment outcomes feed the next round of advice. Analysis quality comes first, always.
 
-It's nine deterministic + LLM stages: OCR → cleaning → chapterization → figure / table indexing → context + KG → vision-LLM figure analysis → grounded section composition → four-format rendering. Each stage is independently resumable; every LLM call writes its prompt and response to disk so the whole pipeline is auditable.
+The loop has five stations:
+
+```mermaid
+flowchart LR
+    READ[READ<br/>9-stage deep read] --> ASK[ASK<br/>idea-to-question templates]
+    ASK --> GROW[GROW<br/>library + garden]
+    GROW --> CROSS[CROSS-ANALYZE<br/>synthesize]
+    CROSS --> EXP[EXPERIMENT + ITERATE<br/>exp-ingest + advise]
+    EXP --> READ
+```
+
+### 1 · READ — the nine-stage grounded deep read
+
+One command turns a scientific PDF into a critical reading of it — DOCX · PDF · HTML · PPTX, bilingual, figures and tables embedded, every claim grounded to a source span. Nine deterministic + LLM stages, each independently resumable, every LLM call audited on disk:
 
 ```mermaid
 flowchart LR
@@ -45,20 +58,10 @@ flowchart LR
     S09 --> OUT[preview.docx · pdf · html · pptx]
 ```
 
-### Why use it
-
-- **Grounded, not hallucinated.** Every claim cites a span in the source; an LLM verifier rejects unsupported sentences before they ship.
-- **Quantitative anchors preserved.** Numbers, units, formulas, figure references survive OCR → composition → rendering intact.
-- **Four formats, one source-of-truth.** DOCX, PDF (WeasyPrint), HTML (with KaTeX), PPTX (academic-defense styled) — all share the same Document model.
-- **Bilingual native.** Chinese / English switched at the CLI; templates, figure analyses, citation markers all localise.
-- **Resumable.** Each of nine stages drops a `done.yaml`; tweak a single LLM prompt and only that stage re-runs.
-- **Agent-friendly.** Stages are pure transforms with explicit inputs / outputs; the [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) lays out the contract for Claude / Copilot / Cursor / etc.
-
-Full stage-by-stage walkthrough lives in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
-## See what comes out
-
-**PDF / DOCX / HTML** — design tokens shared across all three (accent `#D97757`, serif headings, accent-bordered `深度观察` aside):
+- **Grounded, not hallucinated** — every claim cites a span in the source; an LLM verifier rejects unsupported sentences before they ship.
+- **Quantitative anchors preserved** — numbers, units, formulas, figure references survive OCR → composition → rendering intact.
+- **Bilingual native, four formats, one Document model** — and each of the nine stages drops a `done.yaml`, so tweaking one prompt re-runs only that stage.
+- **Agent-friendly** — stages are pure transforms with explicit inputs / outputs; see [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) and the full walkthrough in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 <p align="center">
   <img src="docs/assets/v113-pdf-p01.png" alt="Title page" width="265">
@@ -66,12 +69,57 @@ Full stage-by-stage walkthrough lives in [`docs/ARCHITECTURE.md`](docs/ARCHITECT
   <img src="docs/assets/v113-pdf-p05.png" alt="Energy-regularization chapter with inline math" width="265">
 </p>
 
-**PPTX** — academic-defense styling, density-adaptive font, LLM-grouped section divider:
-
 <p align="center">
-  <img src="docs/assets/showcase-divider.png" alt="PPTX section-divider slide with KEY POINTS card" width="540">
+  <img src="docs/assets/v119-preview-semantic-skills.png" alt="Chinese deep read of arXiv 2606.08102" width="360">
+  <br>
+  <sub>A Chinese deep read of arXiv 2606.08102 — driven by an auto-generated question template.</sub>
 </p>
 
+### 2 · ASK — turn your idea into a question template
+
+`lazy-paper template --idea "..."` drafts a question template matched to your research lens and the paper at hand — your idea drives at least half of the questions. Since v1.19, every section of the template also enforces a `[发散]` (divergent) question: anchored in this paper's evidence, deliberately reaching past its boundary.
+
+<p align="center">
+  <img src="docs/assets/v119-divergent-questions.png" alt="Divergent questions at the end of each section" width="720">
+  <br>
+  <sub>The [发散] question at the end of each section — anchored in this paper's evidence, deliberately stepping out of bounds.</sub>
+</p>
+
+### 3 · GROW — a library that becomes a garden
+
+`run --ingest` (or `ingest` on any past run) archives each deep read into a persistent cross-paper library — hybrid dense + BM25 search, knowledge graphs merged, zero extra LLM calls. `lazy-paper garden` then renders the whole library as a star map you can open in a browser.
+
+<p align="center">
+  <img src="docs/assets/v119-garden-live.png" alt="Knowledge garden star map" width="720">
+  <br>
+  <sub>The knowledge-garden star map — papers and experiments are both stars, and the library keeps growing.</sub>
+</p>
+
+### 4 · CROSS-ANALYZE — questions that no single paper can ask
+
+`lazy-paper synthesize --topic "..."` gathers evidence across the whole library in both directions — agreements *and* contradictions — and composes a grounded five-section report that must end with **at least 3 new anchored questions**. Two real ones, produced by a synthesize run over a 5-paper library (translated; the original report is in Chinese, `[src:]` markers verbatim):
+
+> If an action-smoothness constraint (e.g. the L2C2-v2 Lipschitz penalty) is injected into the energy-regularization framework, does it improve CoT and joint wear simultaneously within a specific α_en range — or does it create a new conflict with action diversity? [src: atec-b2w-energy-rl Fig.3][src: arxiv-policy-smoothing Fig.3]
+
+> Can MUJICA's DC-motor constraints be recast as a new kind of "physical regularization" term inside energy regularization (rather than a hard constraint), yielding self-adapting gait-switching policies that also account for motor thermal load and lifetime? [src: atec-b2w-mujica-v2 Fig.3][src: atec-b2w-energy-rl Fig.3]
+
+Every claim carries a `[src: paper_id]` marker validated against the library; anything beyond the evidence is labeled `(推测)` (speculation).
+
+### 5 · EXPERIMENT + ITERATE — close the loop with your own data
+
+`lazy-paper exp-ingest` makes experiment bundles (curve images, metrics CSVs, lab notes) first-class library citizens — vision deep-read per curve, deterministic metrics digest, searchable next to papers. `lazy-paper advise` then composes a grounded next-iteration plan with **round memory**: you record what actually happened, and the next round must cite that outcome and must not repeat failed advice.
+
+<p align="center">
+  <img src="docs/assets/v119-advise-loop.png" alt="Advise round memory" width="720">
+  <br>
+  <sub>round_01 advice → you record the outcome → round_02 cites that result and avoids repeating failed directions.</sub>
+</p>
+
+## Design principles
+
+- **Expand ideas, don't just extract structure** — every paper should leave you with more questions than it answered.
+- **Everything generated is grounded** — `[src:]` markers, deterministic citation checks, span-anchored verification, explicit `(推测)` labels for speculation.
+- **Analysis quality beats feature count** — the whole loop ships with 380+ tests and audit sidecars for every LLM call.
 
 ## Quickstart
 
@@ -86,14 +134,25 @@ brew install pango gdk-pixbuf libffi cairo   # macOS only — WeasyPrint
 # Configure
 cp .env.example .env   # fill the tokens — see the table below
 
-# Run
+# Run (deep-read + ingest into the library in one shot)
 uv run python -m cli run \
   --pdf "papers/your-paper.pdf" \
   --template "templates/Table of Contents-CV-IMRaD.docx" \
-  --paper-id mypaper --lang zh --formats docx,pdf,html,pptx
+  --paper-id mypaper --lang zh --formats docx,pdf,html,pptx --ingest
 ```
 
 Output lands at `runs/<paper-id>/s09_render/preview.{docx,pdf,html,pptx}`.
+
+Then walk the full loop:
+
+```bash
+uv run python -m cli template --idea "..." --pdf papers/your-paper.pdf   # ASK: draft a question template from your idea
+uv run python -m cli run --pdf ... --template templates/auto-*.docx --paper-id mypaper --ingest   # READ + GROW: deep-read, then ingest
+uv run python -m cli synthesize --topic "..."                            # CROSS-ANALYZE: grounded report + >=3 new questions
+uv run python -m cli exp-ingest my-exp-01/                               # EXPERIMENT: your curves/metrics/notes join the library
+uv run python -m cli advise --exp my-exp-01 --idea "..."                 # ITERATE: grounded next-iteration plan with round memory
+uv run python -m cli garden --open                                       # GROW: open the star map of everything so far
+```
 
 > **Windows**: prefer the Docker path (`docker compose run --rm lazy-paper run …`) — WeasyPrint needs the GTK runtime which Docker bundles.
 
@@ -112,7 +171,9 @@ All four are OpenAI-compatible; point `LLM_*_BASE_URL` + `LLM_*_MODEL` elsewhere
 
 ## Pick the template — the single most load-bearing choice
 
-**The template's section headings are inserted verbatim into the compose prompt.** Hand "Dielectric Properties of Relaxor AFE" to an unCLIP image-generation paper, and the LLM either declines or — worse — stuffs unCLIP content under the wrong section. Same paper, same model, same prompt: **a wrong template can swing RAGAS faithfulness from 0.81 to 0.10.** This is not optional.
+Or don't pick at all — let the system draft one for you: `lazy-paper template --idea "..." --pdf <paper>` generates a matched question template from your idea (see `docs/TEMPLATE_AUTHORING.md` and **ASK** above).
+
+If you do pick by hand, choose carefully. **The template's section headings are inserted verbatim into the compose prompt.** Hand "Dielectric Properties of Relaxor AFE" to an unCLIP image-generation paper, and the LLM either declines or — worse — stuffs unCLIP content under the wrong section. Same paper, same model, same prompt: **a wrong template can swing RAGAS faithfulness from 0.81 to 0.10.** This is not optional.
 
 | Template (`templates/<file>`) | Best for |
 |---|---|
@@ -123,8 +184,6 @@ All four are OpenAI-compatible; point `LLM_*_BASE_URL` + `LLM_*_MODEL` elsewhere
 
 For a new domain copy the closest match and rewrite the section headings. There is **no "good enough generic"** — the wrong template quietly degrades every downstream stage.
 
-Or skip picking entirely: `lazy-paper template --idea "..." --pdf <paper>` drafts a matched question template for you (see `docs/TEMPLATE_AUTHORING.md`).
-
 ## Output formats at a glance
 
 | Format | Highlights |
@@ -133,6 +192,10 @@ Or skip picking entirely: `lazy-paper template --idea "..." --pdf <paper>` draft
 | `pdf` | WeasyPrint over the same HTML; `@media print` strips topbar / TOC; math as italic-serif Unicode fallback |
 | `html` | Single file with base64 images. Sticky topbar + right-rail TOC + 3 accent themes + KaTeX math + copy-on-click LaTeX. Set `LAZY_PAPER_INLINE_KATEX=1` for fully offline single-file (~1.08 MB) |
 | `pptx` | Academic-defense styled: cream / charcoal, LLM-grouped 4–5 section outline, bullets + figure pairs, quantitative closing |
+
+<p align="center">
+  <img src="docs/assets/showcase-divider.png" alt="PPTX section-divider slide with KEY POINTS card" width="540">
+</p>
 
 ## Docs
 
@@ -154,9 +217,9 @@ MIT — see [`LICENSE`](LICENSE). Built on [MinerU](https://github.com/opendatal
 ```bibtex
 @software{lazy_paper,
   author  = {thematteroftime},
-  title   = {lazy-paper: PDF research papers to multi-format deep analysis},
+  title   = {lazy-paper: a personal research knowledge base with an AI-scientist loop},
   url     = {https://github.com/thematteroftime/lazy-paper},
-  version = {1.13-render},
+  version = {1.19-garden},
   year    = {2026}
 }
 ```
