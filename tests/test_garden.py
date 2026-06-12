@@ -254,3 +254,91 @@ def test_cli_garden_e2e(tmp_path: Path, capsys, monkeypatch):
     # garden.html must exist under default out dir
     page = lib_dir / "garden" / "garden.html"
     assert page.exists()
+
+
+# ---------------------------------------------------------------------------
+# Coverage: export_data edge cases
+# ---------------------------------------------------------------------------
+
+def test_export_data_missing_ingested_at(tmp_path: Path):
+    """A manifest entry without `ingested_at` is still exported — the field is
+    simply absent, no crash."""
+    from llm import garden
+
+    run = _make_run(tmp_path, "alpha-paper", "alpha")
+    lib = Library(tmp_path / "library")
+    lib.ingest(run)
+
+    manifest = lib.papers()
+    del manifest["alpha-paper"]["ingested_at"]
+    dump_yaml(lib.manifest_path, manifest)
+
+    export = garden.export_data(Library(tmp_path / "library"))
+    p = next(p for p in export["manifest"]["papers"] if p["id"] == "alpha-paper")
+    assert "ingested_at" not in p
+    assert p["title"] == "alpha paper"
+
+
+def test_export_data_ingested_at_iso_format(tmp_path: Path):
+    """epoch 1750000000.0 -> exact ISO-8601 UTC string ending in Z."""
+    from datetime import datetime, timezone
+
+    from llm import garden
+
+    run = _make_run(tmp_path, "alpha-paper", "alpha")
+    lib = Library(tmp_path / "library")
+    lib.ingest(run)
+
+    manifest = lib.papers()
+    manifest["alpha-paper"]["ingested_at"] = 1750000000.0
+    dump_yaml(lib.manifest_path, manifest)
+
+    expected = (datetime.fromtimestamp(1750000000.0, tz=timezone.utc)
+                .isoformat().replace("+00:00", "Z"))
+    assert expected.startswith("2025-06-15T") and expected.endswith("Z")
+
+    export = garden.export_data(Library(tmp_path / "library"))
+    p = next(p for p in export["manifest"]["papers"] if p["id"] == "alpha-paper")
+    assert p["ingested_at"] == expected
+
+
+# ---------------------------------------------------------------------------
+# Coverage: build robustness + injection ordering
+# ---------------------------------------------------------------------------
+
+def test_build_missing_marker_exits(tmp_path: Path, monkeypatch):
+    """If the vendored garden.html loses the garden-data.js marker, build must
+    raise a clear SystemExit instead of silently producing a broken page."""
+    from llm import garden
+
+    run = _make_run(tmp_path, "alpha-paper", "alpha")
+    lib = Library(tmp_path / "library")
+    lib.ingest(run)
+
+    fake_front = tmp_path / "fake_frontend"
+    fake_front.mkdir()
+    # garden.html WITHOUT the expected <script src="garden-data.js"> marker
+    (fake_front / "garden.html").write_text(
+        "<html><body>no marker here</body></html>", encoding="utf-8")
+    (fake_front / "garden-data.js").write_text("// data", encoding="utf-8")
+    (fake_front / "garden-app.js").write_text("// app", encoding="utf-8")
+    monkeypatch.setattr(garden, "FRONTEND_DIR", fake_front)
+
+    with pytest.raises(SystemExit, match="marker"):
+        garden.build(lib, tmp_path / "out")
+
+
+def test_build_injection_position(tmp_path: Path):
+    """In the built garden.html, the window.GARDEN_EXPORT inline block appears
+    before the garden-data.js script tag (so data is defined first)."""
+    from llm import garden
+
+    run = _make_run(tmp_path, "alpha-paper", "alpha")
+    lib = Library(tmp_path / "library")
+    lib.ingest(run)
+
+    page = garden.build(lib, tmp_path / "out")
+    html = page.read_text(encoding="utf-8")
+    export_idx = html.index("window.GARDEN_EXPORT")
+    data_js_idx = html.index('<script src="garden-data.js"></script>')
+    assert export_idx < data_js_idx

@@ -60,7 +60,10 @@ def gather(lib, topic: str, *, papers: list[str] | None = None,
                     if isinstance(hm, dict) else [str(x) for x in hm])
         for mtr in hm_items[:4]:
             lines.append(f"headline metric: {mtr}")
-        for n in (_archived(lib, pid, "fig_notes.yaml") or [])[:4]:
+        fig_notes = _archived(lib, pid, "fig_notes.yaml") or []
+        if not isinstance(fig_notes, list):
+            fig_notes = []
+        for n in fig_notes[:4]:
             if not isinstance(n, dict):
                 continue
             obs = n.get("deep_observation") or n.get("visual_summary")
