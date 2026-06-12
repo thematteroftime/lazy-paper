@@ -146,3 +146,22 @@ def test_cli_synthesize_e2e(tmp_path: Path, capsys, monkeypatch):
     assert "[src: paper-a]" in reports[0].read_text(encoding="utf-8")
     captured = capsys.readouterr().out
     assert "[synthesize] wrote" in captured
+
+
+def test_gather_recovers_fig_notes_from_raw_fallback(tmp_path: Path):
+    # Real archives are 100% s07's defensive-parse-failed shape:
+    # {error, fig_id, image_paths, raw} with the analysis inside fenced YAML.
+    lib = _lib(tmp_path)
+    raw = "```yaml\nfig_id: Fig. 9\nvisual_summary: |\n  raw-recovered CoT curve.\n```"
+    dump_yaml(lib.root / "papers" / "paper-a" / "fig_notes.yaml",
+              [{"error": "yaml-parse", "fig_id": "Fig. 9",
+                "image_paths": [], "raw": raw}])
+    ev = gather(lib, "x")
+    assert "raw-recovered CoT curve" in ev
+
+
+def test_check_citations_comma_variants():
+    known = {"a", "b"}
+    assert check_citations("x [src: a,b] y", known) == []
+    assert check_citations("x [src: a, b] y", known) == []
+    assert check_citations("x [src: a, ghost] y", known) == ["ghost"]

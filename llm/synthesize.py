@@ -17,10 +17,11 @@ from pathlib import Path
 
 from llm.client import LLM
 from llm.template_author import _split_prompt  # same-package prompt helper
-from stages._common import load_yaml
+from stages._common import load_yaml, safe_parse_yaml
 
 PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "synthesize.md"
-_SRC_RE = re.compile(r"\[src:\s*([^\]\s]+)\s*\]")
+_SRC_RE = re.compile(r"\[src:\s*([^\]]+?)\s*\]")
+_FENCE_RE = re.compile(r"^\s*```[a-zA-Z]*\s*|\s*```\s*$")
 
 _LANG_INSTRUCTIONS = {
     "zh": "Write the report in Chinese (keep established English technical terms as-is).",
@@ -63,6 +64,14 @@ def gather(lib, topic: str, *, papers: list[str] | None = None,
             if not isinstance(n, dict):
                 continue
             obs = n.get("deep_observation") or n.get("visual_summary")
+            if not obs and n.get("raw"):
+                # s07's defensive-parse-failed shape ({error, fig_id, raw}):
+                # the analysis lives in a fenced YAML string under `raw` —
+                # 100% of current real archives look like this.
+                inner = safe_parse_yaml(_FENCE_RE.sub("", str(n["raw"]).strip()))
+                if isinstance(inner, dict):
+                    obs = (inner.get("deep_observation")
+                           or inner.get("visual_summary"))
             if obs:
                 lines.append(f"figure {n.get('fig_id', '?')}: "
                              + " ".join(str(obs).split())[:300])
@@ -89,12 +98,11 @@ def compose(*, topic: str, evidence: str, lang: str = "zh",
         lang_instruction=_LANG_INSTRUCTIONS.get(lang, _LANG_INSTRUCTIONS["en"]))
     user = user_tpl.format(topic=topic, evidence=evidence)
     llm = LLM(role="text")
-    last_resp = None
     for attempt in range(2):
         attempt_user = user if attempt == 0 else (
             user + "\n\nYour previous report was missing the required "
-                   "[src: paper_id] grounding markers or sections. Follow the "
-                   "structure contract exactly.")
+                   "[src: paper_id] grounding markers. Add one to every "
+                   "evidence-drawn claim.")
         resp = llm.chat(system=system, user=attempt_user,
                         temperature=0.4, max_tokens=4096)
         if audit_base is not None:
@@ -110,7 +118,6 @@ def compose(*, topic: str, evidence: str, lang: str = "zh",
         report = resp.content.strip()
         if _SRC_RE.search(report):
             return report, resp
-        last_resp = resp
     raise SystemExit(
         "synthesize: LLM produced a report without any [src: paper_id] "
         "grounding markers twice (see the saved .response.json)")
@@ -118,5 +125,9 @@ def compose(*, topic: str, evidence: str, lang: str = "zh",
 
 def check_citations(report: str, known: set[str]) -> list[str]:
     """Paper ids referenced by [src: ...] that are NOT in the library."""
-    cited = {m.group(1).strip() for m in _SRC_RE.finditer(report)}
+    cited: set[str] = set()
+    for m in _SRC_RE.finditer(report):
+        for part in m.group(1).split(","):
+            if part.strip():
+                cited.add(part.strip())
     return sorted(c for c in cited if c not in known)

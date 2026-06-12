@@ -268,6 +268,8 @@ def _cmd_synthesize(args) -> int:
     out_dir = Path(args.out_dir) if args.out_dir else (
         lib.root / "synth" / slugify(args.topic, maxlen=40))
     report_path = out_dir / "report.md"
+    if report_path.exists():
+        print(f"[synthesize] overwriting existing {report_path}", flush=True)
     report, resp = syn.compose(topic=args.topic, evidence=evidence,
                                lang=args.lang, audit_base=report_path)
     unknown = syn.check_citations(report, set(lib.papers()))
