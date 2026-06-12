@@ -367,8 +367,6 @@ and are tracked for a future release:
 - **Simulate-ingest button** still generates fake papers in real-data mode;
   it should either re-fetch the export or be hidden (`data.fromExport === true`
   can be used to detect real-data mode).
-- **preview.html button** is a placeholder; it should navigate to the paper's
-  composed output or a garden-built lite reading page.
 - **Clusters** default to random assignment until frontend-side entity-affinity
   clustering lands; the exporter can also supply an explicit `clusters` array
   to override this.

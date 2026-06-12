@@ -189,6 +189,7 @@ Nine subcommands, one per job. Every command supports `-h` for the full flag lis
 | `ingest` | Archive a finished run into the library (zero LLM calls) | `paper_id` (positional) · `--kind paper\|experiment` · `--library-dir` | `library/` (manifest + lancedb + bm25 + `papers/<id>/`) |
 | `query` | Hybrid dense + BM25 search across everything ingested | `text` (positional) · `--top-k` · `--papers id1,id2` · `--json` | stdout (use `--json` for agents) |
 | `papers` | List the library's contents | `--library-dir` | stdout |
+| `remove` | Delete an entry (paper or experiment) from the library — tables, archive, manifest, index | `id` (positional) · `--library-dir` | — |
 | `template` | Draft a question-template docx from your idea | `--idea` (required) · `--pdf` *or* `--run` · `--use-library` · `--sections N` | `templates/auto-<idea-slug>.docx` + audit sidecars |
 | `synthesize` | Cross-paper research-direction report from the library | `--topic` (required) · `--papers id1,id2` · `--lang zh\|en` · `--top-k` | `library/synth/<topic-slug>/report.md` + audit sidecars |
 | `exp-ingest` | Analyze + ingest an experiment bundle | `bundle/` (positional) · `--id` · `--skip-vision` · `--lang zh\|en` | `library/experiments/<id>/` + shared search index |
