@@ -119,3 +119,27 @@ def test_check_citations_flags_unknown():
                               {"paper-a", "paper-b"})
     assert unknown == ["ghost-paper"]
     assert check_citations(_GOOD_REPORT, {"paper-a", "paper-b"}) == []
+
+
+def test_cli_synthesize_e2e(tmp_path: Path, capsys, monkeypatch):
+    import cli
+
+    lib = _lib(tmp_path)
+
+    class FakeLibCls:
+        def __init__(self, *a, **k):
+            self.root = lib.root
+        papers = staticmethod(lib.papers)
+        query = staticmethod(lambda topic, top_k=8, papers=None: lib._hits)
+
+    monkeypatch.setattr("llm.library.Library", FakeLibCls)
+    with patch("llm.synthesize.LLM") as M:
+        M.return_value.chat.return_value = _FakeResp(_GOOD_REPORT)
+        rc = cli.main(["synthesize", "--topic", "能量正则化迁移"])
+    assert rc == 0
+    out_dir = lib.root / "synth"
+    reports = list(out_dir.rglob("report.md"))
+    assert len(reports) == 1
+    assert "[src: paper-a]" in reports[0].read_text(encoding="utf-8")
+    captured = capsys.readouterr().out
+    assert "[synthesize] wrote" in captured

@@ -256,6 +256,34 @@ def _cmd_papers(args) -> int:
     return 0
 
 
+def _cmd_synthesize(args) -> int:
+    from llm import synthesize as syn
+    from llm.library import Library
+
+    lib = Library(args.library_dir)
+    raw = _parse_formats(args.papers)
+    papers = [slugify(p) for p in raw] if raw else None
+    evidence = syn.gather(lib, args.topic, papers=papers, top_k=args.top_k)
+
+    out_dir = Path(args.out_dir) if args.out_dir else (
+        lib.root / "synth" / slugify(args.topic, maxlen=40))
+    report_path = out_dir / "report.md"
+    report, resp = syn.compose(topic=args.topic, evidence=evidence,
+                               lang=args.lang, audit_base=report_path)
+    unknown = syn.check_citations(report, set(lib.papers()))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report, encoding="utf-8")
+
+    print(f"[synthesize] wrote {report_path} "
+          f"({len(report)} chars, model {resp.model})")
+    if unknown:
+        print(f"[synthesize] WARNING: [src:] markers not in library: "
+              f"{', '.join(unknown)}")
+    print()
+    print(report)
+    return 0
+
+
 def _cmd_template(args) -> int:
     from llm import template_author as ta
 
@@ -386,6 +414,19 @@ def main(argv: list[str] | None = None) -> int:
     lt.add_argument("--lang", choices=("en", "zh"), default="zh")
     lt.add_argument("--sections", type=int, default=6)
 
+    ls = sub.add_parser("synthesize",
+                        help="Cross-paper synthesis: topic -> grounded "
+                             "research-direction report from the library")
+    ls.add_argument("--topic", required=True)
+    ls.add_argument("--papers", default=None,
+                    help="Comma-separated paper_id scope (default: whole library)")
+    ls.add_argument("--top-k", type=int, default=18,
+                    help="Topic-relevant excerpts pulled from the library")
+    ls.add_argument("--out-dir", default=None,
+                    help="Default <library>/synth/<topic-slug>/")
+    ls.add_argument("--lang", choices=("en", "zh"), default="zh")
+    ls.add_argument("--library-dir", default=None)
+
     args = ap.parse_args(argv)
 
     load_dotenv(Path.cwd() / ".env", override=False)
@@ -397,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_papers(args)
     if args.cmd == "template":
         return _cmd_template(args)
+    if args.cmd == "synthesize":
+        return _cmd_synthesize(args)
     # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
     # would otherwise let outputs land outside runs/.
     paper_id = slugify(args.paper_id) if args.paper_id else slugify(Path(args.pdf).stem)
