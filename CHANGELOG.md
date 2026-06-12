@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.16-synthesize] — 2026-06-12 — cross-paper synthesis
+
+Closes the knowledge-base loop: the library now answers research-direction
+questions across papers, not just retrieval queries.
+
+- **`lazy-paper synthesize --topic "..."`**: evidence gather (manifest +
+  archived context/fig_notes + hybrid-retrieved excerpts) → one text-LLM call
+  → five-section markdown report (综述 / 方法对比表 / 证据与分歧 / 研究空白 /
+  下一步建议) at `<library>/synth/<topic-slug>/report.md`.
+- **Grounding contract**: every evidence-drawn claim carries `[src: paper_id]`;
+  deterministic post-check warns on markers not in the library; speculation
+  must be marked (推测). Audit sidecars persisted before validation; one
+  corrective retry.
+- **Deferred by design**: s08 in-run library context — external citations
+  interact with the anchored-quote verifier and get their own design later.
+- Tests: +7 (`tests/test_synthesize.py`). Docs: Synthesize section in
+  `KNOWLEDGE_BASE.md` (en+zh).
+
 ### [v1.15-template-author] — 2026-06-11 — idea-driven template generation
 
 Closes the template-paper mismatch gap (the 0.81→0.10 faithfulness swing class).

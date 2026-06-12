@@ -46,3 +46,76 @@ Default root is `./library` (override with `LAZY_PAPER_LIBRARY_DIR` or
   like the ranking you already trust inside a run.
 - **`kind: experiment`** is accepted by `ingest --kind` but reserved — the
   experiment-loop features land in a later release.
+
+## Synthesize (v1.16)
+
+`lazy-paper synthesize` answers research-direction questions across your whole
+library (or a subset of papers) by gathering evidence from multiple sources and
+composing a grounded markdown report with a single text-LLM call.
+
+### Purpose
+
+Given a topic ("energy regularization vs. multi-skill architectures on legged
+robots"), the command collects evidence from the v1.14 library (manifest
+metadata, archived `context.yaml` / `fig_notes.yaml`, and hybrid-retrieved
+excerpts) and composes a five-section research-direction report. Every claim
+drawn from the evidence must carry a `[src: paper_id]` marker; a deterministic
+post-check warns on any marker that doesn't resolve to a library paper.
+
+### Quickstart
+
+```bash
+uv run python -m cli synthesize --topic "energy regularization vs gait switching"
+uv run python -m cli synthesize --topic "..." --papers paper-a,paper-b   # restrict scope
+uv run python -m cli synthesize --topic "..." --lang en                  # English output (default: zh)
+```
+
+Output lands at `<library>/synth/<topic-slug>/report.md`, with audit sidecars:
+`.prompt.md` and `.response.json` (written before the citation check, so a
+rejected report is always inspectable).
+
+### Report structure
+
+The report has exactly five `##` sections in this order:
+
+| Section | Contents |
+|---|---|
+| `## 主题综述` | Topic overview and framing across papers |
+| `## 方法对比` | Markdown table — one row per paper: approach, key quantitative results, limitations |
+| `## 证据与分歧` | Agreements and contradictions in the evidence |
+| `## 研究空白` | Open questions not addressed by any paper in scope |
+| `## 下一步建议` | 3–5 concrete, falsifiable next steps, each citing at least one `[src: ...]`; speculation is marked `(推测)` |
+
+### Grounding contract
+
+- Every factual claim drawn from the evidence carries `[src: paper_id]` using
+  the exact paper ids in the library. Multiple sources: `[src: id1][src: id2]`.
+- After composition, `check_citations` performs a deterministic scan and prints
+  a `WARNING: [src:] markers not in library: ...` line for any id that does not
+  appear in the library manifest.
+- Anything beyond the evidence must be marked `(推测)`.
+- Audit sidecars (`.prompt.md` / `.response.json`) are persisted before the
+  marker check; a corrective retry runs once if the first attempt contains no
+  `[src:]` markers at all.
+
+### Evidence sources
+
+`gather()` builds the evidence block from three layers:
+
+1. **Manifest** — title and keywords for every paper in scope.
+2. **Archived context/fig_notes** — up to 3 `critical_questions`, 4
+   `headline_metrics` from `context.yaml`; up to 4 `deep_observation` /
+   `visual_summary` entries from `fig_notes.yaml` per paper.
+3. **Hybrid-retrieved excerpts** — the same dense + BM25 + RRF retriever used
+   by the in-run pipeline, queried with the topic string (`--top-k 18` by
+   default).
+
+### Design note: s08 in-run context is deferred
+
+`synthesize` deliberately does NOT inject s08 in-run library context. The
+anchored-quote verifier treats author-named external citations as anchored
+claims that require a local `cited_quote`; external citations from a synthesis
+report would interact with those rules in ways that need their own grounding
+design. s08 has a 5-reversal audit history and is not touched lightly. This
+deferral is explicit and documented — it is not a gap to fill with a quick
+patch.
