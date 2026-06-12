@@ -6,7 +6,8 @@ Output STRICT YAML only (no markdown fence, no preamble) with this exact schema:
 sections:
   - title: <short declarative heading — NO question mark, <= 60 characters, no leading numbering>
     questions:
-      - <one deep, specific question, ending with "?">
+      - <2-4 deep, specific questions answerable from the paper, each ending with "?">
+      - <the FINAL question of EVERY section starts with the literal tag "[发散] " (Chinese) or "[Open] " (English) and deliberately goes beyond the paper, ending with "?">
 
 Rules:
 - Exactly {n_sections} sections, ordered as a reading arc (context -> method -> evidence -> limits -> transfer).
