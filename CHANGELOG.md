@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-06-12 — the knowledge-base loop
+
+One arc, v1.14 → v1.19, released together as 2.0: lazy-paper grows from a
+single-paper deep-read pipeline into a personal research knowledge base with
+an AI-scientist loop — READ → ASK → GROW → CROSS-ANALYZE → EXPERIMENT+ITERATE.
+Entries below document each step of the arc.
+
 ### [v1.19-garden] — 2026-06-12 — knowledge garden + idea-incubator prompts
 
 Frontend handoff integrated; generation quality contracts upgraded per the
