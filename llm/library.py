@@ -1,11 +1,11 @@
 """Cross-paper knowledge library: persistent store over per-run artifacts.
 
-v1.14 foundation for the knowledge-base loop. `ingest` re-uses the retrieval
+`ingest` re-uses the retrieval
 assets a finished run already produced (chunk index from s08_section_compose +
 KG from s06_context) — zero LLM calls — so the data survives runs/ cleanup and
 becomes searchable across papers. If the run never reached s08, ingest builds
 the index once (embeddings API only, no LLM calls).
-`kind` reserves "experiment" for the v1.17 experiment loop.
+`kind` reserves "experiment" for the experiment loop.
 
 Layout (under LAZY_PAPER_LIBRARY_DIR, default ./library):
     manifest.yaml      one entry per paper: title, kind, keywords, tokens, ...
@@ -253,7 +253,8 @@ class Library:
             shutil.copy2(md, dest / md.name)
         for f in bundle_dir.glob("*.csv"):
             shutil.copy2(f, dest / f.name)
-        imgs = [p for p in _exp_images(bundle_dir)]
+        from llm.experiment import _images as _exp_images
+        imgs = _exp_images(bundle_dir)
         if imgs:
             (dest / "curves").mkdir(exist_ok=True)
             for p in imgs:
@@ -362,18 +363,6 @@ class Library:
         (self.root / "bm25_ids.json").write_text(
             json.dumps([r["gid"] for r in children]), encoding="utf-8")
 
-
-def _exp_images(bundle_dir: Path) -> list[Path]:
-    seen: set[Path] = set()
-    out: list[Path] = []
-    for g in ("*.png", "*.jpg", "*.jpeg", "curves/*.png", "curves/*.jpg",
-              "curves/*.jpeg"):
-        for p in sorted(Path(bundle_dir).glob(g)):
-            rp = p.resolve()
-            if rp not in seen:
-                seen.add(rp)
-                out.append(p)
-    return out
 
 
 def _sum_tokens(run_dir: Path) -> int:

@@ -1,4 +1,4 @@
-"""Advise (v1.18): experiment + library -> grounded next-iteration plan.
+"""Advise: experiment + library -> grounded next-iteration plan.
 
 The AI-scientist closing loop. Evidence = the experiment's archived bundle +
 its linked papers' archived context + idea-relevant library excerpts + ALL

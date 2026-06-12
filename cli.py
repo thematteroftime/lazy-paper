@@ -442,18 +442,18 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--debug-citations", action="store_true",
                    help="Keep [span:doc:start-end] citation markers in rendered output (default: strip)")
     r.add_argument("--pdffigures2", action="store_true",
-                   help="v1.12: enable PDFFigures 2 sidecar for caption-anchored figure "
+                   help="enable PDFFigures 2 sidecar for caption-anchored figure "
                         "renumbering (requires PDFFIGURES2_JAR=docker + a built "
-                        "lazy-paper/pdffigures2:0.1.0 image). Off by default — opt-in until v1.13.")
+                        "lazy-paper/pdffigures2:0.1.0 image). Off by default.")
     r.add_argument("--ingest", action="store_true",
-                   help="v1.14: after the run, ingest results into the knowledge "
+                   help="after the run, ingest results into the knowledge "
                         "library (see `lazy-paper ingest --help`). Opt-in.")
 
     li = sub.add_parser("ingest", help="Ingest a finished run into the knowledge library")
     li.add_argument("paper_id", help="Run name under --runs-dir (same as run --paper-id)")
     li.add_argument("--runs-dir", default="runs")
     li.add_argument("--kind", choices=("paper", "experiment"), default="paper",
-                    help="'experiment' reserved for the v1.17 experiment loop")
+                    help="Entry kind in the manifest (use exp-ingest for the full experiment flow)")
     li.add_argument("--library-dir", default=None,
                     help="Library root (default: $LAZY_PAPER_LIBRARY_DIR or ./library)")
 
@@ -483,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     lt.add_argument("--out", default=None,
                     help="Output docx (default templates/auto-<idea-slug>.docx)")
     lt.add_argument("--use-library", action="store_true",
-                    help="Ground questions in the v1.14 knowledge library "
+                    help="Ground questions in the knowledge library "
                          "(adds cross-paper comparison questions)")
     lt.add_argument("--library-dir", default=None)
     lt.add_argument("--lang", choices=("en", "zh"), default="zh")
@@ -503,7 +503,7 @@ def main(argv: list[str] | None = None) -> int:
     ls.add_argument("--library-dir", default=None)
 
     le = sub.add_parser("exp-ingest",
-                        help="v1.17: analyze + ingest an experiment bundle "
+                        help="analyze + ingest an experiment bundle "
                              "(exp.yaml + curves + metrics + notes)")
     le.add_argument("bundle", help="Bundle directory (see docs: exp.yaml contract)")
     le.add_argument("--id", default=None, help="Override exp id (default: dir name)")
@@ -513,7 +513,7 @@ def main(argv: list[str] | None = None) -> int:
     le.add_argument("--library-dir", default=None)
 
     la = sub.add_parser("advise",
-                        help="v1.18: grounded next-iteration plan for an "
+                        help="grounded next-iteration plan for an "
                              "ingested experiment (+ round memory)")
     la.add_argument("--exp", required=True, metavar="EXP_ID")
     la.add_argument("--idea", default=None,
@@ -526,7 +526,7 @@ def main(argv: list[str] | None = None) -> int:
     la.add_argument("--library-dir", default=None)
 
     lg = sub.add_parser("garden",
-                        help="v1.19: build the star-map knowledge garden "
+                        help="build the star-map knowledge garden "
                              "(static garden.html from the library)")
     lg.add_argument("--out", default=None,
                     help="Output dir (default <library>/garden/)")

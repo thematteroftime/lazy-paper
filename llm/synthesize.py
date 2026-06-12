@@ -1,6 +1,6 @@
-"""Cross-paper synthesis (v1.16): topic -> grounded research-direction report.
+"""Cross-paper synthesis: topic -> grounded research-direction report.
 
-Evidence comes from the v1.14 library (manifest, archived context/fig_notes,
+Evidence comes from the library (manifest, archived context/fig_notes,
 hybrid-retrieved chunks); one text-LLM call composes a markdown report whose
 claims carry [src: paper_id] markers; a deterministic post-check flags markers
 that don't resolve to library papers. Reports land in library/synth/<slug>/

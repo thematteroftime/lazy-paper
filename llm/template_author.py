@@ -1,4 +1,4 @@
-"""Template author (v1.15): user idea -> question-driven outline docx.
+"""Template author: user idea -> question-driven outline docx.
 
 Drafts an s05-compatible outline docx for ONE paper: cheap prescan (pdfplumber
 or existing run artifacts) + one text-LLM call + deterministic docx writer.

@@ -1,4 +1,4 @@
-"""Experiment bundles (v1.17): validate, deep-read curves, build corpus.
+"""Experiment bundles: validate, deep-read curves, build corpus.
 
 A bundle is a user-authored directory (exp.yaml + curves + metrics CSV +
 notes). `analyze_curves` runs the vision LLM once per plot (cached in

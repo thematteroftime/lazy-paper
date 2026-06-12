@@ -1,4 +1,4 @@
-"""Garden export (v1.19): library -> window.GARDEN_EXPORT for frontend/garden.
+"""Garden export: library -> window.GARDEN_EXPORT for frontend/garden.
 
 The frontend computes ALL layout/links/indexes itself (see
 frontend/garden/DATA_ADAPTER.md); this module only maps library data to the
