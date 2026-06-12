@@ -224,6 +224,39 @@ def _cmd_ingest(args) -> int:
     return 0
 
 
+def _cmd_advise(args) -> int:
+    from llm import advise as adv
+    from llm.library import Library
+    from llm.synthesize import check_citations
+
+    lib = Library(args.library_dir)
+    if args.outcome:
+        out = adv.record_outcome(lib, args.exp, args.outcome)
+        print(f"[advise] outcome recorded → {out}")
+        if not args.idea:
+            return 0
+    if not args.idea:
+        raise SystemExit("advise: --idea is required (or use --outcome alone "
+                         "to record a result)")
+    evidence = adv.gather_evidence(lib, args.exp, idea=args.idea,
+                                   top_k=args.top_k)
+    round_dir = adv.next_round_dir(lib, args.exp)
+    report_path = round_dir / "report.md"
+    report, resp = adv.compose(idea=args.idea, evidence=evidence,
+                               lang=args.lang, audit_base=report_path)
+    unknown = check_citations(report, set(lib.papers()))
+    round_dir.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report, encoding="utf-8")
+    print(f"[advise] {args.exp} {round_dir.name} → {report_path} "
+          f"(model {resp.model})")
+    if unknown:
+        print(f"[advise] WARNING: [src:] markers not in library: "
+              f"{', '.join(unknown)}")
+    print()
+    print(report)
+    return 0
+
+
 def _cmd_exp_ingest(args) -> int:
     from llm.experiment import analyze_curves, load_bundle
     from llm.library import Library
@@ -460,6 +493,19 @@ def main(argv: list[str] | None = None) -> int:
                     help="Skip curve analysis (no vision LLM calls)")
     le.add_argument("--library-dir", default=None)
 
+    la = sub.add_parser("advise",
+                        help="v1.18: grounded next-iteration plan for an "
+                             "ingested experiment (+ round memory)")
+    la.add_argument("--exp", required=True, metavar="EXP_ID")
+    la.add_argument("--idea", default=None,
+                    help="Your current question / direction for this round")
+    la.add_argument("--outcome", default=None,
+                    help="Record what happened after the LAST round's advice "
+                         "(stored as outcome.md; informs future rounds)")
+    la.add_argument("--top-k", type=int, default=12)
+    la.add_argument("--lang", choices=("en", "zh"), default="zh")
+    la.add_argument("--library-dir", default=None)
+
     args = ap.parse_args(argv)
 
     load_dotenv(Path.cwd() / ".env", override=False)
@@ -475,6 +521,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_synthesize(args)
     if args.cmd == "exp-ingest":
         return _cmd_exp_ingest(args)
+    if args.cmd == "advise":
+        return _cmd_advise(args)
     # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
     # would otherwise let outputs land outside runs/.
     paper_id = slugify(args.paper_id) if args.paper_id else slugify(Path(args.pdf).stem)

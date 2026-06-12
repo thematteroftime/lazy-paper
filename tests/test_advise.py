@@ -129,3 +129,29 @@ def test_compose_marker_contract_and_audit(tmp_path: Path):
     assert "[src: exp-01]" in report
     assert M.return_value.chat.call_count == 2
     assert Path(str(base) + ".response.json").exists()
+
+
+def test_cli_advise_e2e_and_outcome(tmp_path: Path, capsys, monkeypatch):
+    import cli
+
+    lib = _lib(tmp_path)
+
+    class FakeLibCls:
+        def __init__(self, *a, **k):
+            self.root = lib.root
+        papers = staticmethod(lib.papers)
+        query = staticmethod(lambda topic, top_k=8, papers=None: lib._hits)
+
+    monkeypatch.setattr("llm.library.Library", FakeLibCls)
+    with patch("llm.advise.LLM") as M:
+        M.return_value.chat.return_value = _FakeResp(_GOOD_ADVICE)
+        rc = cli.main(["advise", "--exp", "exp-01", "--idea", "push to 2.2"])
+    assert rc == 0
+    r1 = lib.root / "experiments" / "exp-01" / "advice" / "round_01"
+    assert (r1 / "report.md").exists()
+    out = capsys.readouterr().out
+    assert "round_01" in out
+
+    rc = cli.main(["advise", "--exp", "exp-01", "--outcome", "回退了"])
+    assert rc == 0
+    assert (r1 / "outcome.md").read_text(encoding="utf-8") == "回退了"
