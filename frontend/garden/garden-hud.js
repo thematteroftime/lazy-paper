@@ -195,7 +195,9 @@ function openPanel(app, p, T){
   b.addEventListener('click', ()=>GardenApp.locateEntity(b.dataset.key));
  });
  $('pn-open').addEventListener('click', ()=>{
-  if(p.preview){ window.open(p.preview, '_blank'); }
+  // window.open(file://...) is blocked by browsers on file:// pages;
+  // same-tab navigation is allowed — Back returns to the garden.
+  if(p.preview){ location.href = p.preview; }
   else { $('pn-open-hint').hidden = false; }
  });
  $('panel-body').querySelectorAll('.pn-fig').forEach(fg=>{
