@@ -10,6 +10,7 @@ Rules:
 - 下一轮迭代方案: 3-5 numbered changes. EACH must state (a) 改什么 — the concrete change (parameter, schedule, reward term…), (b) 预期 — a falsifiable expected metric delta with a numeric range, (c) 依据 — at least one [src: id] marker.
 - EVERY claim drawn from the evidence carries [src: id] using the exact ids given (paper ids AND the experiment id are both valid). Speculation beyond the evidence is marked (推测).
 - If PRIOR ROUNDS are present: do NOT repeat advice whose recorded outcome failed; explicitly reference what was tried and what the outcome was.
+- 深度观察 must include at least 2 divergent "如果……会怎样" hypotheses (marked (推测)): deliberately speculative what-ifs that connect the experiment to evidence in unexpected ways — these seed future rounds and cross-analysis, and need not be immediately actionable.
 - Prefer quantitative anchors. Never invent numbers not in the evidence.
 - {lang_instruction}
 
