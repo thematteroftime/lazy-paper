@@ -199,6 +199,80 @@ class Library:
         dump_yaml(self.manifest_path, manifest)
         return entry
 
+    def ingest_experiment(self, bundle_dir: Path | str, *,
+                          exp_id: str | None = None) -> dict:
+        """Chunk+embed an experiment bundle into the shared chunks table.
+
+        Curves must already be analyzed (exp_notes.yaml) — the CLI runs
+        analyze_curves first; this method makes no vision calls.
+        """
+        from llama_index.core.node_parser import SentenceSplitter
+
+        from llm.experiment import build_corpus, load_bundle
+
+        bundle_dir = Path(bundle_dir)
+        exp_id = exp_id or bundle_dir.name
+        meta = load_bundle(bundle_dir)
+        corpus = build_corpus(bundle_dir)
+
+        splitter = SentenceSplitter(chunk_size=400, chunk_overlap=80)
+        texts = [t for t in splitter.split_text(corpus) if t.strip()]
+        if not texts:
+            raise SystemExit(f"{bundle_dir}: empty corpus")
+        vectors = _embed_texts(texts)
+        dim = int(vectors.shape[1])
+        self._check_dim(dim)
+
+        chunk_tbl = pa.table({
+            "gid":        [f"{exp_id}::e{i:04d}" for i in range(len(texts))],
+            "paper_id":   [exp_id] * len(texts),
+            "chunk_id":   [f"e{i:04d}" for i in range(len(texts))],
+            "text":       texts,
+            "doc_name":   ["exp_corpus.md"] * len(texts),
+            "char_start": [0] * len(texts),
+            "char_end":   [len(t) for t in texts],
+            "parent_id":  [""] * len(texts),
+            "is_parent":  [False] * len(texts),
+            "vector":     pa.array([v.tolist() for v in vectors],
+                                   type=pa.list_(pa.float32(), dim)),
+        })
+        self._upsert("chunks", exp_id, chunk_tbl)
+
+        dest = self.root / "experiments" / exp_id
+        dest.mkdir(parents=True, exist_ok=True)
+        for name in ("exp.yaml", "exp_notes.yaml"):
+            src = bundle_dir / name
+            if src.exists():
+                shutil.copy2(src, dest / name)
+        for md in bundle_dir.glob("*.md"):
+            shutil.copy2(md, dest / md.name)
+        for f in bundle_dir.glob("*.csv"):
+            shutil.copy2(f, dest / f.name)
+        imgs = [p for p in _exp_images(bundle_dir)]
+        if imgs:
+            (dest / "curves").mkdir(exist_ok=True)
+            for p in imgs:
+                shutil.copy2(p, dest / "curves" / p.name)
+        self._rebuild_bm25()
+
+        entry = {
+            "kind": "experiment",
+            "title": meta.get("title") or exp_id,
+            "keywords": list((meta.get("hyperparams") or {}).keys()),
+            "papers": meta.get("papers") or [],
+            "env": meta.get("env"),
+            "software": meta.get("software"),
+            "date": meta.get("date"),
+            "n_chunks": len(texts),
+            "embedding_dim": dim,
+            "ingested_at": time.time(),
+            "source_bundle": str(bundle_dir.resolve()),
+        }
+        manifest = self.papers()
+        manifest[exp_id] = entry
+        dump_yaml(self.manifest_path, manifest)
+        return entry
+
     def _check_dim(self, dim: int) -> None:
         if "chunks" not in self._db.table_names():
             return
@@ -282,6 +356,14 @@ class Library:
         bm.save(str(self.root / "bm25"))
         (self.root / "bm25_ids.json").write_text(
             json.dumps([r["gid"] for r in children]), encoding="utf-8")
+
+
+def _exp_images(bundle_dir: Path) -> list[Path]:
+    out: list[Path] = []
+    for g in ("*.png", "*.jpg", "*.jpeg", "curves/*.png", "curves/*.jpg",
+              "curves/*.jpeg"):
+        out.extend(sorted(Path(bundle_dir).glob(g)))
+    return out
 
 
 def _sum_tokens(run_dir: Path) -> int:

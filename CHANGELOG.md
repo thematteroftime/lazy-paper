@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.17-experiment] — 2026-06-12 — experiments as first-class library citizens
+
+The paper↔experiment data layer for the v1.18 advisor.
+
+- **`lazy-paper exp-ingest <bundle>`**: validate `exp.yaml` manifest → vision
+  deep-read per curve (cached `exp_notes.yaml` + audit sidecars) → deterministic
+  metrics-CSV digest → corpus chunked+embedded into the SHARED chunks table
+  (`kind: experiment`) — one `query` now spans papers and experiments.
+- **Archive**: bundle artifacts copied to `<library>/experiments/<id>/`; manifest
+  entry records env/software/hyperparams keys/linked papers.
+- **Deferred**: video artifacts (ffmpeg keyframe sampling via Docker planned;
+  frames will reuse the curve pipeline). TensorBoard parsing (CSV only).
+- Tests: +9 (`tests/test_experiment.py`). Docs: Experiments section in
+  `KNOWLEDGE_BASE.md` (en+zh).
+
 ### [v1.16-synthesize] — 2026-06-12 — cross-paper synthesis
 
 Closes the knowledge-base loop: the library now answers research-direction

@@ -119,3 +119,66 @@ report would interact with those rules in ways that need their own grounding
 design. s08 has a 5-reversal audit history and is not touched lightly. This
 deferral is explicit and documented — it is not a gap to fill with a quick
 patch.
+
+## Experiments (v1.17)
+
+Experiments become first-class library citizens — validated, deep-read, and
+searchable alongside papers. After ingest, a single `query` call spans both
+papers and experiments with no extra flags.
+
+### Purpose
+
+`exp-ingest` gives experiment bundles (curve images, metrics CSVs, lab notes,
+`exp.yaml` manifest) the same treatment as papers: vision deep-read per curve
+(cached in `exp_notes.yaml`), deterministic metrics digest, corpus
+chunk+embedded into the **shared** `chunks` table (`kind="experiment"`). The
+manifest records env/software/hyperparams/linked papers so the advisor (v1.18)
+can reason across the paper↔experiment data layer.
+
+### Bundle contract
+
+An experiment bundle is a directory with the following layout:
+
+| File / Dir | Required? | Description |
+|---|---|---|
+| `exp.yaml` | **REQUIRED** | Manifest: `title`, `env`, `software`, `hyperparams: {...}`, `papers: [paper_id...]`, `date` |
+| `*.md` (e.g. `notes.md`) | optional | Free-form lab notes (any `*.md`) |
+| `*.csv` (e.g. `metrics.csv`) | optional | Any CSV with a header row and numeric columns |
+| `*.png` / `*.jpg` at top level or `curves/` | optional | Experiment curve images |
+
+### Quickstart
+
+```bash
+uv run python -m cli exp-ingest my-exp-01/
+uv run python -m cli exp-ingest my-exp-01/ --id custom-id   # override experiment id
+uv run python -m cli exp-ingest my-exp-01/ --skip-vision    # skip vision LLM calls
+uv run python -m cli exp-ingest my-exp-01/ --lang en        # English curve analysis (default: zh)
+
+# After ingest, query spans papers AND experiments:
+uv run python -m cli query "CoT convergence"
+```
+
+### What happens
+
+1. **Validate** — `exp.yaml` is loaded; missing file or missing `title` exits with a clear message.
+2. **Vision deep-read** — one vision LLM call per curve image → strict YAML
+   (`visual_summary`, `deep_observation`, `anomalies`). Results cached in
+   `exp_notes.yaml` inside the bundle; re-running is a no-op. Audit sidecars
+   written beside it: `exp_notes.<stem>.prompt.md` and
+   `exp_notes.<stem>.response.json`.
+3. **Metrics digest** — deterministic, no LLM: per numeric column `min/max/last`
+   and row count for every `*.csv`.
+4. **Corpus** — `exp.yaml` dump + lab notes + metrics digest + curve analyses
+   flattened into one document, then chunked (SentenceSplitter 400/80) and
+   embedded into the **shared** `chunks` table with `kind="experiment"`.
+5. **Archive** — bundle artifacts copied to `<library>/experiments/<id>/`
+   (survives bundle deletion): `exp.yaml`, `exp_notes.yaml`, `*.md`, `*.csv`,
+   curve images under `curves/`.
+6. **Manifest** — entry added with `kind: experiment`, `env`, `software`,
+   `hyperparams` keys, `papers` (linked paper ids), `n_chunks`,
+   `embedding_dim`, `ingested_at`, `source_bundle`.
+
+### Video deferral note
+
+Video artifacts are not yet supported. Planned path: ffmpeg keyframe sampling
+via Docker; extracted frames will reuse the curve vision pipeline exactly.

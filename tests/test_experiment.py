@@ -105,3 +105,34 @@ def test_build_corpus_combines_everything(tmp_path: Path):
     assert "diverged above 1.9" in corpus          # notes.md
     assert "min=3.2" in corpus                     # metrics digest
     assert "CoT falls." in corpus                  # curve analysis
+
+
+def test_ingest_experiment_into_library(tmp_path: Path):
+    import numpy as np
+    from llm.library import Library
+
+    b = _bundle(tmp_path)
+    dump_yaml(b / "exp_notes.yaml",
+              [{"image": "curves/cot.png", "visual_summary": "CoT falls.",
+                "deep_observation": "ok", "anomalies": []}])
+
+    def fake_embed(texts):
+        return np.asarray([[0.5] * 8 for _ in texts], dtype=np.float32)
+
+    lib = Library(tmp_path / "library")
+    with patch("llm.library._embed_texts", side_effect=fake_embed):
+        entry = lib.ingest_experiment(b)
+    assert entry["kind"] == "experiment"
+    assert entry["n_chunks"] > 0
+    assert entry["papers"] == ["atec-b2w-energy-rl"]
+    assert lib.papers()["exp-01"]["kind"] == "experiment"
+    rows = lib._db.open_table("chunks").to_arrow().to_pylist()
+    assert any(r["paper_id"] == "exp-01" for r in rows)
+    # archived copy survives bundle deletion
+    assert (lib.root / "experiments" / "exp-01" / "exp.yaml").exists()
+    assert (lib.root / "experiments" / "exp-01" / "exp_notes.yaml").exists()
+    # idempotent
+    with patch("llm.library._embed_texts", side_effect=fake_embed):
+        lib.ingest_experiment(b)
+    rows2 = lib._db.open_table("chunks").to_arrow().to_pylist()
+    assert len(rows2) == len(rows)
