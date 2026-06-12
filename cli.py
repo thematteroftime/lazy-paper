@@ -244,7 +244,9 @@ def _cmd_advise(args) -> int:
     report_path = round_dir / "report.md"
     report, resp = adv.compose(idea=args.idea, evidence=evidence,
                                lang=args.lang, audit_base=report_path)
-    unknown = check_citations(report, set(lib.papers()))
+    # round_NN references are legitimate grounding alongside manifest ids
+    known = set(lib.papers()) | {p.name for p in adv._rounds(lib, args.exp)}
+    unknown = check_citations(report, known)
     round_dir.mkdir(parents=True, exist_ok=True)
     report_path.write_text(report, encoding="utf-8")
     print(f"[advise] {args.exp} {round_dir.name} → {report_path} "

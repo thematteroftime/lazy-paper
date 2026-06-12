@@ -100,6 +100,7 @@ def test_record_outcome_requires_round(tmp_path: Path):
 
 _GOOD_ADVICE = """## 现状诊断
 CoT 已收敛到 3.2 [src: exp-01]，但 1.9 m/s 以上失稳 [src: exp-01]。
+上一轮结论仍然成立 [src: round_01 outcome]。
 
 ## 下一轮迭代方案
 1. 改什么：alpha_en 降到 0.8；预期：2.0 m/s 跟踪误差 < 0.1（区间 0.05-0.1）；依据 [src: paper-a]。
@@ -155,3 +156,13 @@ def test_cli_advise_e2e_and_outcome(tmp_path: Path, capsys, monkeypatch):
     rc = cli.main(["advise", "--exp", "exp-01", "--outcome", "回退了"])
     assert rc == 0
     assert (r1 / "outcome.md").read_text(encoding="utf-8") == "回退了"
+
+    # round references ([src: round_01 ...]) are legitimate grounding —
+    # they must not trigger an unknown-citation WARNING
+    with patch("llm.advise.LLM") as M:
+        M.return_value.chat.return_value = _FakeResp(_GOOD_ADVICE)
+        rc = cli.main(["advise", "--exp", "exp-01", "--idea", "round two"])
+    assert rc == 0
+    out2 = capsys.readouterr().out
+    assert "WARNING" not in out2
+    assert "round_02" in out2
