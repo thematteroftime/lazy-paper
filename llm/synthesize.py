@@ -128,6 +128,8 @@ def check_citations(report: str, known: set[str]) -> list[str]:
     cited: set[str] = set()
     for m in _SRC_RE.finditer(report):
         for part in m.group(1).split(","):
-            if part.strip():
-                cited.add(part.strip())
+            # advise emits "[src: <id> <artifact>]" — the id is the first token
+            tokens = part.strip().split()
+            if tokens:
+                cited.add(tokens[0])
     return sorted(c for c in cited if c not in known)

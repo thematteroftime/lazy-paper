@@ -165,3 +165,10 @@ def test_check_citations_comma_variants():
     assert check_citations("x [src: a,b] y", known) == []
     assert check_citations("x [src: a, b] y", known) == []
     assert check_citations("x [src: a, ghost] y", known) == ["ghost"]
+
+
+def test_check_citations_artifact_suffix():
+    # advise (v1.18) emits [src: <id> <artifact>] — validate the id token only
+    known = {"exp-01"}
+    assert check_citations("x [src: exp-01 notes.md] y", known) == []
+    assert check_citations("x [src: ghost notes.md] y", known) == ["ghost"]
