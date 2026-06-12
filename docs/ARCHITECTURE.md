@@ -1,6 +1,6 @@
 # lazy-paper architecture
 
-> A maintainer-level reference for the 9-stage pipeline that turns a PDF research paper into bilingual DOCX/PDF/HTML/PPTX deep analysis. Code version **v1.13-render** (2026-06-03). 321 pytest tests.
+> A maintainer-level reference for the 9-stage pipeline that turns a PDF research paper into bilingual DOCX/PDF/HTML/PPTX deep analysis. Code version **v1.19-garden** (2026-06-12). 390 pytest tests. This file covers the per-paper pipeline; the knowledge-base loop layered on top (library / synthesize / experiments / advise / garden, v1.14-v1.19) is documented in [`KNOWLEDGE_BASE.md`](KNOWLEDGE_BASE.md).
 >
 > Install, CLI flags, and provider setup live in [README.md](../README.md) and [USER_GUIDE.md](USER_GUIDE.md). This file is the "how the system works" side.
 >

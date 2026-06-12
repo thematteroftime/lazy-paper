@@ -2,7 +2,7 @@
 
 > 面向新人（包括未来 Claude session 和外部贡献者）的系统级参考。读完后无需阅读源码，就能理解整个 pipeline 是怎么把一篇 PDF 论文变成多格式深度分析的。
 >
-> 本文档对应代码版本 **v1.13-render**（2026-06-03），321 个 pytest 测试，9 个 pipeline stage。
+> 本文档对应代码版本 **v1.19-garden**（2026-06-12），390 个 pytest 测试，9 个 pipeline stage。本文只覆盖逐篇论文的 pipeline；其上的知识库闭环层（library / synthesize / 实验 / advise / garden，v1.14-v1.19）见 [`KNOWLEDGE_BASE.md`](KNOWLEDGE_BASE.md)。
 >
 > 安装、CLI 命令、provider 配置请看 [README.zh.md](../README.zh.md) / [USER_GUIDE.md](USER_GUIDE.md)；本文档专注于 **"系统是怎么工作的"**。
 >
