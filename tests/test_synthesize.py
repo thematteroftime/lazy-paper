@@ -33,7 +33,9 @@ def _lib(tmp_path: Path) -> _FakeLib:
         d.mkdir(parents=True)
         dump_yaml(d / "context.yaml",
                   {"title": manifest[pid]["title"],
-                   "critical_questions": [f"What limits {pid}?"]})
+                   "critical_questions": [f"What limits {pid}?"],
+                   # real s06 schema: headline_metrics is a DICT, not a list
+                   "headline_metrics": {"flagship": f"{pid}-platform"}})
         dump_yaml(d / "fig_notes.yaml",
                   [{"fig_id": "Fig. 1", "deep_observation": f"{pid} CoT drops 30%."}])
     hits = [{"gid": "paper-a::c0001", "paper_id": "paper-a", "doc_name": "d",
@@ -48,6 +50,7 @@ def test_gather_includes_manifest_archives_excerpts(tmp_path: Path):
     assert "PAPER paper-a" in ev and "PAPER paper-b" in ev
     assert "What limits paper-a?" in ev          # archived critical question
     assert "CoT drops 30%" in ev                  # archived fig deep_observation
+    assert "paper-a-platform" in ev               # dict-shaped headline_metrics
     assert "energy regularization cuts CoT" in ev  # query excerpt
     assert lib.last_query["topic"] == "energy transfer"
 

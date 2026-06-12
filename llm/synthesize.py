@@ -52,7 +52,12 @@ def gather(lib, topic: str, *, papers: list[str] | None = None,
         ctx = _archived(lib, pid, "context.yaml") or {}
         for q in (ctx.get("critical_questions") or [])[:3]:
             lines.append(f"critical question: {q}")
-        for mtr in (ctx.get("headline_metrics") or [])[:4]:
+        # Real s06 schema: headline_metrics is a dict ({name: value});
+        # tolerate a list for forward compatibility.
+        hm = ctx.get("headline_metrics") or {}
+        hm_items = ([f"{k}: {v}" for k, v in hm.items()]
+                    if isinstance(hm, dict) else [str(x) for x in hm])
+        for mtr in hm_items[:4]:
             lines.append(f"headline metric: {mtr}")
         for n in (_archived(lib, pid, "fig_notes.yaml") or [])[:4]:
             if not isinstance(n, dict):
