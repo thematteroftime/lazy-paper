@@ -33,10 +33,10 @@
 
 ```mermaid
 flowchart LR
-    READ[READ<br/>9 阶段深读] --> ASK[ASK<br/>想法到问题模板]
-    ASK --> GROW[GROW<br/>知识库 + 花园]
-    GROW --> CROSS[CROSS-ANALYZE<br/>synthesize 交叉分析]
-    CROSS --> EXP[EXPERIMENT + ITERATE<br/>exp-ingest + advise]
+    READ["READ<br/>9 阶段深读"] --> ASK["ASK<br/>想法到问题模板"]
+    ASK --> GROW["GROW<br/>知识库 + 花园"]
+    GROW --> CROSS["CROSS-ANALYZE<br/>synthesize 交叉分析"]
+    CROSS --> EXP["EXPERIMENT + ITERATE<br/>exp-ingest + advise"]
     EXP --> READ
 ```
 
@@ -46,16 +46,16 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    PDF[PDF] --> S01[s01_ocr] --> S02[s02_clean] --> S03[s03_chapter] --> S04[s04_figures]
-    TPL[outline.docx] --> S05[s05_template]
-    S03 --> S06[s06_context<br/>+ KG]
+    PDF["PDF"] --> S01["s01_ocr"] --> S02["s02_clean"] --> S03["s03_chapter"] --> S04["s04_figures"]
+    TPL["outline.docx"] --> S05["s05_template"]
+    S03 --> S06["s06_context<br/>+ KG"]
     S04 --> S06
-    S04 --> S07[s07_figure_analyze]
+    S04 --> S07["s07_figure_analyze"]
     S05 --> S08
     S06 --> S08
-    S07 --> S08[s08_section_compose]
-    S08 --> S09[s09_render]
-    S09 --> OUT[preview.docx · pdf · html · pptx]
+    S07 --> S08["s08_section_compose"]
+    S08 --> S09["s09_render"]
+    S09 --> OUT["preview.docx · pdf · html · pptx"]
 ```
 
 - **有据可查、不是胡说** —— 每条 claim 引用原文 span；LLM verifier 在产出前就否决未支持的句子。

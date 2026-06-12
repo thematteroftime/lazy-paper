@@ -33,10 +33,10 @@ The loop has five stations:
 
 ```mermaid
 flowchart LR
-    READ[READ<br/>9-stage deep read] --> ASK[ASK<br/>idea-to-question templates]
-    ASK --> GROW[GROW<br/>library + garden]
-    GROW --> CROSS[CROSS-ANALYZE<br/>synthesize]
-    CROSS --> EXP[EXPERIMENT + ITERATE<br/>exp-ingest + advise]
+    READ["READ<br/>9-stage deep read"] --> ASK["ASK<br/>idea-to-question templates"]
+    ASK --> GROW["GROW<br/>library + garden"]
+    GROW --> CROSS["CROSS-ANALYZE<br/>synthesize"]
+    CROSS --> EXP["EXPERIMENT + ITERATE<br/>exp-ingest + advise"]
     EXP --> READ
 ```
 
@@ -46,16 +46,16 @@ One command turns a scientific PDF into a critical reading of it — DOCX · PDF
 
 ```mermaid
 flowchart LR
-    PDF[PDF] --> S01[s01_ocr] --> S02[s02_clean] --> S03[s03_chapter] --> S04[s04_figures]
-    TPL[outline.docx] --> S05[s05_template]
-    S03 --> S06[s06_context<br/>+ KG]
+    PDF["PDF"] --> S01["s01_ocr"] --> S02["s02_clean"] --> S03["s03_chapter"] --> S04["s04_figures"]
+    TPL["outline.docx"] --> S05["s05_template"]
+    S03 --> S06["s06_context<br/>+ KG"]
     S04 --> S06
-    S04 --> S07[s07_figure_analyze]
+    S04 --> S07["s07_figure_analyze"]
     S05 --> S08
     S06 --> S08
-    S07 --> S08[s08_section_compose]
-    S08 --> S09[s09_render]
-    S09 --> OUT[preview.docx · pdf · html · pptx]
+    S07 --> S08["s08_section_compose"]
+    S08 --> S09["s09_render"]
+    S09 --> OUT["preview.docx · pdf · html · pptx"]
 ```
 
 - **Grounded, not hallucinated** — every claim cites a span in the source; an LLM verifier rejects unsupported sentences before they ship.
