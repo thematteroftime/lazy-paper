@@ -224,6 +224,27 @@ def _cmd_ingest(args) -> int:
     return 0
 
 
+def _cmd_exp_ingest(args) -> int:
+    from llm.experiment import analyze_curves, load_bundle
+    from llm.library import Library
+
+    bundle = Path(args.bundle)
+    load_bundle(bundle)  # fail fast with a clear message
+    if args.skip_vision:
+        notes = []
+        print("[exp] --skip-vision: curves not analyzed")
+    else:
+        notes = analyze_curves(bundle, lang=args.lang)
+        print(f"[exp] analyzed {len(notes)} curve(s) "
+              f"(cached in {bundle / 'exp_notes.yaml'})")
+    lib = Library(args.library_dir)
+    entry = lib.ingest_experiment(bundle, exp_id=args.id)
+    print(f"[exp] ingested {args.id or bundle.name}: {entry['n_chunks']} chunks, "
+          f"kind=experiment, linked papers: {', '.join(entry['papers']) or '—'} "
+          f"→ {lib.root}")
+    return 0
+
+
 def _cmd_query(args) -> int:
     from llm.library import Library
     lib = Library(args.library_dir)
@@ -429,6 +450,16 @@ def main(argv: list[str] | None = None) -> int:
     ls.add_argument("--lang", choices=("en", "zh"), default="zh")
     ls.add_argument("--library-dir", default=None)
 
+    le = sub.add_parser("exp-ingest",
+                        help="v1.17: analyze + ingest an experiment bundle "
+                             "(exp.yaml + curves + metrics + notes)")
+    le.add_argument("bundle", help="Bundle directory (see docs: exp.yaml contract)")
+    le.add_argument("--id", default=None, help="Override exp id (default: dir name)")
+    le.add_argument("--lang", choices=("en", "zh"), default="zh")
+    le.add_argument("--skip-vision", action="store_true",
+                    help="Skip curve analysis (no vision LLM calls)")
+    le.add_argument("--library-dir", default=None)
+
     args = ap.parse_args(argv)
 
     load_dotenv(Path.cwd() / ".env", override=False)
@@ -442,6 +473,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_template(args)
     if args.cmd == "synthesize":
         return _cmd_synthesize(args)
+    if args.cmd == "exp-ingest":
+        return _cmd_exp_ingest(args)
     # Always slugify to prevent path traversal: --paper-id "../../tmp/x"
     # would otherwise let outputs land outside runs/.
     paper_id = slugify(args.paper_id) if args.paper_id else slugify(Path(args.pdf).stem)

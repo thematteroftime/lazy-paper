@@ -136,3 +136,23 @@ def test_ingest_experiment_into_library(tmp_path: Path):
         lib.ingest_experiment(b)
     rows2 = lib._db.open_table("chunks").to_arrow().to_pylist()
     assert len(rows2) == len(rows)
+
+
+def test_cli_exp_ingest_e2e(tmp_path: Path, capsys, monkeypatch):
+    import numpy as np
+    import cli
+
+    b = _bundle(tmp_path)
+    monkeypatch.setenv("LAZY_PAPER_LIBRARY_DIR", str(tmp_path / "library"))
+
+    def fake_embed(texts):
+        return np.asarray([[0.5] * 8 for _ in texts], dtype=np.float32)
+
+    with patch("llm.experiment.LLM") as M, \
+         patch("llm.library._embed_texts", side_effect=fake_embed):
+        M.return_value.chat.return_value = _FakeResp(_CURVE_YAML)
+        rc = cli.main(["exp-ingest", str(b)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "[exp] analyzed 1 curve" in out
+    assert "[exp] ingested exp-01" in out
