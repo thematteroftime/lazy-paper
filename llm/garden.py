@@ -73,11 +73,12 @@ def export_data(lib) -> dict:
                             fig["src"] = f"imgs/{pid}/{img.name}"
                     p["figures"].append(fig)
 
+            # Copy the self-contained preview into the garden tree at build
+            # time; the field is a RELATIVE path because browsers block file://
+            # navigation outside the page's own directory.
             run_dir = entry.get("source_run")
-            if run_dir:
-                preview = Path(run_dir) / "s09_render" / "preview.html"
-                if preview.exists():
-                    p["preview"] = preview.resolve().as_uri()
+            if run_dir and (Path(run_dir) / "s09_render" / "preview.html").exists():
+                p["preview"] = f"previews/{pid}.html"
         else:
             p["questions"] = []
             p["figures"] = []
@@ -160,5 +161,18 @@ def build(lib, out_dir: Path) -> Path:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(lib.root / "papers" / paper["id"] / "imgs" / Path(src).name,
                          target)
+
+    # Copy each paper's self-contained preview.html into the garden tree, so
+    # the panel's "open preview" link stays a same-directory navigation.
+    manifest = lib.papers()
+    for paper in export["manifest"]["papers"]:
+        if "preview" not in paper:
+            continue
+        run_dir = (manifest.get(paper["id"]) or {}).get("source_run")
+        src = Path(run_dir) / "s09_render" / "preview.html"
+        if src.exists():
+            target = out_dir / paper["preview"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, target)
 
     return html_src

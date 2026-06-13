@@ -368,8 +368,12 @@ def test_export_figures_src_and_preview(tmp_path: Path, monkeypatch):
     figs = {f["id"]: f for f in paper["figures"]}
     assert figs["Fig. 1"]["src"] == "imgs/alpha-paper/img_001.jpg"
     assert "src" not in figs["Fig. 2"]
-    assert paper["preview"].startswith("file://")
-    assert paper["preview"].endswith("s09_render/preview.html")
+    # preview is a RELATIVE path under the garden dir — browsers block file://
+    # navigation outside the page's own directory tree
+    assert paper["preview"] == "previews/alpha-paper.html"
 
     out = build(lib, tmp_path / "out")
     assert (tmp_path / "out" / "imgs" / "alpha-paper" / "img_001.jpg").exists()
+    # the self-contained preview.html is copied into the garden tree
+    assert (tmp_path / "out" / "previews" / "alpha-paper.html").read_text(
+        encoding="utf-8") == "<html>"
