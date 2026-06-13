@@ -304,10 +304,15 @@ function composeSection(p,si){
   if(e.type==='figure'){const m=/(\d+)/.exec(e.text);const fg=m&&p.figures[+m[1]-1];if(fg)label=e.text+' · '+fg.caption;}
   items.push({e,label});
  }
- const ORDER=['parameter','method','material','dopant','comparator','figure','table','claim'];
- items.sort((a,b)=>ORDER.indexOf(a.e.type)-ORDER.indexOf(b.e.type));
- const MAX=11;
- return {items:items.slice(0,MAX),hidden:Math.max(0,items.length-MAX),q:sec.q};
+ // importance: concept types first, positional figure/table last; drop
+ // standalone value/unit (meaningful only folded into "param = value"). The
+ // ring shows a few key entities; the right panel still lists them all.
+ const ORDER=['parameter','method','material','dopant','comparator','claim','figure','table'];
+ const rank=t=>{const i=ORDER.indexOf(t);return i<0?99:i;};
+ const keep=items.filter(it=>it.e.type!=='value'&&it.e.type!=='unit');
+ keep.sort((a,b)=>rank(a.e.type)-rank(b.e.type));
+ const MAX=6;
+ return {items:keep.slice(0,MAX),hidden:Math.max(0,keep.length-MAX),q:sec.q};
 }
 
 // ── REAL-DATA SEAM (for Claude Code) ───────────────────────────────

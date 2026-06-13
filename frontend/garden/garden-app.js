@@ -618,7 +618,7 @@ function drawFocus(ctx, S, f, time){
   const R3=192*ui*(0.7+0.3*sT);
   // hub title under the shrunken star
   ctx.textAlign='center';
-  ctx.font=`${Math.round(22*ui)}px ${BRUSH}`;
+  ctx.font=`${Math.round(22*ui)}px ${labelFont(sec.zh)}`;
   ctx.fillStyle=`rgba(${S.inkRGB},${0.95*g2})`;
   ctx.fillText('§'+sec.num+' '+sec.zh, cx, cy+30*ui);
   ctx.font=`9.5px ${FELL}`; ctx.letterSpacing='2px';
