@@ -1,6 +1,6 @@
 // lazy-paper garden — Tweaks bridge (React island → vanilla canvas app)
 const GARDEN_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "skin": "dark",
+  "skin": "paper",
   "paperCount": 60,
   "clusterCount": 5,
   "coolingDays": 7,

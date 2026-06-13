@@ -108,11 +108,76 @@ def export_data(lib) -> dict:
                 [row["subject"], row["predicate"], row["object"]]
             )
 
-    return {
+    out = {
         "manifest": {"papers": papers_out},
         "entities": entities_out,
         "relations": relations_out,
     }
+    clusters = _domain_clusters(lib, papers_out)
+    if clusters:
+        out["clusters"] = clusters
+    return out
+
+
+def _domain_clusters(lib, papers: list[dict]) -> list[dict]:
+    """Group papers by mean-chunk-embedding affinity, so the star map separates
+    domains (physics vs robotics-RL …) from real semantic signal instead of the
+    frontend's random fallback. Adaptive threshold = mean + 0.4·std of pairwise
+    cosine; a single union-find pass; cluster label = the members' most common
+    keyword."""
+    import numpy as np
+    from collections import Counter
+
+    rows = (lib._db.open_table("chunks").to_arrow()
+            .select(["paper_id", "vector", "is_parent"]).to_pylist())
+    acc: dict[str, list] = {}
+    for r in rows:
+        if not r["is_parent"]:
+            acc.setdefault(r["paper_id"], []).append(r["vector"])
+    vec = {}
+    for pid, vs in acc.items():
+        m = np.mean(np.asarray(vs, dtype=np.float32), axis=0)
+        vec[pid] = m / (float(np.linalg.norm(m)) + 1e-9)
+
+    ids = [p["id"] for p in papers if p["id"] in vec]
+    if len(ids) < 2:
+        return []
+
+    parent = {i: i for i in ids}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    pairs = [(i, j, float(vec[ids[i]] @ vec[ids[j]]))
+             for i in range(len(ids)) for j in range(i + 1, len(ids))]
+    sims = [s for *_, s in pairs]
+    thr = float(np.mean(sims) + 0.4 * np.std(sims))
+    for i, j, s in pairs:
+        if s >= thr:
+            parent[find(ids[i])] = find(ids[j])
+
+    groups: dict[str, list] = {}
+    for i in ids:
+        groups.setdefault(find(i), []).append(i)
+    kw = {p["id"]: (p.get("keywords") or []) for p in papers}
+
+    clusters: list[dict] = []
+    for members in sorted(groups.values(), key=len, reverse=True)[:6]:
+        c = Counter(k for m in members for k in kw.get(m, []))
+        label = c.most_common(1)[0][0] if c else "domain"
+        clusters.append({"key": label[:24], "en": label, "zh": label,
+                         "paper_ids": members})
+
+    # any paper without an embedding (or beyond the 6-cluster cap) joins the
+    # largest cluster, so the frontend never falls back to random assignment
+    placed = {m for cl in clusters for m in cl["paper_ids"]}
+    rest = [p["id"] for p in papers if p["id"] not in placed]
+    if rest and clusters:
+        clusters[0]["paper_ids"].extend(rest)
+    return clusters
 
 
 def build(lib, out_dir: Path) -> Path:

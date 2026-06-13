@@ -377,3 +377,37 @@ def test_export_figures_src_and_preview(tmp_path: Path, monkeypatch):
     # the self-contained preview.html is copied into the garden tree
     assert (tmp_path / "out" / "previews" / "alpha-paper.html").read_text(
         encoding="utf-8") == "<html>"
+
+
+def test_export_clusters_by_embedding_affinity(tmp_path):
+    """Real domain clustering: two alpha papers group, one beta separates —
+    no random assignment."""
+    from llm.garden import export_data
+    from llm.library import Library
+    from unittest.mock import patch
+    import numpy as np
+
+    def split_embed(texts):
+        out = []
+        for t in texts:
+            out.append([1.0 if "alpha" in t else 0.0,
+                        1.0 if "beta" in t else 0.0] + [0.05] * 6)
+        return np.asarray(out, dtype=np.float32)
+
+    lib = Library(tmp_path / "library")
+    with patch("llm.retriever._embed_texts", side_effect=split_embed):
+        lib.ingest(_make_run(tmp_path, "alpha-one", "alpha"))
+        lib.ingest(_make_run(tmp_path, "alpha-two", "alpha"))
+        lib.ingest(_make_run(tmp_path, "beta-one", "beta"))
+
+    export = export_data(lib)
+    clusters = export["clusters"]
+    by = {}
+    for c in clusters:
+        for pid in c["paper_ids"]:
+            by[pid] = c["key"]
+    # the two alphas share a cluster; beta is in a different one
+    assert by["alpha-one"] == by["alpha-two"]
+    assert by["beta-one"] != by["alpha-one"]
+    # every paper is assigned (no random fallback in the frontend)
+    assert set(by) == {"alpha-one", "alpha-two", "beta-one"}

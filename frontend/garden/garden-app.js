@@ -12,7 +12,7 @@ const SERIF = '"Times New Roman","Noto Serif SC",serif';
 const BRUSH = '"Ma Shan Zheng","Noto Serif SC",serif';
 const FELL = '"IM Fell English","Times New Roman",serif';
 
-const T = { skin:'dark', paperCount:60, clusterCount:5, coolingDays:7,
+const T = { skin:'paper', paperCount:60, clusterCount:5, coolingDays:7,
             spikeForm:'cross', linkBudget:50, nebula:60, zoomDur:0.9, drift:1 };
 
 let app = null;
