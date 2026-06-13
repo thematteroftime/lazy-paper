@@ -9,6 +9,7 @@ Frontend assets are vendored pristine and never modified.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -116,30 +117,94 @@ def export_data(lib) -> dict:
     clusters = _domain_clusters(lib, papers_out)
     if clusters:
         out["clusters"] = clusters
+    sections = {}
+    for p in papers_out:
+        s = _real_sections(lib, p["id"])
+        if s:
+            sections[p["id"]] = s
+    if sections:
+        out["sections"] = sections
     return out
 
 
-def _domain_clusters(lib, papers: list[dict]) -> list[dict]:
-    """Group papers by mean-chunk-embedding affinity, so the star map separates
-    domains (physics vs robotics-RL …) from real semantic signal instead of the
-    frontend's random fallback. Adaptive threshold = mean + 0.4·std of pairwise
-    cosine; a single union-find pass; cluster label = the members' most common
-    keyword."""
-    import numpy as np
+def _chapter_index(lib, pid: str, source_run: str | None):
+    """Real chapter list — prefer the archived copy (survives runs/ cleanup),
+    fall back to the source run."""
+    archived = lib.root / "papers" / pid / "chapter_index.yaml"
+    if archived.exists():
+        return load_yaml(archived) or []
+    if source_run:
+        p = Path(source_run) / "s03_chapter" / "chapter_index.yaml"
+        if p.exists():
+            return load_yaml(p) or []
+    return []
+
+
+def _real_sections(lib, pid: str) -> list[dict] | None:
+    """Sections from the real chapter structure: titles from chapter_index,
+    chunk counts from chunks.doc_name, entity ids from entities.doc — no
+    fabricated IMRaD split. Returns None when chapter data is unavailable so
+    the frontend keeps its heuristic fallback."""
     from collections import Counter
 
-    rows = (lib._db.open_table("chunks").to_arrow()
-            .select(["paper_id", "vector", "is_parent"]).to_pylist())
-    acc: dict[str, list] = {}
-    for r in rows:
-        if not r["is_parent"]:
-            acc.setdefault(r["paper_id"], []).append(r["vector"])
-    vec = {}
-    for pid, vs in acc.items():
-        m = np.mean(np.asarray(vs, dtype=np.float32), axis=0)
-        vec[pid] = m / (float(np.linalg.norm(m)) + 1e-9)
+    entry = lib.papers().get(pid) or {}
+    chapters = _chapter_index(lib, pid, entry.get("source_run"))
+    if not chapters:
+        return None
 
-    ids = [p["id"] for p in papers if p["id"] in vec]
+    chunk_n = Counter(
+        r["doc_name"] for r in lib._db.open_table("chunks").to_arrow()
+        .select(["paper_id", "doc_name", "is_parent"]).to_pylist()
+        if r["paper_id"] == pid and not r["is_parent"])
+
+    ent_by_doc: dict[str, list] = {}
+    if "entities" in lib._db.table_names():
+        for r in (lib._db.open_table("entities").to_arrow()
+                  .select(["paper_id", "id", "doc"]).to_pylist()):
+            if r["paper_id"] == pid:
+                ent_by_doc.setdefault(r["doc"], []).append(r["id"])
+
+    out = []
+    for ch in chapters:
+        if not isinstance(ch, dict) or not ch.get("file"):
+            continue
+        title = str(ch.get("title") or ch["file"])
+        out.append({
+            "num": str(ch.get("chapter_no", len(out))),
+            "zh": title,   # no Chinese chapter title archived; English is real
+            "en": title,
+            "chunks": chunk_n.get(ch["file"], 0),
+            "ents": ent_by_doc.get(ch["file"], []),
+            "q": None,     # no per-chapter question is stored anywhere
+        })
+    return out or None
+
+
+_KW_STOP = {"of", "and", "the", "for", "in", "with", "via", "to", "on",
+            "based", "using", "a", "an", "from", "by", "multi"}
+
+
+def _kw_tokens(keywords) -> set:
+    toks = set()
+    for k in keywords or []:
+        for w in re.split(r"[^a-z0-9]+", str(k).lower()):
+            if len(w) > 2 and w not in _KW_STOP:
+                toks.add(w)
+    return toks
+
+
+def _domain_clusters(lib, papers: list[dict]) -> list[dict]:
+    """Group papers by SHARED KEYWORD TOKENS — real domain descriptors the LLM
+    extracted per paper. Two papers join when they share >=2 significant tokens
+    (single union-find pass), so robotics / vision / LLM / each physics subfield
+    separate cleanly; mean-pooled embeddings lump all of ML/CS together, which
+    is why keywords are the better domain signal here. Cluster label = the
+    members' most common token. Never leaves a paper unassigned (the frontend's
+    only fallback is random)."""
+    from collections import Counter
+
+    tok = {p["id"]: _kw_tokens(p.get("keywords")) for p in papers}
+    ids = [p["id"] for p in papers if tok[p["id"]]]
     if len(ids) < 2:
         return []
 
@@ -151,28 +216,38 @@ def _domain_clusters(lib, papers: list[dict]) -> list[dict]:
             x = parent[x]
         return x
 
-    pairs = [(i, j, float(vec[ids[i]] @ vec[ids[j]]))
-             for i in range(len(ids)) for j in range(i + 1, len(ids))]
-    sims = [s for *_, s in pairs]
-    thr = float(np.mean(sims) + 0.4 * np.std(sims))
-    for i, j, s in pairs:
-        if s >= thr:
-            parent[find(ids[i])] = find(ids[j])
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            if len(tok[ids[i]] & tok[ids[j]]) >= 2:
+                parent[find(ids[i])] = find(ids[j])
 
     groups: dict[str, list] = {}
     for i in ids:
         groups.setdefault(find(i), []).append(i)
-    kw = {p["id"]: (p.get("keywords") or []) for p in papers}
 
+    kw_phrases = {p["id"]: (p.get("keywords") or []) for p in papers}
     clusters: list[dict] = []
-    for members in sorted(groups.values(), key=len, reverse=True)[:6]:
-        c = Counter(k for m in members for k in kw.get(m, []))
-        label = c.most_common(1)[0][0] if c else "domain"
-        clusters.append({"key": label[:24], "en": label, "zh": label,
-                         "paper_ids": members})
+    for members in sorted(groups.values(), key=len, reverse=True):
+        c = Counter(w for m in members for w in tok[m])
+        top, n = c.most_common(1)[0] if c else ("domain", 0)
+        # a token shared by 2+ members names the domain; a lone paper is better
+        # labelled by its own primary keyword phrase than a random token
+        if n >= 2:
+            label = top
+        else:
+            phrases = kw_phrases.get(members[0]) or [top]
+            label = phrases[0]
+        clusters.append({"key": label, "en": label, "zh": label,
+                         "paper_ids": list(members)})
 
-    # any paper without an embedding (or beyond the 6-cluster cap) joins the
-    # largest cluster, so the frontend never falls back to random assignment
+    # cap at 6 (frontend palette): fold any overflow into the largest cluster
+    if len(clusters) > 6:
+        for cl in clusters[6:]:
+            clusters[0]["paper_ids"].extend(cl["paper_ids"])
+        clusters = clusters[:6]
+
+    # papers with no keyword tokens join the largest cluster, so the frontend
+    # never falls back to random assignment
     placed = {m for cl in clusters for m in cl["paper_ids"]}
     rest = [p["id"] for p in papers if p["id"] not in placed]
     if rest and clusters:

@@ -35,6 +35,7 @@ _ARCHIVE = [
     ("s06_context/context.yaml", "context.yaml"),
     ("s07_figure_analyze/fig_notes.yaml", "fig_notes.yaml"),
     ("s04_figures/figures.yaml", "figures.yaml"),
+    ("s03_chapter/chapter_index.yaml", "chapter_index.yaml"),
 ]
 
 

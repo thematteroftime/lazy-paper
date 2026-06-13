@@ -379,35 +379,88 @@ def test_export_figures_src_and_preview(tmp_path: Path, monkeypatch):
         encoding="utf-8") == "<html>"
 
 
-def test_export_clusters_by_embedding_affinity(tmp_path):
-    """Real domain clustering: two alpha papers group, one beta separates —
-    no random assignment."""
+def test_export_clusters_by_keyword_tokens(tmp_path):
+    """Domain clustering from shared keyword tokens: two robotics papers that
+    share >=2 domain tokens group; a physics paper with disjoint keywords is
+    its own cluster — no random assignment, no fabricated lumping."""
     from llm.garden import export_data
     from llm.library import Library
     from unittest.mock import patch
     import numpy as np
 
-    def split_embed(texts):
-        out = []
-        for t in texts:
-            out.append([1.0 if "alpha" in t else 0.0,
-                        1.0 if "beta" in t else 0.0] + [0.05] * 6)
-        return np.asarray(out, dtype=np.float32)
+    def emb(texts):
+        return np.asarray([[0.5] * 8 for _ in texts], dtype=np.float32)
+
+    def run_with_kw(pid, marker, keywords):
+        run = _make_run(tmp_path, pid, marker, embed=emb)
+        from stages._common import load_yaml, dump_yaml
+        ctx = load_yaml(run / "s06_context" / "context.yaml")
+        ctx["keywords"] = keywords
+        dump_yaml(run / "s06_context" / "context.yaml", ctx)
+        return run
 
     lib = Library(tmp_path / "library")
-    with patch("llm.retriever._embed_texts", side_effect=split_embed):
-        lib.ingest(_make_run(tmp_path, "alpha-one", "alpha"))
-        lib.ingest(_make_run(tmp_path, "alpha-two", "alpha"))
-        lib.ingest(_make_run(tmp_path, "beta-one", "beta"))
+    with patch("llm.retriever._embed_texts", side_effect=emb):
+        lib.ingest(run_with_kw("robo-one", "alpha",
+                               ["legged locomotion", "energy reward design"]))
+        lib.ingest(run_with_kw("robo-two", "alpha",
+                               ["legged robot control", "energy minimization"]))
+        lib.ingest(run_with_kw("phys-one", "beta",
+                               ["nonreciprocal plasma", "statistical mechanics"]))
 
+    clusters = export_data(lib)["clusters"]
+    by = {pid: c["key"] for c in clusters for pid in c["paper_ids"]}
+    assert by["robo-one"] == by["robo-two"]      # share "legged"+"energy"
+    assert by["phys-one"] != by["robo-one"]      # zero shared tokens
+    assert set(by) == {"robo-one", "robo-two", "phys-one"}
+
+
+def _make_run_chapters(tmp_path: Path, pid: str) -> Path:
+    """A run with TWO real chapters of different sizes + chapter_index.yaml,
+    so _real_sections can join chunk counts and entities by doc_name."""
+    run = tmp_path / "runs" / pid
+    chapters = run / "s03_chapter" / "chapters"
+    chapters.mkdir(parents=True)
+    (chapters / "chapter_000_Preface.md").write_text("alpha preface. ", encoding="utf-8")
+    (chapters / "chapter_001_METHOD.md").write_text(
+        "alpha method details here. " * 220, encoding="utf-8")
+    dump_yaml(run / "s03_chapter" / "chapter_index.yaml", [
+        {"chapter_no": 0, "title": "Preface", "file": "chapter_000_Preface.md",
+         "sources": [], "chars": 15},
+        {"chapter_no": 1, "title": "METHOD", "file": "chapter_001_METHOD.md",
+         "sources": ["doc_0.md"], "chars": 1600},
+    ])
+    s06 = run / "s06_context"; s06.mkdir()
+    s08 = run / "s08_section_compose"; s08.mkdir()
+    with patch("llm.retriever._embed_texts", side_effect=_fake_embed):
+        Retriever().build(chapters_dir=chapters, out_path=s08 / "retrieval.parquet")
+    PaperKG(
+        entities=[
+            Entity(id="e0", type="method", text="alpha-net",
+                   source_span=("chapter_001_METHOD.md", 0, 9)),
+            Entity(id="e1", type="figure", text="Fig. 1",
+                   source_span=("chapter_001_METHOD.md", 10, 16)),
+        ],
+        relations=[],
+    ).to_parquet(s06 / "paper_kg.parquet")
+    dump_yaml(s06 / "context.yaml", {"title": "alpha paper", "keywords": ["alpha"]})
+    dump_yaml(run / "meta.yaml", {"paper_id": pid, "lang": "zh"})
+    return run
+
+
+def test_export_real_sections(tmp_path):
+    from llm.garden import export_data
+    lib = Library(tmp_path / "library")
+    lib.ingest(_make_run_chapters(tmp_path, "alpha-paper"))
     export = export_data(lib)
-    clusters = export["clusters"]
-    by = {}
-    for c in clusters:
-        for pid in c["paper_ids"]:
-            by[pid] = c["key"]
-    # the two alphas share a cluster; beta is in a different one
-    assert by["alpha-one"] == by["alpha-two"]
-    assert by["beta-one"] != by["alpha-one"]
-    # every paper is assigned (no random fallback in the frontend)
-    assert set(by) == {"alpha-one", "alpha-two", "beta-one"}
+    secs = export["sections"]["alpha-paper"]
+    assert [s["en"] for s in secs] == ["Preface", "METHOD"]
+    assert [s["num"] for s in secs] == ["0", "1"]
+    by = {s["en"]: s for s in secs}
+    # real per-chapter chunk counts from chunks.doc_name (METHOD is the big one)
+    assert by["METHOD"]["chunks"] > by["Preface"]["chunks"]
+    assert sum(s["chunks"] for s in secs) == export["manifest"]["papers"][0]["n_chunks"]
+    # real entity assignment by entities.doc — both entities are in METHOD
+    assert set(by["METHOD"]["ents"]) == {"e0", "e1"}
+    assert by["Preface"]["ents"] == []
+    assert all(s["q"] is None for s in secs)

@@ -191,10 +191,16 @@ function placePaper(rnd,p,c){
 }
 
 // ── link graph ──────────────────────────────────────────────────────────────
+// Only conceptual entity types bridge papers. figure/table ("Fig. 1", "Table I")
+// and value/unit ("0.5", "m/s") are positional or generic — sharing one is not a
+// real connection (it spuriously linked physics to robotics papers). Filtering
+// here also cleans entIndex, so the SHARED-ENTITIES panel stays meaningful;
+// p.entities keeps every type for the section-drill display.
+const LINK_TYPES=new Set(['material','dopant','method','comparator','claim','parameter','author']);
 function buildLinks(papers){
  const map=new Map();
  papers.forEach((p,pi)=>{const seen=new Set();
-  p.entities.forEach(e=>{const k=norm(e.text)+'|'+e.type;
+  p.entities.forEach(e=>{if(!LINK_TYPES.has(e.type))return;const k=norm(e.text)+'|'+e.type;
    if(seen.has(k))return;seen.add(k);
    if(!map.has(k))map.set(k,[]);map.get(k).push(pi);});});
  const pair=new Map();
