@@ -11,6 +11,11 @@ const backOut = t => 1 + 2.7*Math.pow(t-1,3) + 1.7*Math.pow(t-1,2);
 const SERIF = '"Times New Roman","Noto Serif SC",serif';
 const BRUSH = '"Ma Shan Zheng","Noto Serif SC",serif';
 const FELL = '"IM Fell English","Times New Roman",serif';
+// Ma Shan Zheng is a CJK calligraphy face with no real Latin glyphs — using it
+// on English text renders muddy/abstract. Only reach for it when the label is
+// actually Chinese; otherwise serif keeps it legible.
+const cjk = s => /[一-鿿]/.test(s || '');
+const labelFont = s => cjk(s) ? BRUSH : SERIF;
 
 const T = { skin:'paper', paperCount:60, clusterCount:5, coolingDays:7,
             spikeForm:'cross', linkBudget:50, nebula:60, zoomDur:0.9, drift:1 };
@@ -420,19 +425,19 @@ function drawLabels(ctx, S, f, dim, time){
     const [sx,sy]=w2s(cl.labelX, cl.labelY);
     if(sx<-150||sx>vw+150) continue;
     const t1 = S.mode==='paper' ? '❦ '+cl.en.toUpperCase()+' ❦' : '⟨ '+cl.en.toUpperCase()+' ⟩';
-    ctx.letterSpacing='2.5px';
-    ctx.font = `12.5px ${FELL}`;
+    ctx.letterSpacing='1.2px';
+    ctx.font = `14px ${FELL}`;
     halo(t1, sx, sy);
     ctx.fillStyle = S.hueStrong(cl.hue, 0.85*a0);
     ctx.fillText(t1, sx, sy);
-    placed.push([sx, sy-5, ctx.measureText(t1).width, 15]);
+    placed.push([sx, sy-6, ctx.measureText(t1).width, 16]);
     ctx.letterSpacing='0px';
-    ctx.font = `12px ${BRUSH}`;
     const t2 = cl.zh+' · '+data.papers.filter(p=>p.cluster===cl.idx).length+' 篇';
-    halo(t2, sx, sy+15);
+    ctx.font = `12px ${labelFont(cl.zh)}`;
+    halo(t2, sx, sy+16);
     ctx.fillStyle = `rgba(${S.inkRGB},${0.55*a0})`;
-    ctx.fillText(t2, sx, sy+15);
-    placed.push([sx, sy+11, 92, 13]);
+    ctx.fillText(t2, sx, sy+16);
+    placed.push([sx, sy+12, ctx.measureText(t2).width, 13]);
    }
   }
  }
@@ -557,10 +562,10 @@ function drawFocus(ctx, S, f, time){
    ctx.fillText(o.s.num, sx, sy+1);
    // label block below/above node, away from center
    const ly = sy + (sy>cy ? nr+20 : -(nr+24));
-   ctx.font=`15px ${BRUSH}`;
+   ctx.font=`15px ${labelFont(o.s.zh)}`;
    ctx.fillStyle=`rgba(${S.inkRGB},${(hov?1:0.85)*g1})`;
    ctx.fillText(o.s.zh, sx, ly);
-   ctx.font=`9.5px ${FELL}`; ctx.letterSpacing='1px';
+   ctx.font=`11px ${FELL}`; ctx.letterSpacing='1px';
    ctx.fillStyle=`rgba(${S.inkRGB},${0.5*g1})`;
    ctx.fillText(o.s.en+' · '+o.s.chunks+' CH', sx, ly+14);
    ctx.letterSpacing='0px';
